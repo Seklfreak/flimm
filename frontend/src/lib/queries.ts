@@ -22,6 +22,7 @@ export const keys = {
   chapters: (id: string) => ["videos", id, "chapters"] as const,
   playlists: (kind: string | undefined) => ["playlists", kind ?? "all"] as const,
   playlist: (id: string) => ["playlists", id] as const,
+  pinnedPlaylists: ["playlists", "pinned"] as const,
   history: (filter: string, q: string) => ["history", { filter, q }] as const,
   search: (q: string, scope: string, unseen: boolean, feed: string | undefined) =>
     ["search", { q, scope, unseen, feed }] as const,
@@ -199,6 +200,22 @@ export function usePlaylists(kind: "custom" | "channel" | undefined) {
 
 export function usePlaylist(id: string) {
   return useQuery({ queryKey: keys.playlist(id), queryFn: () => api.playlist(id) });
+}
+
+export function usePinnedPlaylists() {
+  return useQuery({ queryKey: keys.pinnedPlaylists, queryFn: api.pinnedPlaylists, staleTime: 30_000 });
+}
+
+export function useSetPlaylistPinned() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, pinned }: { id: string; pinned: boolean }) => api.setPlaylistPinned(id, pinned),
+    onSuccess: (_d, v) => {
+      void qc.invalidateQueries({ queryKey: keys.pinnedPlaylists });
+      void qc.invalidateQueries({ queryKey: ["playlists"] });
+      void qc.invalidateQueries({ queryKey: keys.playlist(v.id) });
+    },
+  });
 }
 
 export function useHistory(filter: "all" | "in_progress" | "seen", q: string) {

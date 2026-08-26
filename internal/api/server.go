@@ -193,6 +193,8 @@ func (s *Server) Router() http.Handler {
 			r.Post("/videos/{id}/watched", s.postWatched)
 
 			r.Get("/playlists", s.listPlaylists)
+			r.Get("/playlists/pinned", s.listPinnedPlaylists)
+			r.Put("/playlists/{id}/pinned", s.setPlaylistPinned)
 			r.Post("/playlists", s.createPlaylist)
 			r.Get("/playlists/{id}", s.getPlaylist)
 			r.Patch("/playlists/{id}", s.renamePlaylist)

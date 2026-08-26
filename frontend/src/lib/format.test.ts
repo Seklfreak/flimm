@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ccLabel, dayHeading, fmtDuration, fmtDurationLong, relativeDay, seenLabel } from "./format";
+import { ccLabel, dayHeading, fmtDuration, fmtDurationLong, relativeDay, remainingUnseen, seenLabel } from "./format";
 
 const now = new Date(2026, 7, 26, 12, 0, 0); // Wed Aug 26 2026
 const daysAgo = (n: number) => new Date(now.getTime() - n * 86_400_000).toISOString();
@@ -43,5 +43,16 @@ describe("ccLabel", () => {
     expect(ccLabel(["en", "de"], false)).toBe("CC EN, DE");
     expect(ccLabel([], true)).toBe("CC auto");
     expect(ccLabel([], false)).toBe("no subtitles");
+  });
+});
+
+describe("remainingUnseen", () => {
+  it("subtracts seen from total", () => {
+    expect(remainingUnseen(14, 11)).toBe(3);
+    expect(remainingUnseen(14, 0)).toBe(14);
+  });
+  it("clamps at 0 rather than going negative", () => {
+    expect(remainingUnseen(14, 14)).toBe(0);
+    expect(remainingUnseen(14, 20)).toBe(0);
   });
 });

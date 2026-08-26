@@ -118,9 +118,19 @@ resume is the default action, and `t=` only exists to jump to a subtitle hit.
   "video_count": 14, "total_duration": 15120,
   "seen_count": 11, "in_progress_count": 1,
   "progress": 0.78,
-  "resume_video_id": "yt-id" | null    // first in-progress, else first unseen
+  "resume_video_id": "yt-id" | null,   // first in-progress, else first unseen
+  "pinned": false                      // shown in the client's sidebar
 }
 ```
+
+#### Pinned playlists
+
+Pins are Archive's own state (TubeArchivist has no concept of them) and are
+per user, so they follow the account across web and native clients. A pin
+survives the playlist being renamed or reordered, and pinning a playlist that
+is later deleted in TubeArchivist simply drops out of
+`GET /playlists/pinned` — the endpoint only returns playlists that still
+resolve, so a stale pin can never wedge the sidebar.
 
 ### HistoryEntry
 ```json
@@ -257,6 +267,8 @@ Clients treat an empty list as "no chapter UI", never as an error.
 ### Playlists
 | Method | Path | Notes |
 |---|---|---|
+| GET | `/playlists/pinned` | PlaylistSummary[] the user pinned to the sidebar, in `position` order; unpaged |
+| PUT | `/playlists/{id}/pinned` | `{ "pinned": true\|false }` → 204. Pinning appends to the end; unpinning closes the gap |
 | GET | `/playlists` | query `kind=custom\|channel`, paged PlaylistSummary; custom first |
 | POST | `/playlists` | `{ "name" }` → TA `/playlist/custom/` (201) |
 | GET | `/playlists/{id}` | PlaylistSummary + `items: [{ "position", "video": VideoSummary }]` |

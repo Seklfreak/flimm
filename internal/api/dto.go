@@ -166,6 +166,8 @@ type PlaylistSummary struct {
 	InProgressCount int                 `json:"in_progress_count"`
 	Progress        float64             `json:"progress"`
 	ResumeVideoID   *string             `json:"resume_video_id"`
+	// Pinned is Archive's own state — TubeArchivist has no concept of it.
+	Pinned bool `json:"pinned"`
 }
 
 type PlaylistItem struct {

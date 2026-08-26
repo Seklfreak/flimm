@@ -2,9 +2,9 @@ import { useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
-import { usePlaylist, useSetWatched } from "@/lib/queries";
+import { usePlaylist, useSetPlaylistPinned, useSetWatched } from "@/lib/queries";
 import { ccLabel, fmtDuration, fmtDurationLong, plural } from "@/lib/format";
-import { CheckIcon, EmptyState, ErrorState, Spinner } from "@/components/ui";
+import { CheckIcon, EmptyState, ErrorState, PinIcon, Spinner } from "@/components/ui";
 import { VideoRow } from "@/components/VideoRow";
 import { watchHref } from "@/components/VideoCard";
 import { PlaylistStack } from "./PlaylistsPage";
@@ -15,6 +15,7 @@ export default function PlaylistPage() {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const setWatched = useSetWatched();
+  const setPinned = useSetPlaylistPinned();
   const [unseenOnly, setUnseenOnly] = useState(false);
   const [editing, setEditing] = useState(false);
   // Must sit with the other hooks: everything below the early returns runs
@@ -127,6 +128,16 @@ export default function PlaylistPage() {
             </button>
             <button className={`btn ${unseenOnly ? "pri" : ""}`} onClick={() => setUnseenOnly((u) => !u)} aria-pressed={unseenOnly}>
               Unseen only
+            </button>
+            <button
+              className={`btn ${p.pinned ? "pri" : ""}`}
+              aria-pressed={p.pinned}
+              aria-label={p.pinned ? "Unpin from sidebar" : "Pin to sidebar"}
+              title={p.pinned ? "Unpin from sidebar" : "Pin to sidebar"}
+              onClick={() => setPinned.mutate({ id: p.id, pinned: !p.pinned })}
+              disabled={setPinned.isPending}
+            >
+              <PinIcon />
             </button>
             {isCustom && !editing && (
               <button

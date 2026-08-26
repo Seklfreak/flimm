@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -30,6 +31,7 @@ const testSecret = "test-secret"
 type eventStore struct {
 	mu     sync.Mutex
 	events map[string]sqlc.WatchEvent
+	pins   []sqlc.PinnedPlaylist
 }
 
 func newEventStore() *eventStore { return &eventStore{events: map[string]sqlc.WatchEvent{}} }
@@ -112,6 +114,28 @@ func (es *eventStore) querier() *sqlctest.FakeQuerier {
 			return out, nil
 		},
 		GetPrefsFn: func(context.Context, uuid.UUID) ([]byte, error) { return nil, pgx.ErrNoRows },
+		ListPinnedPlaylistsFn: func(context.Context, uuid.UUID) ([]sqlc.PinnedPlaylist, error) {
+			es.mu.Lock()
+			defer es.mu.Unlock()
+			return slices.Clone(es.pins), nil
+		},
+		PinPlaylistFn: func(_ context.Context, arg sqlc.PinPlaylistParams) error {
+			es.mu.Lock()
+			defer es.mu.Unlock()
+			for _, p := range es.pins {
+				if p.PlaylistID == arg.PlaylistID {
+					return nil
+				}
+			}
+			es.pins = append(es.pins, sqlc.PinnedPlaylist{UserID: arg.UserID, PlaylistID: arg.PlaylistID, Position: int32(len(es.pins))}) //nolint:gosec // test fixture
+			return nil
+		},
+		UnpinPlaylistFn: func(_ context.Context, arg sqlc.UnpinPlaylistParams) error {
+			es.mu.Lock()
+			defer es.mu.Unlock()
+			es.pins = slices.DeleteFunc(es.pins, func(p sqlc.PinnedPlaylist) bool { return p.PlaylistID == arg.PlaylistID })
+			return nil
+		},
 		ListFeedChannelsForUserFn: func(context.Context, uuid.UUID) ([]sqlc.ListFeedChannelsForUserRow, error) {
 			return nil, nil
 		},
