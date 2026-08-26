@@ -138,10 +138,11 @@ What is there:
 
 What is still missing:
 
-- **TestFlight.** No signing assets, no App Store Connect records (two are
-  needed — tvOS is its own platform), no `testflight.yaml`. The Release
-  configuration already expects the profiles `Flimm App Store` and
-  `Flimm TV App Store`.
+- **App Store Connect app records.** `testflight.yaml` archives and uploads
+  both apps on every version tag (manual signing with the `Flimm App Store`
+  and `Flimm TV App Store` profiles). The upload needs an app record per
+  platform in App Store Connect, which the API cannot create; the workflow
+  stays dormant until `APP_STORE_CONNECT_KEY_ID` is set.
 - **Real app icons.** Both catalogues are structural placeholders: the iOS
   app icon set and the tvOS App Icon & Top Shelf brand assets have the right
   shape and no artwork.

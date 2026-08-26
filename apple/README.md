@@ -178,4 +178,10 @@ token and the app logs out as soon as the access token expires.
 
 `.github/workflows/apple.yaml` runs on `macos-26` whenever `apple/**` changes:
 `xcodegen generate`, `swiftlint --strict`, the FlimmKit tests, and unsigned iOS
-and tvOS simulator builds. TestFlight workflows come with a later phase.
+and tvOS simulator builds.
+
+`.github/workflows/testflight.yaml` archives both apps with manual signing and
+uploads them to TestFlight on every version tag (dispatched by the release
+workflow). It is dormant until the App Store Connect secrets exist; see the
+header of the workflow for the list. `testflight-refresh.yaml` rebuilds the
+latest tag monthly so TestFlight builds don't expire.
