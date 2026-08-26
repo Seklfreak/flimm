@@ -53,6 +53,12 @@ type Client interface {
 	DeletePlaylist(ctx context.Context, id string) error
 
 	Search(ctx context.Context, query string) (*SearchResult, error)
+
+	// FetchRange GETs a raw file from TubeArchivist (an nginx /media/… path)
+	// with a byte Range header and returns the body. start and end are
+	// inclusive; the read is capped at maxRangeBytes whatever the response
+	// claims. Both 200 (server ignored the range) and 206 are accepted.
+	FetchRange(ctx context.Context, path string, start, end int64) ([]byte, error)
 }
 
 const (
@@ -61,6 +67,9 @@ const (
 	cacheVideos   = 30 * time.Second
 	// maxPageSize is what we ask TA for when walking a full list.
 	maxPageSize = 100
+	// maxRangeBytes caps how much FetchRange reads into memory, so a bogus
+	// Content-Length cannot blow up the server.
+	maxRangeBytes = 16 << 20
 )
 
 // HTTP talks to a TubeArchivist instance with a server-side API token.
@@ -552,4 +561,39 @@ func orEmpty[T any](s []T) []T {
 		return []T{}
 	}
 	return s
+}
+
+// FetchRange reads a byte range of a media file. Errors carry the path only,
+// never the token.
+func (c *HTTP) FetchRange(ctx context.Context, path string, start, end int64) ([]byte, error) {
+	if start < 0 || end < start {
+		return nil, fmt.Errorf("fetch range %s: invalid range %d-%d", path, start, end)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.base+path, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Token "+c.token)
+	req.Header.Set("Range", fmt.Sprintf("bytes=%d-%d", start, end))
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrUnavailable, err)
+	}
+	defer resp.Body.Close()
+	switch {
+	case resp.StatusCode == http.StatusNotFound:
+		return nil, ErrNotFound
+	case resp.StatusCode >= 500:
+		return nil, fmt.Errorf("%w: GET %s: status %d", ErrUnavailable, path, resp.StatusCode)
+	case resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden:
+		return nil, fmt.Errorf("%w: GET %s: status %d (check TA_TOKEN)", ErrUnavailable, path, resp.StatusCode)
+	case resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusPartialContent:
+		return nil, fmt.Errorf("tubearchivist GET %s: status %d", path, resp.StatusCode)
+	}
+	limit := min(end-start+1, maxRangeBytes)
+	data, err := io.ReadAll(io.LimitReader(resp.Body, limit))
+	if err != nil {
+		return nil, fmt.Errorf("%w: read body: %w", ErrUnavailable, err)
+	}
+	return data, nil
 }

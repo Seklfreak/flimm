@@ -18,6 +18,7 @@ export const keys = {
   channelPlaylists: (id: string) => ["channels", id, "playlists"] as const,
   video: (id: string) => ["videos", id] as const,
   upNext: (id: string, ctx: Record<string, string | undefined>) => ["videos", id, "up-next", ctx] as const,
+  chapters: (id: string) => ["videos", id, "chapters"] as const,
   playlists: (kind: string | undefined) => ["playlists", kind ?? "all"] as const,
   playlist: (id: string) => ["playlists", id] as const,
   history: (filter: string, q: string) => ["history", { filter, q }] as const,
@@ -172,6 +173,19 @@ export function useChannelPlaylists(id: string, enabled = true) {
 
 export function useVideo(id: string) {
   return useQuery({ queryKey: keys.video(id), queryFn: () => api.video(id) });
+}
+
+// Chapters never change for a downloaded file, so cache them forever once
+// fetched. A missing/failed response must degrade silently to "no chapter
+// UI" — never retried into an error state, never a blocking spinner — so
+// callers should read `.data?.chapters ?? []` and ignore isError/isLoading.
+export function useChapters(id: string) {
+  return useQuery({
+    queryKey: keys.chapters(id),
+    queryFn: () => api.chapters(id),
+    staleTime: Infinity,
+    retry: false,
+  });
 }
 
 export function usePlaylists(kind: "custom" | "channel" | undefined) {

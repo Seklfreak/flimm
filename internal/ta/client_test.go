@@ -97,3 +97,50 @@ func TestVideoHelpers(t *testing.T) {
 		t.Errorf("helpers: %v %v %d", v.PublishedTime(), v.DownloadedTime(), v.Height())
 	}
 }
+
+func TestFetchRange(t *testing.T) {
+	body := []byte("0123456789abcdef")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Token tok" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		switch r.URL.Path {
+		case "/media/a/v.mp4":
+			if got := r.Header.Get("Range"); got != "bytes=0-7" {
+				t.Errorf("Range = %q", got)
+			}
+			w.WriteHeader(http.StatusPartialContent)
+			_, _ = w.Write(body[:8])
+		case "/media/a/ignores-range.mp4":
+			// A server that ignores Range answers 200 with the whole file.
+			_, _ = w.Write(body)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+	c := New(srv.URL, "tok")
+	ctx := context.Background()
+
+	got, err := c.FetchRange(ctx, "/media/a/v.mp4", 0, 7)
+	if err != nil || string(got) != "01234567" {
+		t.Fatalf("FetchRange = %q %v", got, err)
+	}
+
+	// A 200 is accepted, but never more than the range asked for.
+	got, err = c.FetchRange(ctx, "/media/a/ignores-range.mp4", 0, 3)
+	if err != nil || string(got) != "0123" {
+		t.Fatalf("unranged response = %q %v", got, err)
+	}
+
+	if _, err := c.FetchRange(ctx, "/media/a/missing.mp4", 0, 7); !errors.Is(err, ErrNotFound) {
+		t.Errorf("missing: %v", err)
+	}
+	if _, err := c.FetchRange(ctx, "/media/a/v.mp4", 8, 2); err == nil {
+		t.Error("expected an error for an inverted range")
+	}
+	if _, err := c.FetchRange(ctx, "/media/a/v.mp4", -1, 7); err == nil {
+		t.Error("expected an error for a negative start")
+	}
+}

@@ -1,10 +1,13 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import type { Prefs, SubtitleTrack, Video } from "@/lib/api";
 import { fmtDuration } from "@/lib/format";
 import { retryMediaUrl } from "@/lib/media";
 import { CheckIcon, Popover } from "@/components/ui";
+import { useChapters } from "@/lib/queries";
 import { useSponsorSkip } from "./useSponsorSkip";
 import { useProgressHeartbeat } from "./useProgressHeartbeat";
+import { Scrubber } from "./Scrubber";
+import { currentChapterIndex, nextChapterStart, prevChapterStart } from "./chapterMath";
 
 const SPEEDS = [0.75, 1, 1.25, 1.5, 1.75, 2];
 const SIZES: Prefs["subtitle_size"][] = ["small", "medium", "large"];
@@ -17,11 +20,20 @@ export interface PlayerProps {
   onWatched: () => void;
   onStartOver: () => Promise<void>;
   onEnded: () => void;
+  /** Fires only when the current chapter changes (including to/from -1 = none). */
+  onChapterChange?: (index: number) => void;
+}
+
+export interface PlayerHandle {
+  seek: (time: number) => void;
 }
 
 // HTML5 player with custom controls per the Player artboard: resume chip,
 // progress scrubber, play / ±10s, time, CC menu, speed menu, mute, fullscreen.
-export function Player({ video, prefs, startAt, onPrefs, onWatched, onStartOver, onEnded }: PlayerProps) {
+export const Player = forwardRef<PlayerHandle, PlayerProps>(function Player(
+  { video, prefs, startAt, onPrefs, onWatched, onStartOver, onEnded, onChapterChange },
+  ref,
+) {
   const [el, setEl] = useState<HTMLVideoElement | null>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const [src, setSrc] = useState(video.media_url);
@@ -90,17 +102,35 @@ export function Player({ video, prefs, startAt, onPrefs, onWatched, onStartOver,
   useSponsorSkip(el, video.sponsorblock, prefs.skip_sponsors);
   useProgressHeartbeat(el, video.id, onWatched);
 
+  // Chapters degrade silently: an empty list or a failed request just means
+  // no marks/title/list, never an error or a blocking spinner. Memoized so a
+  // stable empty array doesn't retrigger effects/memos below every render.
+  const chaptersData = useChapters(video.id).data?.chapters;
+  const chapters = useMemo(() => chaptersData ?? [], [chaptersData]);
+  const chapterIdx = useMemo(() => currentChapterIndex(chapters, time), [chapters, time]);
+  const currentChapter = chapterIdx >= 0 ? chapters[chapterIdx] : null;
+  useEffect(() => {
+    onChapterChange?.(chapterIdx);
+  }, [chapterIdx, onChapterChange]);
+
   const togglePlay = useCallback(() => {
     if (!el) return;
     if (el.paused) void el.play();
     else el.pause();
   }, [el]);
-  const seekBy = useCallback(
-    (d: number) => {
-      if (el) el.currentTime = Math.max(0, Math.min(el.duration || duration, el.currentTime + d));
+  const seekTo = useCallback(
+    (t: number) => {
+      if (el) el.currentTime = Math.max(0, Math.min(el.duration || duration, t));
     },
     [el, duration],
   );
+  const seekBy = useCallback(
+    (d: number) => {
+      if (el) seekTo(el.currentTime + d);
+    },
+    [el, seekTo],
+  );
+  useImperativeHandle(ref, () => ({ seek: seekTo }), [seekTo]);
   const toggleFullscreen = useCallback(() => {
     const w = wrapRef.current;
     if (!w) return;
@@ -115,7 +145,8 @@ export function Player({ video, prefs, startAt, onPrefs, onWatched, onStartOver,
     }
   }, [activeTrack, onPrefs, video.subtitles]);
 
-  // Keyboard: space/k play, j/l ±10s, f fullscreen, c CC, m mute, arrows ±5s.
+  // Keyboard: space/k play, j/l ±10s, f fullscreen, c CC, m mute, arrows ±5s,
+  // [ / ] previous/next chapter.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement | null;
@@ -150,11 +181,21 @@ export function Player({ video, prefs, startAt, onPrefs, onWatched, onStartOver,
             setMuted(el.muted);
           }
           break;
+        case "[": {
+          const target = prevChapterStart(chapters, el?.currentTime ?? time);
+          if (target !== null) seekTo(target);
+          break;
+        }
+        case "]": {
+          const target = nextChapterStart(chapters, el?.currentTime ?? time);
+          if (target !== null) seekTo(target);
+          break;
+        }
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [el, togglePlay, seekBy, toggleFullscreen, toggleCC]);
+  }, [el, togglePlay, seekBy, toggleFullscreen, toggleCC, chapters, time, seekTo]);
 
   const bumpIdle = () => {
     setIdle(false);
@@ -162,14 +203,6 @@ export function Player({ video, prefs, startAt, onPrefs, onWatched, onStartOver,
     idleTimer.current = window.setTimeout(() => setIdle(true), 2500);
   };
 
-  const onScrub = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (!el) return;
-    const r = e.currentTarget.getBoundingClientRect();
-    const frac = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
-    el.currentTime = frac * (el.duration || duration);
-  };
-
-  const pct = duration > 0 ? (time / duration) * 100 : 0;
   const showControls = !idle || !playing;
 
   return (
@@ -230,10 +263,7 @@ export function Player({ video, prefs, startAt, onPrefs, onWatched, onStartOver,
       <div
         className={`absolute inset-x-0 bottom-0 flex flex-col gap-2.5 bg-gradient-to-t from-black/75 to-transparent px-4 pb-3 pt-6 transition-opacity ${showControls ? "opacity-100" : "opacity-0"}`}
       >
-        <div className="relative h-1 cursor-pointer rounded-sm bg-white/35" onPointerDown={onScrub} role="slider" aria-valuemin={0} aria-valuemax={duration} aria-valuenow={time} aria-label="Seek">
-          <div className="h-full rounded-sm bg-accent" style={{ width: `${pct}%` }} />
-          <div className="absolute -top-[5px] h-3.5 w-3.5 -translate-x-1/2 rounded-full bg-white" style={{ left: `${pct}%` }} />
-        </div>
+        <Scrubber time={time} duration={duration} chapters={chapters} sponsorblock={video.sponsorblock} onSeek={seekTo} />
         <div className="flex items-center gap-4 text-[12px] font-bold">
           <button onClick={togglePlay} aria-label={playing ? "Pause" : "Play"}>
             {playing ? (
@@ -251,6 +281,11 @@ export function Player({ video, prefs, startAt, onPrefs, onWatched, onStartOver,
           <span className="tabular-nums">
             {fmtDuration(time)} / {fmtDuration(duration)}
           </span>
+          {currentChapter && (
+            <span className="min-w-0 max-w-[160px] truncate text-white/70 sm:max-w-[300px]" title={currentChapter.title}>
+              · {currentChapter.title}
+            </span>
+          )}
           <button
             ref={setCcAnchor}
             onClick={() => setMenu(menu === "cc" ? null : "cc")}
@@ -327,7 +362,7 @@ export function Player({ video, prefs, startAt, onPrefs, onWatched, onStartOver,
       )}
     </div>
   );
-}
+});
 
 export const SUBTITLE_OFF = "off";
 
