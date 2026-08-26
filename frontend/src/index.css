@@ -124,18 +124,23 @@ a {
 a:hover {
   color: var(--c-accent-deep);
 }
-button {
-  font: inherit;
-  color: inherit;
-  cursor: pointer;
-}
-input,
-textarea {
-  font: inherit;
-  color: inherit;
-}
-::placeholder {
-  color: var(--c-muted-2);
+/* Element resets live in @layer base so component classes (.seg.on, .btn.pri)
+   can override them — unlayered rules beat layered ones regardless of
+   specificity. */
+@layer base {
+  button {
+    font: inherit;
+    color: inherit;
+    cursor: pointer;
+  }
+  input,
+  textarea {
+    font: inherit;
+    color: inherit;
+  }
+  ::placeholder {
+    color: var(--c-muted-2);
+  }
 }
 
 @layer components {

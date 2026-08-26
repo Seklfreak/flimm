@@ -83,6 +83,11 @@ export function ccLabel(langs: string[], hasAuto: boolean): string {
   return "no subtitles";
 }
 
+/** Counts at or above Elasticsearch's 10 000 total-hits cap are shown as "10,000+". */
+export function formatCount(n: number): string {
+  return n >= 10000 ? "10,000+" : String(n);
+}
+
 export function plural(n: number, one: string, many = one + "s"): string {
-  return `${n} ${n === 1 ? one : many}`;
+  return `${formatCount(n)} ${n === 1 ? one : many}`;
 }
