@@ -203,7 +203,7 @@ func (s *Server) Router() http.Handler {
 
 			r.Get("/playlists", s.listPlaylists)
 			r.Get("/playlists/pinned", s.listPinnedPlaylists)
-			r.Put("/playlists/{id}/audio-only", s.setPlaylistAudioOnly)
+			r.Put("/playlists/{id}/music", s.setPlaylistMusic)
 			r.Put("/playlists/{id}/pinned", s.setPlaylistPinned)
 			r.Post("/playlists", s.createPlaylist)
 			r.Get("/playlists/{id}", s.getPlaylist)

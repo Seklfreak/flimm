@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
-import { usePlaylist, useSetPlaylistAudioOnly, useSetPlaylistPinned, useSetWatched } from "@/lib/queries";
+import { usePlaylist, useSetPlaylistMusic, useSetPlaylistPinned, useSetWatched } from "@/lib/queries";
 import { ccLabel, fmtDuration, fmtDurationLong, plural } from "@/lib/format";
 import { CheckIcon, EmptyState, ErrorState, HeadphonesIcon, PinIcon, Spinner } from "@/components/ui";
 import { VideoRow } from "@/components/VideoRow";
@@ -16,7 +16,7 @@ export default function PlaylistPage() {
   const qc = useQueryClient();
   const setWatched = useSetWatched();
   const setPinned = useSetPlaylistPinned();
-  const setAudioOnly = useSetPlaylistAudioOnly();
+  const setMusic = useSetPlaylistMusic();
   const [unseenOnly, setUnseenOnly] = useState(false);
   const [editing, setEditing] = useState(false);
   // Must sit with the other hooks: everything below the early returns runs
@@ -35,10 +35,12 @@ export default function PlaylistPage() {
 
   const isCustom = p.kind === "custom";
   // Every link this page produces to the player carries the playlist's
-  // persisted audio_only intent, so opening a video (or Resume/Play/Shuffle)
-  // seeds the player already in the right mode.
-  const ctx = { playlist: p.id, audio: p.audio_only ? "1" : undefined };
-  const resumeItem = p.items.find((i) => i.video.id === p.resume_video_id);
+  // persisted music intent, so opening a video (or Play/Shuffle) seeds the
+  // player already in the right mode.
+  const ctx = { playlist: p.id, audio: p.music ? "1" : undefined };
+  // A music playlist reports no resume state (songs are replayed, so "seen"
+  // is meaningless) — the header/rows always offer a plain Play there.
+  const resumeItem = p.music ? undefined : p.items.find((i) => i.video.id === p.resume_video_id);
   // Shuffle hands the player a seed rather than a single random pick: the
   // server derives a stable order from it, so previous/next and autoplay walk
   // the shuffled run instead of falling back to playlist order. A fresh seed
@@ -82,7 +84,9 @@ export default function PlaylistPage() {
     isCustom ? "Your playlist" : p.channel?.name,
     plural(p.video_count, "video"),
     fmtDurationLong(p.total_duration),
-    p.seen_count > 0 || p.in_progress_count > 0
+    // A music playlist carries no watch state to summarize (see docs/api.md
+    // "Music playlists") — seen_count/in_progress_count come back zeroed.
+    !p.music && (p.seen_count > 0 || p.in_progress_count > 0)
       ? `${p.seen_count} seen${p.in_progress_count > 0 ? `, ${p.in_progress_count} in progress` : ""}`
       : undefined,
   ].filter(Boolean);
@@ -130,18 +134,22 @@ export default function PlaylistPage() {
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M4 6h3l10 12h3M20 18l-2 2 2 2M4 18h3l3-4M14 6h3l3 0M20 6l-2-2 2-2" /></svg>
               Shuffle
             </button>
-            <button className={`btn ${unseenOnly ? "pri" : ""}`} onClick={() => setUnseenOnly((u) => !u)} aria-pressed={unseenOnly}>
-              Unseen only
-            </button>
+            {/* "Seen"/"unseen" is meaningless for a music playlist — songs are
+                replayed and the backend records no watch state for it. */}
+            {!p.music && (
+              <button className={`btn ${unseenOnly ? "pri" : ""}`} onClick={() => setUnseenOnly((u) => !u)} aria-pressed={unseenOnly}>
+                Unseen only
+              </button>
+            )}
             <button
-              className={`btn ${p.audio_only ? "pri" : ""}`}
-              aria-pressed={p.audio_only}
-              aria-label={p.audio_only ? "Play as video" : "Play as audio only"}
-              title={p.audio_only ? "Play as video" : "Play as audio only"}
-              onClick={() => setAudioOnly.mutate({ id: p.id, audioOnly: !p.audio_only })}
-              disabled={setAudioOnly.isPending}
+              className={`btn ${p.music ? "pri" : ""}`}
+              aria-pressed={p.music}
+              aria-label={p.music ? "Play as video, with watch history" : "Play as music: audio only, no watch history"}
+              title={p.music ? "Play as video, with watch history" : "Play as music: audio only, no watch history"}
+              onClick={() => setMusic.mutate({ id: p.id, music: !p.music })}
+              disabled={setMusic.isPending}
             >
-              <HeadphonesIcon size={13} /> Audio only
+              <HeadphonesIcon size={13} /> Music
             </button>
             <button
               className={`btn ${p.pinned ? "pri" : ""}`}
@@ -165,12 +173,14 @@ export default function PlaylistPage() {
               </button>
             )}
           </div>
-          <div className="flex items-center gap-2.5">
-            <div className="h-1 flex-1 rounded-sm bg-raised">
-              <div className="h-full rounded-sm bg-accent" style={{ width: `${Math.round(p.progress * 100)}%` }} />
+          {!p.music && (
+            <div className="flex items-center gap-2.5">
+              <div className="h-1 flex-1 rounded-sm bg-raised">
+                <div className="h-full rounded-sm bg-accent" style={{ width: `${Math.round(p.progress * 100)}%` }} />
+              </div>
+              <span className="meta text-[12px] !font-bold">{Math.round(p.progress * 100)}%</span>
             </div>
-            <span className="meta text-[12px] !font-bold">{Math.round(p.progress * 100)}%</span>
-          </div>
+          )}
         </div>
       </div>
       <div className="flex flex-col">
@@ -179,7 +189,7 @@ export default function PlaylistPage() {
         ) : (
           items.map((it, idx) => {
             const v = it.video;
-            const inProgress = !v.watched && v.position > 0;
+            const inProgress = !p.music && !v.watched && v.position > 0;
             return (
               <VideoRow
                 key={v.id}
@@ -209,7 +219,9 @@ export default function PlaylistPage() {
                 }
                 actions={
                   <>
-                    {v.watched ? (
+                    {/* A music playlist records no watch state, so every row is
+                        simply Play — never Seen or Resume. */}
+                    {!p.music && v.watched ? (
                       <button className="btn" onClick={() => setWatched.mutate({ id: v.id, watched: false })} title="Mark unseen">
                         <CheckIcon size={13} /> <span className="hidden sm:inline">Seen</span>
                       </button>

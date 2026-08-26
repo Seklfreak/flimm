@@ -163,8 +163,8 @@ export interface PlaylistSummary {
   progress: number;
   resume_video_id: string | null;
   pinned: boolean;
-  /** Play this playlist as audio (music); seeds `audio=1` on every link into it. */
-  audio_only: boolean;
+  /** A music playlist: audio-only playback, and no watch state is recorded or reported. Seeds `audio=1` on every link into it. */
+  music: boolean;
 }
 
 export interface Playlist extends PlaylistSummary {
@@ -320,8 +320,14 @@ export const api = {
     req<Page<VideoSummary>>(`/videos/${id}/up-next${qs({ ...ctx, page, page_size: PAGE_SIZE })}`),
   nav: (id: string, ctx: PlayContext) => req<NavResponse>(`/videos/${id}/nav${qs(ctx)}`),
   chapters: (id: string) => req<ChaptersResponse>(`/videos/${id}/chapters`),
-  progress: (id: string, position: number) =>
-    req<{ position: number; watched: boolean }>(`/videos/${id}/progress`, json("POST", { position })),
+  // `playlistId` is the play context, not the video's playlist membership —
+  // when it names a music playlist the server records no watch state at all
+  // (see docs/api.md "Music playlists"). Every heartbeat path must pass it.
+  progress: (id: string, position: number, playlistId?: string) =>
+    req<{ position: number; watched: boolean }>(
+      `/videos/${id}/progress${qs({ playlist: playlistId })}`,
+      json("POST", { position }),
+    ),
   setWatched: (id: string, watched: boolean) =>
     req<void>(`/videos/${id}/watched`, json("POST", { watched })),
   startOver: (id: string) => req<void>(`/videos/${id}/progress`, { method: "DELETE" }),
@@ -331,8 +337,8 @@ export const api = {
   pinnedPlaylists: () => req<PlaylistSummary[]>("/playlists/pinned"),
   setPlaylistPinned: (id: string, pinned: boolean) =>
     req<void>(`/playlists/${id}/pinned`, json("PUT", { pinned })),
-  setPlaylistAudioOnly: (id: string, audioOnly: boolean) =>
-    req<void>(`/playlists/${id}/audio-only`, json("PUT", { audio_only: audioOnly })),
+  setPlaylistMusic: (id: string, music: boolean) =>
+    req<void>(`/playlists/${id}/music`, json("PUT", { music })),
   playlist: (id: string) => req<Playlist>(`/playlists/${id}`),
   createPlaylist: (name: string) => req<PlaylistSummary>("/playlists", json("POST", { name })),
   renamePlaylist: (id: string, name: string) =>
@@ -356,10 +362,10 @@ export const api = {
 
 // Progress heartbeat that survives page unload: fetch with keepalive carries
 // the Bearer header, which navigator.sendBeacon cannot.
-export function sendProgressBeacon(id: string, position: number) {
+export function sendProgressBeacon(id: string, position: number, playlistId?: string) {
   const token = getAccessToken();
   try {
-    void fetch(`${BASE}/videos/${id}/progress`, {
+    void fetch(`${BASE}/videos/${id}/progress${qs({ playlist: playlistId })}`, {
       method: "POST",
       keepalive: true,
       headers: {

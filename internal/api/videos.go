@@ -543,6 +543,21 @@ func (s *Server) postProgress(w http.ResponseWriter, r *http.Request) {
 	if duration > 0 {
 		req.Position = min(req.Position, float64(duration))
 	}
+	// Music carries no watch state: a song is replayed, so "seen" means
+	// nothing, and recording it would fill history and continue-watching with
+	// tracks. The client reports which playlist it is playing from and the
+	// server decides, so every client behaves the same way.
+	if playlistID := r.URL.Query().Get("playlist"); playlistID != "" {
+		music, err := s.isMusicPlaylist(r.Context(), uid, playlistID)
+		if err != nil {
+			s.writeDBError(w, "load playlist settings", err)
+			return
+		}
+		if music {
+			writeJSON(w, http.StatusOK, map[string]any{"position": req.Position, "watched": false})
+			return
+		}
+	}
 	watched := isComplete(req.Position, duration)
 	// Below the minimum play time nothing is recorded, so a video opened by
 	// accident leaves no history entry and no resume position. An event that
@@ -583,6 +598,15 @@ func (s *Server) postProgress(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"position": ev.Position, "watched": ev.CompletedAt.Valid})
+}
+
+// isMusicPlaylist reports whether the user marked this playlist as music.
+func (s *Server) isMusicPlaylist(ctx context.Context, uid uuid.UUID, playlistID string) (bool, error) {
+	settings, err := s.playlistSettings(ctx, uid)
+	if err != nil {
+		return false, err
+	}
+	return settings[playlistID].Music, nil
 }
 
 func (s *Server) postWatched(w http.ResponseWriter, r *http.Request) {

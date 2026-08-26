@@ -70,7 +70,7 @@ export function playlist(over: Partial<PlaylistSummary> = {}): PlaylistSummary {
     progress: 0.78,
     resume_video_id: null,
     pinned: false,
-    audio_only: false,
+    music: false,
     ...over,
   };
 }

@@ -14,7 +14,7 @@ export default function WatchPage() {
   const { id = "" } = useParams();
   const [params, setParams] = useSearchParams();
   // `audio=1` is the live audio/video mode. It seeds from the playlist's
-  // audio_only via the ctx every link already carries (see PlaylistPage) —
+  // `music` flag via the ctx every link already carries (see PlaylistPage) —
   // this page only ever reads the param, it never fetches the playlist to
   // re-derive it.
   const audioOnly = params.get("audio") === "1";
@@ -59,11 +59,9 @@ export default function WatchPage() {
     staleTime: 60_000,
   });
   const chapters = useChapters(id).data?.chapters ?? [];
-  const [expanded, setExpanded] = useState(false);
   const [activeChapter, setActiveChapter] = useState(-1);
   const playerRef = useRef<PlayerHandle>(null);
   useEffect(() => {
-    setExpanded(false);
     setActiveChapter(-1);
     window.scrollTo({ top: 0 });
   }, [id]);
@@ -94,7 +92,6 @@ export default function WatchPage() {
   const track = pickTrack(v.subtitles, prefs.subtitle_lang);
   const channelFeeds = v.channel.feeds.filter((f) => f.id !== EVERYTHING_ID).map((f) => f.name);
   const desc = v.description ?? "";
-  const long = desc.length > 320;
 
   return (
     <div className="flex flex-col gap-6 px-0 pb-10 pt-0 md:flex-row md:gap-8 md:px-10 md:pt-8">
@@ -113,6 +110,7 @@ export default function WatchPage() {
             onChapterChange={setActiveChapter}
             audioOnly={audioOnly}
             onToggleAudioOnly={onToggleAudioOnly}
+            playlistId={ctx.playlist}
             nav={
               hasContext
                 ? {
@@ -148,14 +146,18 @@ export default function WatchPage() {
               </div>
             </div>
             <div className="flex flex-wrap gap-2">
-              <button
-                className={`btn ${v.watched ? "" : "pri"}`}
-                onClick={() => setWatched.mutate({ id: v.id, watched: !v.watched })}
-                disabled={setWatched.isPending}
-              >
-                <CheckIcon size={14} />
-                {v.watched ? "Seen" : "Mark seen"}
-              </button>
+              {/* Marking a song seen is meaningless — a music playlist's playback
+                  deliberately records no watch state (docs/api.md "Music playlists"). */}
+              {!audioOnly && (
+                <button
+                  className={`btn ${v.watched ? "" : "pri"}`}
+                  onClick={() => setWatched.mutate({ id: v.id, watched: !v.watched })}
+                  disabled={setWatched.isPending}
+                >
+                  <CheckIcon size={14} />
+                  {v.watched ? "Seen" : "Mark seen"}
+                </button>
+              )}
               <AddToPlaylist videoId={v.id} memberOf={v.playlists} />
               <button className="btn" onClick={() => onPrefs({ subtitle_lang: track ? SUBTITLE_OFF : (v.subtitles[0]?.lang ?? SUBTITLE_OFF) })} disabled={v.subtitles.length === 0}>
                 CC · {track ? langName(track.lang) : v.subtitles.length === 0 ? "none" : "Off"}
@@ -164,12 +166,7 @@ export default function WatchPage() {
           </div>
           {desc && (
             <div className="rounded-[14px] bg-raised-2 p-4 text-[14px] font-medium leading-[1.5] text-ink-2">
-              <span className={expanded ? "whitespace-pre-wrap" : "line-clamp-4 whitespace-pre-wrap"}>{desc}</span>{" "}
-              {long && (
-                <button className="font-bold text-accent" onClick={() => setExpanded((e) => !e)}>
-                  {expanded ? "Show less" : "Show more"}
-                </button>
-              )}
+              <span className="whitespace-pre-wrap">{desc}</span>
             </div>
           )}
           <Chapters chapters={chapters} activeIndex={activeChapter} onSeek={onSeekChapter} />

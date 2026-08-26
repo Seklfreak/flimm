@@ -12,7 +12,7 @@ import (
 )
 
 const listPinnedPlaylists = `-- name: ListPinnedPlaylists :many
-SELECT user_id, playlist_id, position, created_at, pinned, audio_only FROM playlist_settings
+SELECT user_id, playlist_id, position, created_at, pinned, music FROM playlist_settings
 WHERE user_id = $1 AND pinned
 ORDER BY position, created_at
 `
@@ -32,7 +32,7 @@ func (q *Queries) ListPinnedPlaylists(ctx context.Context, userID uuid.UUID) ([]
 			&i.Position,
 			&i.CreatedAt,
 			&i.Pinned,
-			&i.AudioOnly,
+			&i.Music,
 		); err != nil {
 			return nil, err
 		}
@@ -45,7 +45,7 @@ func (q *Queries) ListPinnedPlaylists(ctx context.Context, userID uuid.UUID) ([]
 }
 
 const listPlaylistSettings = `-- name: ListPlaylistSettings :many
-SELECT user_id, playlist_id, position, created_at, pinned, audio_only FROM playlist_settings WHERE user_id = $1
+SELECT user_id, playlist_id, position, created_at, pinned, music FROM playlist_settings WHERE user_id = $1
 `
 
 func (q *Queries) ListPlaylistSettings(ctx context.Context, userID uuid.UUID) ([]PlaylistSetting, error) {
@@ -63,7 +63,7 @@ func (q *Queries) ListPlaylistSettings(ctx context.Context, userID uuid.UUID) ([
 			&i.Position,
 			&i.CreatedAt,
 			&i.Pinned,
-			&i.AudioOnly,
+			&i.Music,
 		); err != nil {
 			return nil, err
 		}
@@ -76,7 +76,7 @@ func (q *Queries) ListPlaylistSettings(ctx context.Context, userID uuid.UUID) ([
 }
 
 const pruneEmptyPlaylistSettings = `-- name: PruneEmptyPlaylistSettings :exec
-DELETE FROM playlist_settings WHERE user_id = $1 AND NOT pinned AND NOT audio_only
+DELETE FROM playlist_settings WHERE user_id = $1 AND NOT pinned AND NOT music
 `
 
 // A row with nothing set is noise; drop it so the table only holds intent.
@@ -85,25 +85,25 @@ func (q *Queries) PruneEmptyPlaylistSettings(ctx context.Context, userID uuid.UU
 	return err
 }
 
-const setPlaylistAudioOnly = `-- name: SetPlaylistAudioOnly :exec
-INSERT INTO playlist_settings (user_id, playlist_id, audio_only, position)
+const setPlaylistMusic = `-- name: SetPlaylistMusic :exec
+INSERT INTO playlist_settings (user_id, playlist_id, music, position)
 VALUES (
     $1,
     $2,
     $3,
     COALESCE((SELECT max(position) + 1 FROM playlist_settings WHERE user_id = $1), 0)
 )
-ON CONFLICT (user_id, playlist_id) DO UPDATE SET audio_only = EXCLUDED.audio_only
+ON CONFLICT (user_id, playlist_id) DO UPDATE SET music = EXCLUDED.music
 `
 
-type SetPlaylistAudioOnlyParams struct {
+type SetPlaylistMusicParams struct {
 	UserID     uuid.UUID `json:"user_id"`
 	PlaylistID string    `json:"playlist_id"`
-	AudioOnly  bool      `json:"audio_only"`
+	Music      bool      `json:"music"`
 }
 
-func (q *Queries) SetPlaylistAudioOnly(ctx context.Context, arg SetPlaylistAudioOnlyParams) error {
-	_, err := q.db.Exec(ctx, setPlaylistAudioOnly, arg.UserID, arg.PlaylistID, arg.AudioOnly)
+func (q *Queries) SetPlaylistMusic(ctx context.Context, arg SetPlaylistMusicParams) error {
+	_, err := q.db.Exec(ctx, setPlaylistMusic, arg.UserID, arg.PlaylistID, arg.Music)
 	return err
 }
 

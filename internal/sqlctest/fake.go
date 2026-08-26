@@ -34,7 +34,7 @@ type FakeQuerier struct {
 	ListPlaylistSettingsFn       func(context.Context, uuid.UUID) ([]sqlc.PlaylistSetting, error)
 	ListWatchEventsForVideosFn   func(context.Context, sqlc.ListWatchEventsForVideosParams) ([]sqlc.WatchEvent, error)
 	PruneEmptyPlaylistSettingsFn func(context.Context, uuid.UUID) error
-	SetPlaylistAudioOnlyFn       func(context.Context, sqlc.SetPlaylistAudioOnlyParams) error
+	SetPlaylistMusicFn           func(context.Context, sqlc.SetPlaylistMusicParams) error
 	SetPlaylistPinnedFn          func(context.Context, sqlc.SetPlaylistPinnedParams) error
 	NextFeedChannelPositionFn    func(context.Context, uuid.UUID) (int32, error)
 	NextFeedPositionFn           func(context.Context, uuid.UUID) (int32, error)
@@ -168,8 +168,8 @@ func (f *FakeQuerier) PruneEmptyPlaylistSettings(ctx context.Context, userID uui
 	return f.PruneEmptyPlaylistSettingsFn(ctx, userID)
 }
 
-func (f *FakeQuerier) SetPlaylistAudioOnly(ctx context.Context, arg sqlc.SetPlaylistAudioOnlyParams) error {
-	return f.SetPlaylistAudioOnlyFn(ctx, arg)
+func (f *FakeQuerier) SetPlaylistMusic(ctx context.Context, arg sqlc.SetPlaylistMusicParams) error {
+	return f.SetPlaylistMusicFn(ctx, arg)
 }
 
 func (f *FakeQuerier) SetPlaylistPinned(ctx context.Context, arg sqlc.SetPlaylistPinnedParams) error {
