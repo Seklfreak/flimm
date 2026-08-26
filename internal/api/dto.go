@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"time"
 
 	"github.com/Seklfreak/archive-client/internal/db/sqlc"
@@ -159,21 +160,24 @@ type HistoryEntry struct {
 // ---- prefs ----
 
 type Prefs struct {
-	Autoplay                bool    `json:"autoplay"`
-	PlaybackSpeed           float64 `json:"playback_speed"`
-	SubtitleLang            *string `json:"subtitle_lang"`
-	SubtitleSize            string  `json:"subtitle_size"`
-	SkipSponsors            bool    `json:"skip_sponsors"`
-	EverythingSort          string  `json:"everything_sort"`
-	EverythingHideSeen      bool    `json:"everything_hide_seen"`
-	EverythingIncludeShorts bool    `json:"everything_include_shorts"`
-	Theme                   string  `json:"theme"`
+	Autoplay      bool    `json:"autoplay"`
+	PlaybackSpeed float64 `json:"playback_speed"`
+	// SubtitleLang is a language code, or "off" when the viewer turned
+	// subtitles off. Defaults to English so archived CC plays by default.
+	SubtitleLang            string `json:"subtitle_lang"`
+	SubtitleSize            string `json:"subtitle_size"`
+	SkipSponsors            bool   `json:"skip_sponsors"`
+	EverythingSort          string `json:"everything_sort"`
+	EverythingHideSeen      bool   `json:"everything_hide_seen"`
+	EverythingIncludeShorts bool   `json:"everything_include_shorts"`
+	Theme                   string `json:"theme"`
 }
 
 func defaultPrefs() Prefs {
 	return Prefs{
 		Autoplay:           true,
 		PlaybackSpeed:      1.0,
+		SubtitleLang:       defaultSubtitleLang,
 		SubtitleSize:       "medium",
 		SkipSponsors:       true,
 		EverythingSort:     "newest",
@@ -193,7 +197,20 @@ var (
 	}
 )
 
+// subtitleOff is the explicit "no subtitles" value for SubtitleLang. It has to
+// be a distinct value rather than empty/null so that turning subtitles off is
+// told apart from a pref that was never set (which gets the default).
+const (
+	subtitleOff         = "off"
+	defaultSubtitleLang = "en"
+)
+
+var validSubtitleLang = regexp.MustCompile(`^[A-Za-z]{2,8}(-[A-Za-z0-9]{1,8})*$`)
+
 func (p Prefs) validate() error {
+	if p.SubtitleLang != subtitleOff && !validSubtitleLang.MatchString(p.SubtitleLang) {
+		return fmt.Errorf("invalid subtitle_lang")
+	}
 	if p.PlaybackSpeed <= 0 || p.PlaybackSpeed > 4 {
 		return fmt.Errorf("playback_speed must be in (0, 4]")
 	}
@@ -215,6 +232,11 @@ func parsePrefs(raw []byte) Prefs {
 	if len(raw) > 0 {
 		_ = json.Unmarshal(raw, &p)
 	}
+	// Rows written before subtitles defaulted to English stored null/"" here;
+	// treat those as "never chose" so they get the default.
+	if p.SubtitleLang == "" {
+		p.SubtitleLang = defaultSubtitleLang
+	}
 	if p.validate() != nil {
 		d := defaultPrefs()
 		if !validSubtitleSizes[p.SubtitleSize] {
@@ -228,6 +250,9 @@ func parsePrefs(raw []byte) Prefs {
 		}
 		if p.PlaybackSpeed <= 0 || p.PlaybackSpeed > 4 {
 			p.PlaybackSpeed = d.PlaybackSpeed
+		}
+		if p.SubtitleLang != subtitleOff && !validSubtitleLang.MatchString(p.SubtitleLang) {
+			p.SubtitleLang = d.SubtitleLang
 		}
 	}
 	return p

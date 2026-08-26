@@ -210,7 +210,7 @@ func TestPrefsPatch(t *testing.T) {
 		t.Fatalf("status = %d: %s", rec.Code, rec.Body.String())
 	}
 	p := decode[Prefs](t, rec)
-	if p.Theme != "dark" || p.SubtitleLang == nil || *p.SubtitleLang != "en" || p.PlaybackSpeed != 1.5 || !p.Autoplay {
+	if p.Theme != "dark" || p.SubtitleLang != "en" || p.PlaybackSpeed != 1.5 || !p.Autoplay {
 		t.Errorf("prefs = %+v", p)
 	}
 	if rec := do(t, h, http.MethodPatch, "/api/v1/me/prefs", `{"theme":"neon"}`); rec.Code != http.StatusBadRequest {

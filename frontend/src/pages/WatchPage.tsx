@@ -6,7 +6,7 @@ import { invalidateWatchState, keys, useFeeds, usePrefs, useSetWatched, useUpdat
 import { fmtDuration, plural, relativeDay } from "@/lib/format";
 import { Avatar, CheckIcon, ErrorState, Spinner, Toggle } from "@/components/ui";
 import { Thumb, watchHref } from "@/components/VideoCard";
-import { Player, langName, pickTrack } from "@/player/Player";
+import { Player, SUBTITLE_OFF, langName, pickTrack } from "@/player/Player";
 import { AddToPlaylist } from "@/player/AddToPlaylist";
 
 export default function WatchPage() {
@@ -100,7 +100,7 @@ export default function WatchPage() {
                 {v.watched ? "Seen" : "Mark seen"}
               </button>
               <AddToPlaylist videoId={v.id} memberOf={v.playlists} />
-              <button className="btn" onClick={() => onPrefs({ subtitle_lang: track ? null : (v.subtitles[0]?.lang ?? null) })} disabled={v.subtitles.length === 0}>
+              <button className="btn" onClick={() => onPrefs({ subtitle_lang: track ? SUBTITLE_OFF : (v.subtitles[0]?.lang ?? SUBTITLE_OFF) })} disabled={v.subtitles.length === 0}>
                 CC · {track ? langName(track.lang) : v.subtitles.length === 0 ? "none" : "Off"}
               </button>
             </div>
