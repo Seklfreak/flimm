@@ -1,0 +1,130 @@
+import Foundation
+
+public enum SubtitleSize: String, Codable, Sendable, CaseIterable {
+    case small
+    case medium
+    case large
+}
+
+public enum AppTheme: String, Codable, Sendable, CaseIterable {
+    case system
+    case light
+    case dark
+}
+
+/// Server-held preferences. They follow the account across web and native, so
+/// a client reads them rather than keeping its own copy.
+public struct Prefs: Codable, Sendable, Hashable {
+    /// Language code, or ``Prefs/subtitlesOff`` when the viewer turned
+    /// subtitles off. Defaults to `en`.
+    public static let subtitlesOff = "off"
+
+    public var autoplay: Bool
+    public var playbackSpeed: Double
+    public var subtitleLang: String
+    public var subtitleSize: SubtitleSize
+    public var skipSponsors: Bool
+    /// "Everything" is read-only as a feed, so its three options live here.
+    public var everythingSort: FeedSort
+    public var everythingHideSeen: Bool
+    public var everythingIncludeShorts: Bool
+    public var theme: AppTheme
+
+    public init(
+        autoplay: Bool = true,
+        playbackSpeed: Double = 1.0,
+        subtitleLang: String = "en",
+        subtitleSize: SubtitleSize = .medium,
+        skipSponsors: Bool = true,
+        everythingSort: FeedSort = .newest,
+        everythingHideSeen: Bool = true,
+        everythingIncludeShorts: Bool = false,
+        theme: AppTheme = .system
+    ) {
+        self.autoplay = autoplay
+        self.playbackSpeed = playbackSpeed
+        self.subtitleLang = subtitleLang
+        self.subtitleSize = subtitleSize
+        self.skipSponsors = skipSponsors
+        self.everythingSort = everythingSort
+        self.everythingHideSeen = everythingHideSeen
+        self.everythingIncludeShorts = everythingIncludeShorts
+        self.theme = theme
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let d = Prefs()
+        autoplay = try c.decode(.autoplay, or: d.autoplay)
+        playbackSpeed = try c.decode(.playbackSpeed, or: d.playbackSpeed)
+        subtitleLang = try c.decode(.subtitleLang, or: d.subtitleLang)
+        subtitleSize = try c.decode(.subtitleSize, or: d.subtitleSize)
+        skipSponsors = try c.decode(.skipSponsors, or: d.skipSponsors)
+        everythingSort = try c.decode(.everythingSort, or: d.everythingSort)
+        everythingHideSeen = try c.decode(.everythingHideSeen, or: d.everythingHideSeen)
+        everythingIncludeShorts = try c.decode(.everythingIncludeShorts, or: d.everythingIncludeShorts)
+        theme = try c.decode(.theme, or: d.theme)
+    }
+}
+
+/// Body for `PATCH /me/prefs`. Every field is optional: only what is set is
+/// sent, and the response is the full ``Prefs``.
+public struct PrefsPatch: Codable, Sendable, Hashable {
+    public var autoplay: Bool?
+    public var playbackSpeed: Double?
+    public var subtitleLang: String?
+    public var subtitleSize: SubtitleSize?
+    public var skipSponsors: Bool?
+    public var everythingSort: FeedSort?
+    public var everythingHideSeen: Bool?
+    public var everythingIncludeShorts: Bool?
+    public var theme: AppTheme?
+
+    public init(
+        autoplay: Bool? = nil,
+        playbackSpeed: Double? = nil,
+        subtitleLang: String? = nil,
+        subtitleSize: SubtitleSize? = nil,
+        skipSponsors: Bool? = nil,
+        everythingSort: FeedSort? = nil,
+        everythingHideSeen: Bool? = nil,
+        everythingIncludeShorts: Bool? = nil,
+        theme: AppTheme? = nil
+    ) {
+        self.autoplay = autoplay
+        self.playbackSpeed = playbackSpeed
+        self.subtitleLang = subtitleLang
+        self.subtitleSize = subtitleSize
+        self.skipSponsors = skipSponsors
+        self.everythingSort = everythingSort
+        self.everythingHideSeen = everythingHideSeen
+        self.everythingIncludeShorts = everythingIncludeShorts
+        self.theme = theme
+    }
+}
+
+/// `GET /me`.
+public struct Me: Codable, Sendable, Hashable, Identifiable {
+    public let id: String
+    public let name: String
+    public let email: String
+    public let isAdmin: Bool
+    public let prefs: Prefs
+
+    public init(id: String, name: String = "", email: String = "", isAdmin: Bool = false, prefs: Prefs = .init()) {
+        self.id = id
+        self.name = name
+        self.email = email
+        self.isAdmin = isAdmin
+        self.prefs = prefs
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        name = try c.decode(.name, or: "")
+        email = try c.decode(.email, or: "")
+        isAdmin = try c.decode(.isAdmin, or: false)
+        prefs = try c.decode(.prefs, or: Prefs())
+    }
+}

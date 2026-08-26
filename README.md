@@ -43,7 +43,7 @@ See [docs/design.md](docs/design.md) for the product model and
 flowchart LR
   subgraph clients [Clients]
     Web["Web app<br/>(React, embedded)"]
-    Native["iOS / iPadOS / tvOS<br/>(roadmap)"]
+    Native["iPhone · iPad · Apple TV<br/>(SwiftUI, one shared package)"]
   end
   subgraph flimm [Flimm container]
     API["Go backend<br/>/api/v1 · /media"]
@@ -64,6 +64,18 @@ Clients talk **only** to the Flimm backend. The backend validates OIDC
 tokens, keeps the state TubeArchivist lacks in Postgres, reads everything else
 live from TubeArchivist with a server-side API token, and reverse-proxies video
 (with range requests), subtitles and thumbnails.
+
+### Repository layout
+
+| Path | What |
+|---|---|
+| `cmd/server`, `internal/` | the Go backend — `/api/v1`, the `/media` proxy, the TubeArchivist client, migrations |
+| `frontend/` | the React web app, embedded into the binary |
+| `apple/` | the native iPhone/iPad and Apple TV apps and `FlimmKit`, the Swift package they share — see [docs/apple-apps.md](docs/apple-apps.md) and [apple/README.md](apple/README.md) |
+| `docs/` | [api.md](docs/api.md) (the normative contract), design, deploy, roadmap |
+
+The API contract and every client live in one repository on purpose: they
+change together.
 
 ## How it maps onto TubeArchivist
 
@@ -91,7 +103,10 @@ is in [docs/api.md](docs/api.md).
 - HTTPS in front of Flimm (the media cookie is `Secure`).
 - **ffmpeg** for audio-only playback. It ships in the container image; a local
   build needs it on `PATH` (or set `FFMPEG_PATH`). Without it everything else
-  works and only `/media/audio/*` fails.
+  works and only `/media/audio/*` fails. The WebM rendition browsers use is a
+  stream copy and nearly free; the `.m4a` (AAC) one native Apple clients need
+  is a real re-encode, so give the server a core to spare if they use it. See
+  [docs/api.md](docs/api.md#derived-media).
 
 ## Configuration
 
@@ -164,8 +179,14 @@ one service, the env vars above, HTTPS from your reverse proxy.
 
 ## Roadmap
 
-Native iOS / iPadOS / tvOS apps on the same API are next; see
-[docs/roadmap.md](docs/roadmap.md).
+The **native Apple apps** are built and live in `apple/` on the shared
+`FlimmKit` package: an iPhone/iPad app (tab bar and split view over one
+navigation model, a custom `AVPlayer` shell with resume, chapters,
+SponsorBlock, subtitles, Picture in Picture and audio-only playback) and an
+**Apple TV** app (focus-driven grids and `AVPlayerViewController`, signing in
+with the OIDC device authorization grant since tvOS has no browser). TestFlight
+is next — see [docs/roadmap.md](docs/roadmap.md) and the plan in
+[docs/apple-apps.md](docs/apple-apps.md).
 
 ## Notice
 

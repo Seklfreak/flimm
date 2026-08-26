@@ -84,3 +84,8 @@ is the iPhone app (tab bar: Feeds · Channels · Playlists · History, search in
 the header), iPad gets a persistent sidebar and a three-column grid, and Apple
 TV merges feeds and library into a top tab bar with a focus-driven,
 full-bleed player.
+
+The iPad's columns follow the window rather than the device: three across a
+full-width iPad, fewer in Split View, and a pane narrow enough (Slide Over)
+falls back to the phone's tab bar. Where the width allows it the player keeps
+the chapter list and up next beside the video instead of under it.

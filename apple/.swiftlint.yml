@@ -1,0 +1,44 @@
+# Focused Swift lint: keep the valuable default rules, relax the stylistic
+# noise that fights idiomatic short closure/loop variables. Run with
+# `swiftlint --strict` (also enforced in CI by .github/workflows/apple.yaml).
+included:
+  - Shared
+  - Flimm/Sources
+  - FlimmTV/Sources
+  - FlimmKit/Sources
+  - FlimmKit/Tests
+
+line_length:
+  warning: 140
+  ignores_comments: true
+  ignores_urls: true
+
+# Single-letter names are fine in tight closures (r, p, v, …).
+identifier_name:
+  min_length:
+    warning: 1
+    error: 1
+
+# Model types are named after the API objects in docs/api.md, and one of them
+# is `Me` (GET /me). Renaming it to please a length rule would break the
+# mapping the contract is read against.
+type_name:
+  min_length:
+    warning: 2
+    error: 2
+
+type_body_length:
+  warning: 400
+  error: 600
+
+file_length:
+  warning: 600
+  error: 900
+
+function_body_length:
+  warning: 80
+  error: 120
+
+disabled_rules:
+  - trailing_comma # trailing commas keep diffs clean
+  - optional_data_string_conversion
