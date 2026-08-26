@@ -107,6 +107,7 @@ All configuration is via environment variables.
 | `ADMIN_EMAILS` | no | comma-separated; admins see `/healthz` details |
 | `APP_NAME` | no | default `Archive` |
 | `PORT` | no | default `8080` |
+| `MIN_PLAY_SECONDS` | no | how long a video must play before it enters history and gets a resume position (default 15) |
 | `SENTRY_DSN` | no | backend error reporting |
 | `VITE_SENTRY_DSN` | no | frontend error reporting; a **build arg**, baked into the bundle at image build time (not a runtime env var) |
 | `LOG_LEVEL` | no | `debug`, `info` (default), `warn`, `error` |

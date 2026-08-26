@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 )
 
@@ -30,6 +31,11 @@ type Config struct {
 
 	// MediaTokenSecret signs the archive_media cookie.
 	MediaTokenSecret string
+	// MinPlaySeconds is how long a video must be played before it is recorded
+	// at all: below it, opening a video by accident leaves no history entry and
+	// no resume position. Completion always records, whatever the position.
+	MinPlaySeconds float64
+
 	// PublicURL is the browser-facing origin: the cookie's Secure flag follows
 	// its scheme and it is the CORS allowed origin.
 	PublicURL string
@@ -57,6 +63,7 @@ func Load() (*Config, error) {
 		AuthDisabled:     os.Getenv("AUTH_DISABLED") == "true",
 		AdminEmails:      splitCSV(os.Getenv("ADMIN_EMAILS")),
 		MediaTokenSecret: os.Getenv("MEDIA_TOKEN_SECRET"),
+		MinPlaySeconds:   envFloat("MIN_PLAY_SECONDS", 15),
 		PublicURL:        strings.TrimRight(os.Getenv("PUBLIC_URL"), "/"),
 		CORSOrigins:      splitCSV(os.Getenv("CORS_ORIGINS")),
 		AppName:          getenvDefault("APP_NAME", "Archive"),
@@ -157,4 +164,14 @@ func loadDotEnv(path string) {
 			_ = os.Setenv(key, val)
 		}
 	}
+}
+
+// envFloat reads a non-negative float from the environment, falling back to
+// def when unset or unparseable.
+func envFloat(key string, def float64) float64 {
+	v, err := strconv.ParseFloat(strings.TrimSpace(os.Getenv(key)), 64)
+	if err != nil || v < 0 {
+		return def
+	}
+	return v
 }

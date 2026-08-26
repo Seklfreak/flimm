@@ -45,6 +45,7 @@ WHERE user_id = sqlc.arg(user_id)
   AND (sqlc.arg(filter)::text = 'all'
        OR (sqlc.arg(filter)::text = 'seen' AND completed_at IS NOT NULL)
        OR (sqlc.arg(filter)::text = 'in_progress' AND completed_at IS NULL))
+  AND (completed_at IS NOT NULL OR position >= sqlc.arg(min_position)::float8)
   AND (sqlc.arg(q)::text = ''
        OR title ILIKE '%' || sqlc.arg(q)::text || '%'
        OR channel_name ILIKE '%' || sqlc.arg(q)::text || '%')
@@ -58,6 +59,7 @@ WHERE user_id = sqlc.arg(user_id)
   AND (sqlc.arg(filter)::text = 'all'
        OR (sqlc.arg(filter)::text = 'seen' AND completed_at IS NOT NULL)
        OR (sqlc.arg(filter)::text = 'in_progress' AND completed_at IS NULL))
+  AND (completed_at IS NOT NULL OR position >= sqlc.arg(min_position)::float8)
   AND (sqlc.arg(q)::text = ''
        OR title ILIKE '%' || sqlc.arg(q)::text || '%'
        OR channel_name ILIKE '%' || sqlc.arg(q)::text || '%');

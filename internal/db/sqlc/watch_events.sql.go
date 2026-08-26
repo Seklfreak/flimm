@@ -18,19 +18,26 @@ WHERE user_id = $1
   AND ($2::text = 'all'
        OR ($2::text = 'seen' AND completed_at IS NOT NULL)
        OR ($2::text = 'in_progress' AND completed_at IS NULL))
-  AND ($3::text = ''
-       OR title ILIKE '%' || $3::text || '%'
-       OR channel_name ILIKE '%' || $3::text || '%')
+  AND (completed_at IS NOT NULL OR position >= $3::float8)
+  AND ($4::text = ''
+       OR title ILIKE '%' || $4::text || '%'
+       OR channel_name ILIKE '%' || $4::text || '%')
 `
 
 type CountHistoryParams struct {
-	UserID uuid.UUID `json:"user_id"`
-	Filter string    `json:"filter"`
-	Q      string    `json:"q"`
+	UserID      uuid.UUID `json:"user_id"`
+	Filter      string    `json:"filter"`
+	MinPosition float64   `json:"min_position"`
+	Q           string    `json:"q"`
 }
 
 func (q *Queries) CountHistory(ctx context.Context, arg CountHistoryParams) (int64, error) {
-	row := q.db.QueryRow(ctx, countHistory, arg.UserID, arg.Filter, arg.Q)
+	row := q.db.QueryRow(ctx, countHistory,
+		arg.UserID,
+		arg.Filter,
+		arg.MinPosition,
+		arg.Q,
+	)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -89,25 +96,28 @@ WHERE user_id = $1
   AND ($2::text = 'all'
        OR ($2::text = 'seen' AND completed_at IS NOT NULL)
        OR ($2::text = 'in_progress' AND completed_at IS NULL))
-  AND ($3::text = ''
-       OR title ILIKE '%' || $3::text || '%'
-       OR channel_name ILIKE '%' || $3::text || '%')
+  AND (completed_at IS NOT NULL OR position >= $3::float8)
+  AND ($4::text = ''
+       OR title ILIKE '%' || $4::text || '%'
+       OR channel_name ILIKE '%' || $4::text || '%')
 ORDER BY last_played_at DESC
-LIMIT $5 OFFSET $4
+LIMIT $6 OFFSET $5
 `
 
 type ListHistoryParams struct {
-	UserID     uuid.UUID `json:"user_id"`
-	Filter     string    `json:"filter"`
-	Q          string    `json:"q"`
-	PageOffset int32     `json:"page_offset"`
-	PageLimit  int32     `json:"page_limit"`
+	UserID      uuid.UUID `json:"user_id"`
+	Filter      string    `json:"filter"`
+	MinPosition float64   `json:"min_position"`
+	Q           string    `json:"q"`
+	PageOffset  int32     `json:"page_offset"`
+	PageLimit   int32     `json:"page_limit"`
 }
 
 func (q *Queries) ListHistory(ctx context.Context, arg ListHistoryParams) ([]WatchEvent, error) {
 	rows, err := q.db.Query(ctx, listHistory,
 		arg.UserID,
 		arg.Filter,
+		arg.MinPosition,
 		arg.Q,
 		arg.PageOffset,
 		arg.PageLimit,

@@ -468,6 +468,20 @@ func (s *Server) postProgress(w http.ResponseWriter, r *http.Request) {
 		req.Position = min(req.Position, float64(duration))
 	}
 	watched := isComplete(req.Position, duration)
+	// Below the minimum play time nothing is recorded, so a video opened by
+	// accident leaves no history entry and no resume position. An event that
+	// already exists keeps updating, and completion always records.
+	if !watched && req.Position < s.minPlaySeconds {
+		_, err := s.q.GetWatchEvent(r.Context(), sqlc.GetWatchEventParams{UserID: uid, VideoID: id})
+		switch {
+		case errors.Is(err, pgx.ErrNoRows):
+			writeJSON(w, http.StatusOK, map[string]any{"position": req.Position, "watched": false})
+			return
+		case err != nil:
+			s.writeDBError(w, "load watch state", err)
+			return
+		}
+	}
 	ev, err := s.q.UpsertProgress(r.Context(), sqlc.UpsertProgressParams{
 		UserID:      uid,
 		VideoID:     id,

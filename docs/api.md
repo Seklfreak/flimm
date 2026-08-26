@@ -190,7 +190,7 @@ Prefs:
 | GET | `/videos/{id}/similar` | VideoSummary[] (TA similar) |
 | GET | `/videos/{id}/comments` | TA comments passthrough |
 | GET | `/videos/{id}/chapters` | chapter markers for the scrubber (see below); cached per video |
-| POST | `/videos/{id}/progress` | `{ "position": 561 }` — heartbeat. Upserts watch_event; writes TA `/video/{id}/progress/`; at ≥90% (or ≤30 s remaining) marks watched. Returns `{ "position", "watched" }` |
+| POST | `/videos/{id}/progress` | `{ "position": 561 }` — heartbeat. Upserts watch_event; writes TA `/video/{id}/progress/`; at ≥90% (or ≤30 s remaining) marks watched. Returns `{ "position", "watched" }`. **Nothing is recorded below `MIN_PLAY_SECONDS`** unless the video completes or an event already exists — see below |
 | POST | `/videos/{id}/watched` | `{ "watched": true\|false }` — writes TA `/watched/`; true completes the watch_event, false clears position and TA progress |
 | DELETE | `/videos/{id}/progress` | "Start over": position → 0, TA progress deleted, 204 |
 
@@ -232,8 +232,26 @@ Clients treat an empty list as "no chapter UI", never as an error.
 ### History
 | Method | Path | Notes |
 |---|---|---|
-| GET | `/history` | query `filter=all\|in_progress\|seen`, `q` (title/channel substring), paged HistoryEntry, newest first |
+| GET | `/history` | query `filter=all\|in_progress\|seen`, `q` (title/channel substring), paged HistoryEntry, newest first. Entries below `MIN_PLAY_SECONDS` that never completed are excluded |
 | DELETE | `/history/{entry_id}` | hides the entry (soft delete), 204; does not change watched state |
+
+#### Minimum play time
+
+A video opened by accident should leave no trace, so a watch event is only
+created once `MIN_PLAY_SECONDS` (default 15) of playback is reported. Below
+that the heartbeat is accepted and echoed but nothing is written — no history
+entry, no resume position, and no progress pushed to TubeArchivist.
+
+Two exceptions keep the rule from losing real views:
+
+- **Completion always records**, so a video shorter than the threshold can
+  still reach history.
+- **An existing event keeps updating**, so scrubbing back to the start of a
+  video you have already watched moves the position instead of orphaning it.
+
+`GET /history` additionally filters out never-completed entries below the
+threshold, so entries written before the threshold existed disappear from the
+list without being deleted.
 
 ### Search
 `GET /search?q=…&scope=all|titles|subtitles|channels|playlists&unseen=true&feed=<id>`
@@ -295,6 +313,7 @@ tested against a fake.
 | `ADMIN_EMAILS` | no | comma list; admins see `/healthz` details |
 | `MEDIA_TOKEN_SECRET` | yes | HMAC secret for the media cookie |
 | `PUBLIC_URL` | yes | for cookie/CORS |
+| `MIN_PLAY_SECONDS` | no | seconds of playback before a video is recorded; default 15 |
 | `APP_NAME` | no | default `Archive` |
 | `PORT` | no | default 8080 |
 | `SENTRY_DSN` | no | |
