@@ -68,6 +68,18 @@
       "depNameTemplate": "node",
       "datasourceTemplate": "node-version",
       "versioningTemplate": "node"
+    },
+    {
+      "customType": "regex",
+      "description": "Swift package dependencies live in apple/project.yml (xcodegen input), which no built-in manager reads.",
+      "managerFilePatterns": [
+        "/^apple/project\\.yml$/"
+      ],
+      "matchStrings": [
+        "url: https://github\\.com/(?<depName>[\\w.-]+/[\\w.-]+)\\s+from: (?<currentValue>\\d+\\.\\d+\\.\\d+)"
+      ],
+      "datasourceTemplate": "github-releases",
+      "versioningTemplate": "semver"
     }
   ]
 }

@@ -1,0 +1,66 @@
+name: Apple
+
+# The iOS/iPadOS (and later tvOS) clients under apple/. Separate from
+# test.yaml so the Go and web jobs keep running on the fast runners and a
+# macOS runner is only spent when Apple code actually changes.
+on:
+  pull_request:
+    paths:
+      - "apple/**"
+      - ".github/workflows/apple.yaml"
+  push:
+    branches: [main]
+    paths:
+      - "apple/**"
+      - ".github/workflows/apple.yaml"
+
+jobs:
+  build:
+    # macos-26 for the iOS 26 SDK.
+    runs-on: macos-26
+    defaults:
+      run:
+        working-directory: apple
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Tooling
+        run: |
+          brew install xcodegen swiftlint
+          xcodebuild -version
+
+      - name: Generate project
+        run: |
+          # Placeholder secrets: enough to compile. Real values are injected
+          # as build settings only in the TestFlight archive.
+          cp Config/Secrets.example.xcconfig Config/Secrets.xcconfig
+          xcodegen generate
+
+      - name: SwiftLint
+        run: swiftlint lint --strict
+
+      # FlimmKit is pure Foundation, so the suite runs on the host toolchain —
+      # no simulator boot needed, and failures point straight at the package.
+      - name: FlimmKit tests
+        working-directory: apple/FlimmKit
+        run: swift test
+
+      - name: Build (iOS Simulator, unsigned)
+        run: |
+          SIM=$(xcrun simctl list devices available -j \
+            | python3 -c "import sys,json; d=json.load(sys.stdin)['devices']; print(next(x['udid'] for r in d.values() for x in r if 'iPhone' in x['name']))")
+          echo "Using simulator $SIM"
+          xcodebuild build \
+            -project Flimm.xcodeproj -scheme Flimm \
+            -destination "id=$SIM" \
+            CODE_SIGNING_ALLOWED=NO
+
+      # `generic/platform` rather than a device id: the runner's tvOS runtime
+      # may have no Apple TV simulator created, and the TV target has no
+      # device-specific layout to be worth booting one for.
+      - name: Build (tvOS Simulator, unsigned)
+        run: |
+          xcodebuild build \
+            -project Flimm.xcodeproj -scheme FlimmTV \
+            -destination 'generic/platform=tvOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO

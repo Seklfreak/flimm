@@ -1,0 +1,138 @@
+name: Flimm
+options:
+  bundleIdPrefix: dev.winktech
+  deploymentTarget:
+    iOS: "17.0"
+    tvOS: "17.0"
+  createIntermediateGroups: true
+packages:
+  # Everything that is not UI — models, API client, auth, playback state —
+  # lives in this local package so the (later) iPadOS and tvOS targets share
+  # it verbatim. See docs/apple-apps.md.
+  FlimmKit:
+    path: FlimmKit
+  Sentry:
+    url: https://github.com/getsentry/sentry-cocoa
+    from: 9.26.0
+configFiles:
+  Debug: Config/Secrets.xcconfig
+  Release: Config/Secrets.xcconfig
+targets:
+  Flimm:
+    type: application
+    platform: iOS
+    sources:
+      # Platform-neutral app code — the model, paging, formatting, the
+      # palette and authenticated images — shared verbatim with FlimmTV.
+      # Anything that is *not* UI belongs in FlimmKit instead.
+      - Shared
+      - Flimm/Sources
+      - Flimm/Assets.xcassets
+    dependencies:
+      - package: FlimmKit
+        product: FlimmKit
+      - package: Sentry
+        product: Sentry
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.winktech.flimm
+        # Paid Developer Program team — required for TestFlight distribution.
+        # Comes from Config/Secrets.xcconfig so the repo carries no team id.
+        DEVELOPMENT_TEAM: $(DEVELOPMENT_TEAM)
+        CODE_SIGN_STYLE: Automatic
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        MARKETING_VERSION: 1.0.0
+        CURRENT_PROJECT_VERSION: 1
+        # 1,2 = iPhone and iPad: the iPad client is the same target with a
+        # different navigation container, not a second app.
+        TARGETED_DEVICE_FAMILY: "1,2"
+      configs:
+        # Manual signing for Release/archives, scoped to the app target only —
+        # passing these on the xcodebuild command line applies them to SPM
+        # package targets too, which refuse provisioning profiles. Debug (what
+        # Xcode runs locally) stays on automatic signing.
+        Release:
+          CODE_SIGN_STYLE: Manual
+          CODE_SIGN_IDENTITY: Apple Distribution
+          PROVISIONING_PROFILE_SPECIFIER: Flimm App Store
+    info:
+      path: Flimm/Info.plist
+      properties:
+        CFBundleDisplayName: Flimm
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        UILaunchScreen: {}
+        ITSAppUsesNonExemptEncryption: false
+        # Split View and Slide Over. The layout switches on the horizontal size
+        # class, which iPad multitasking flips mid-flow, so the app has to be
+        # willing to be resized at all.
+        UIRequiresFullScreen: false
+        SENTRY_DSN: $(SENTRY_DSN)
+        # Audio-only playback of music playlists keeps running with the screen
+        # locked; this is what makes that mode worth having on a phone.
+        UIBackgroundModes:
+          - audio
+        # OIDC redirect target. The provider must allow
+        # dev.winktech.flimm://auth as a native redirect URI — a deployment-side
+        # configuration step the app surfaces verbatim when sign-in fails.
+        CFBundleURLTypes:
+          - CFBundleTypeRole: Editor
+            CFBundleURLName: dev.winktech.flimm
+            CFBundleURLSchemes:
+              - dev.winktech.flimm
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+
+  FlimmTV:
+    type: application
+    platform: tvOS
+    sources:
+      - Shared
+      - FlimmTV/Sources
+      - FlimmTV/Assets.xcassets
+    dependencies:
+      - package: FlimmKit
+        product: FlimmKit
+      - package: Sentry
+        product: Sentry
+    settings:
+      base:
+        # A separate record from the phone app: tvOS is its own platform in
+        # App Store Connect, and the two ship on their own schedules.
+        PRODUCT_BUNDLE_IDENTIFIER: dev.winktech.flimm.tv
+        DEVELOPMENT_TEAM: $(DEVELOPMENT_TEAM)
+        CODE_SIGN_STYLE: Automatic
+        # tvOS icons are a layered brand-assets bundle, not an app icon set.
+        ASSETCATALOG_COMPILER_APPICON_NAME: App Icon & Top Shelf Image
+        MARKETING_VERSION: 1.0.0
+        CURRENT_PROJECT_VERSION: 1
+        # 3 = Apple TV.
+        TARGETED_DEVICE_FAMILY: "3"
+      configs:
+        Release:
+          CODE_SIGN_STYLE: Manual
+          CODE_SIGN_IDENTITY: Apple Distribution
+          PROVISIONING_PROFILE_SPECIFIER: Flimm TV App Store
+    info:
+      path: FlimmTV/Info.plist
+      properties:
+        CFBundleDisplayName: Flimm
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        ITSAppUsesNonExemptEncryption: false
+        SENTRY_DSN: $(SENTRY_DSN)
+        # Music playlists play as audio only here too, and a TV keeps playing
+        # them with the screen saver up.
+        UIBackgroundModes:
+          - audio
+        # No CFBundleURLTypes: tvOS has no ASWebAuthenticationSession and no
+        # browser, so sign-in is the OIDC device authorization grant and no
+        # redirect ever comes back to the app.
+        UIUserInterfaceStyle: Automatic
