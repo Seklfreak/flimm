@@ -143,9 +143,6 @@ What is still missing:
   and `Flimm TV App Store` profiles). The upload needs an app record per
   platform in App Store Connect, which the API cannot create; the workflow
   stays dormant until `APP_STORE_CONNECT_KEY_ID` is set.
-- **Real app icons.** Both catalogues are structural placeholders: the iOS
-  app icon set and the tvOS App Icon & Top Shelf brand assets have the right
-  shape and no artwork.
 - **The codec question is settled in code but not on hardware.** The player
   reads `streams` and refuses with a named codec rather than spinning, and
   offers audio-only whenever the server reports `audio_aac_url` for the video
