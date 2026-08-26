@@ -18,6 +18,7 @@ export const keys = {
   channelPlaylists: (id: string) => ["channels", id, "playlists"] as const,
   video: (id: string) => ["videos", id] as const,
   upNext: (id: string, ctx: Record<string, string | undefined>) => ["videos", id, "up-next", ctx] as const,
+  nav: (id: string, ctx: Record<string, string | undefined>) => ["videos", id, "nav", ctx] as const,
   chapters: (id: string) => ["videos", id, "chapters"] as const,
   playlists: (kind: string | undefined) => ["playlists", kind ?? "all"] as const,
   playlist: (id: string) => ["playlists", id] as const,

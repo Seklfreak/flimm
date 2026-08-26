@@ -347,23 +347,60 @@ func (s *Server) videoComments(w http.ResponseWriter, r *http.Request) {
 
 // upNext returns what plays after the video in the given context (feed,
 // playlist or channel), falling back to TA's similar videos.
+// contextList resolves the ordered list the player is playing through — the
+// playlist, feed or channel named in the query. Empty when the video was
+// opened without a context.
+func (s *Server) contextList(r *http.Request, uid uuid.UUID) ([]VideoSummary, error) {
+	q := r.URL.Query()
+	switch {
+	case q.Get("feed") != "":
+		return s.upNextInFeed(r, uid, q.Get("feed"))
+	case q.Get("playlist") != "":
+		return s.upNextInPlaylist(r, uid, q.Get("playlist"))
+	case q.Get("channel") != "":
+		return s.buildList(r.Context(), uid, listOpts{ChannelIDs: []string{q.Get("channel")}, Sort: "newest", IncludeShorts: true})
+	}
+	return nil, nil
+}
+
+// videoNav gives the player its previous / next neighbours in the current
+// context, so a playlist can be stepped through in both directions.
+func (s *Server) videoNav(w http.ResponseWriter, r *http.Request) {
+	uid := currentUserID(r.Context())
+	id := chi.URLParam(r, "id")
+	items, err := s.contextList(r, uid)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "not found")
+			return
+		}
+		s.writeTAError(w, "video nav", err)
+		return
+	}
+	out := NavResponse{Index: -1, Total: len(items)}
+	for i, it := range items {
+		if it.ID != id {
+			continue
+		}
+		out.Index = i
+		if i > 0 {
+			prev := items[i-1]
+			out.Previous = &prev
+		}
+		if i+1 < len(items) {
+			next := items[i+1]
+			out.Next = &next
+		}
+		break
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
 func (s *Server) upNext(w http.ResponseWriter, r *http.Request) {
 	const limit = 20
 	uid := currentUserID(r.Context())
 	id := chi.URLParam(r, "id")
-	q := r.URL.Query()
-	var (
-		items []VideoSummary
-		err   error
-	)
-	switch {
-	case q.Get("feed") != "":
-		items, err = s.upNextInFeed(r, uid, q.Get("feed"))
-	case q.Get("playlist") != "":
-		items, err = s.upNextInPlaylist(r, uid, q.Get("playlist"))
-	case q.Get("channel") != "":
-		items, err = s.buildList(r.Context(), uid, listOpts{ChannelIDs: []string{q.Get("channel")}, Sort: "newest", IncludeShorts: true})
-	}
+	items, err := s.contextList(r, uid)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeError(w, http.StatusNotFound, "not found")

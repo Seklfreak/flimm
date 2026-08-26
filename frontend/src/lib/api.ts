@@ -42,6 +42,15 @@ export interface SponsorSegment {
 
 export type ChaptersSource = "embedded" | "description" | "none";
 
+/** Where a video sits in the list the player is stepping through. */
+export interface NavResponse {
+  /** -1 when the video isn't in the context list. */
+  index: number;
+  total: number;
+  previous: VideoSummary | null;
+  next: VideoSummary | null;
+}
+
 export interface Chapter {
   start: number;
   end: number;
@@ -289,6 +298,8 @@ export const api = {
   video: (id: string) => req<Video>(`/videos/${id}`),
   upNext: (id: string, ctx: { feed?: string; playlist?: string; channel?: string }) =>
     req<VideoSummary[]>(`/videos/${id}/up-next${qs(ctx)}`),
+  nav: (id: string, ctx: { feed?: string; playlist?: string; channel?: string }) =>
+    req<NavResponse>(`/videos/${id}/nav${qs(ctx)}`),
   chapters: (id: string) => req<ChaptersResponse>(`/videos/${id}/chapters`),
   progress: (id: string, position: number) =>
     req<{ position: number; watched: boolean }>(`/videos/${id}/progress`, json("POST", { position })),

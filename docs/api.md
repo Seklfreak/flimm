@@ -187,12 +187,27 @@ Prefs:
 |---|---|---|
 | GET | `/videos/{id}` | Video detail |
 | GET | `/videos/{id}/up-next` | query `feed=<id>` or `playlist=<id>` or `channel=<id>`; returns next VideoSummary[] (max 20) in that context, falling back to `similar` |
+| GET | `/videos/{id}/nav` | same context query; `{ "index", "total", "previous", "next" }` for stepping through the list in both directions |
 | GET | `/videos/{id}/similar` | VideoSummary[] (TA similar) |
 | GET | `/videos/{id}/comments` | TA comments passthrough |
 | GET | `/videos/{id}/chapters` | chapter markers for the scrubber (see below); cached per video |
 | POST | `/videos/{id}/progress` | `{ "position": 561 }` — heartbeat. Upserts watch_event; writes TA `/video/{id}/progress/`; at ≥90% (or ≤30 s remaining) marks watched. Returns `{ "position", "watched" }`. **Nothing is recorded below `MIN_PLAY_SECONDS`** unless the video completes or an event already exists — see below |
 | POST | `/videos/{id}/watched` | `{ "watched": true\|false }` — writes TA `/watched/`; true completes the watch_event, false clears position and TA progress |
 | DELETE | `/videos/{id}/progress` | "Start over": position → 0, TA progress deleted, 204 |
+
+#### Nav
+
+```json
+{ "index": 8, "total": 14, "previous": VideoSummary|null, "next": VideoSummary|null }
+```
+
+The context is the same `feed` / `playlist` / `channel` query `up-next` takes,
+and the ordering is identical — `nav` is the same list, addressed by position
+rather than sliced. `previous` and `next` are `null` at the ends of the list
+(no wrap-around) and `index` is `-1` when the video isn't in the list at all,
+either because it was opened without a context or because it has dropped out
+of a "hide seen" feed since. Clients hide the step controls when there is no
+context, and disable a single button at the ends.
 
 #### Chapters
 

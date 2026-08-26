@@ -77,6 +77,16 @@ type VideoDetail struct {
 
 // Chapter is one scrubber marker. End is the next chapter's start, or the
 // video duration for the last one.
+// NavResponse positions a video inside the list the player is stepping
+// through. Index is -1 when the video isn't in that list (it was opened
+// without a context, or has since dropped out of a "hide seen" feed).
+type NavResponse struct {
+	Index    int           `json:"index"`
+	Total    int           `json:"total"`
+	Previous *VideoSummary `json:"previous"`
+	Next     *VideoSummary `json:"next"`
+}
+
 type Chapter struct {
 	Start float64 `json:"start"`
 	End   float64 `json:"end"`
