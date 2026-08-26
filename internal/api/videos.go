@@ -1,9 +1,12 @@
 package api
 
 import (
+	"cmp"
 	"context"
 	"errors"
+	"hash/fnv"
 	"net/http"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -352,15 +355,48 @@ func (s *Server) videoComments(w http.ResponseWriter, r *http.Request) {
 // opened without a context.
 func (s *Server) contextList(r *http.Request, uid uuid.UUID) ([]VideoSummary, error) {
 	q := r.URL.Query()
+	var (
+		items []VideoSummary
+		err   error
+	)
 	switch {
 	case q.Get("feed") != "":
-		return s.upNextInFeed(r, uid, q.Get("feed"))
+		items, err = s.upNextInFeed(r, uid, q.Get("feed"))
 	case q.Get("playlist") != "":
-		return s.upNextInPlaylist(r, uid, q.Get("playlist"))
+		items, err = s.upNextInPlaylist(r, uid, q.Get("playlist"))
 	case q.Get("channel") != "":
-		return s.buildList(r.Context(), uid, listOpts{ChannelIDs: []string{q.Get("channel")}, Sort: "newest", IncludeShorts: true})
+		items, err = s.buildList(r.Context(), uid, listOpts{ChannelIDs: []string{q.Get("channel")}, Sort: "newest", IncludeShorts: true})
+	default:
+		return nil, nil
 	}
-	return nil, nil
+	if err != nil {
+		return nil, err
+	}
+	if seed := q.Get("shuffle"); seed != "" {
+		shuffleBySeed(items, seed)
+	}
+	return items, nil
+}
+
+// shuffleBySeed orders items by hash(seed, video id) instead of permuting
+// positions. Two properties matter: the same seed always yields the same
+// order (so previous/next/autoplay agree across requests and reloads), and an
+// item appearing or disappearing — a playlist edit, a video newly marked seen
+// in a hide-seen feed — leaves the order of everything else untouched.
+func shuffleBySeed(items []VideoSummary, seed string) {
+	key := func(id string) uint64 {
+		h := fnv.New64a()
+		_, _ = h.Write([]byte(seed))
+		_, _ = h.Write([]byte{0})
+		_, _ = h.Write([]byte(id))
+		return h.Sum64()
+	}
+	slices.SortStableFunc(items, func(a, b VideoSummary) int {
+		if c := cmp.Compare(key(a.ID), key(b.ID)); c != 0 {
+			return c
+		}
+		return cmp.Compare(a.ID, b.ID) // ties: keep it deterministic
+	})
 }
 
 // videoNav gives the player its previous / next neighbours in the current
@@ -378,6 +414,10 @@ func (s *Server) videoNav(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	out := NavResponse{Index: -1, Total: len(items)}
+	if len(items) > 0 {
+		first := items[0]
+		out.First = &first
+	}
 	for i, it := range items {
 		if it.ID != id {
 			continue

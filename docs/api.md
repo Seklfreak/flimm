@@ -201,6 +201,9 @@ Prefs:
 { "index": 8, "total": 14, "previous": VideoSummary|null, "next": VideoSummary|null }
 ```
 
+`first` is the head of the list — the entry point for a shuffled run, so a
+client never has to derive the shuffled order itself.
+
 The context is the same `feed` / `playlist` / `channel` query `up-next` takes,
 and the ordering is identical — `nav` is the same list, addressed by position
 rather than sliced. `previous` and `next` are `null` at the ends of the list
@@ -208,6 +211,23 @@ rather than sliced. `previous` and `next` are `null` at the ends of the list
 either because it was opened without a context or because it has dropped out
 of a "hide seen" feed since. Clients hide the step controls when there is no
 context, and disable a single button at the ends.
+
+#### Shuffle
+
+Both `up-next` and `nav` accept `shuffle=<seed>`, an opaque string. The server
+orders the context list by `hash(seed, video id)` rather than permuting
+positions, which buys two properties the client depends on:
+
+- **Deterministic** — the same seed always yields the same order, so
+  previous/next, autoplay and the up-next panel agree with each other and
+  survive a reload or a shared link.
+- **Stable under change** — an item appearing or disappearing (a playlist
+  edit, a video newly marked seen in a hide-seen feed) leaves the order of
+  everything else untouched, so the running order doesn't scramble mid-play.
+
+There is no server-side shuffle state: the seed in the URL *is* the shuffle.
+Reshuffling means picking a new seed. A client starts a run by requesting
+`nav` with the seed and jumping to `first`.
 
 #### Chapters
 

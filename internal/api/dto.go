@@ -85,6 +85,9 @@ type NavResponse struct {
 	Total    int           `json:"total"`
 	Previous *VideoSummary `json:"previous"`
 	Next     *VideoSummary `json:"next"`
+	// First is the head of the context list, so a client can start a shuffled
+	// run without knowing the shuffled order itself.
+	First *VideoSummary `json:"first"`
 }
 
 type Chapter struct {

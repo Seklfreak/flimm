@@ -42,6 +42,18 @@ export interface SponsorSegment {
 
 export type ChaptersSource = "embedded" | "description" | "none";
 
+/**
+ * The list the player steps through. `shuffle` is an opaque seed: the server
+ * derives a stable order from it, so every client sharing the seed agrees on
+ * what comes next.
+ */
+export interface PlayContext {
+  feed?: string;
+  playlist?: string;
+  channel?: string;
+  shuffle?: string;
+}
+
 /** Where a video sits in the list the player is stepping through. */
 export interface NavResponse {
   /** -1 when the video isn't in the context list. */
@@ -49,6 +61,8 @@ export interface NavResponse {
   total: number;
   previous: VideoSummary | null;
   next: VideoSummary | null;
+  /** Head of the list — the entry point for a shuffled run. */
+  first: VideoSummary | null;
 }
 
 export interface Chapter {
@@ -249,7 +263,7 @@ const json = (method: string, body: unknown): RequestInit => ({
   body: JSON.stringify(body),
 });
 
-function qs(params: Record<string, string | number | boolean | undefined | null>): string {
+function qs<T extends object>(params: T): string {
   const p = new URLSearchParams();
   for (const [k, v] of Object.entries(params)) {
     if (v === undefined || v === null || v === "") continue;
@@ -296,10 +310,8 @@ export const api = {
   markChannelSeen: (id: string) => req<void>(`/channels/${id}/mark-seen`, { method: "POST" }),
 
   video: (id: string) => req<Video>(`/videos/${id}`),
-  upNext: (id: string, ctx: { feed?: string; playlist?: string; channel?: string }) =>
-    req<VideoSummary[]>(`/videos/${id}/up-next${qs(ctx)}`),
-  nav: (id: string, ctx: { feed?: string; playlist?: string; channel?: string }) =>
-    req<NavResponse>(`/videos/${id}/nav${qs(ctx)}`),
+  upNext: (id: string, ctx: PlayContext) => req<VideoSummary[]>(`/videos/${id}/up-next${qs(ctx)}`),
+  nav: (id: string, ctx: PlayContext) => req<NavResponse>(`/videos/${id}/nav${qs(ctx)}`),
   chapters: (id: string) => req<ChaptersResponse>(`/videos/${id}/chapters`),
   progress: (id: string, position: number) =>
     req<{ position: number; watched: boolean }>(`/videos/${id}/progress`, json("POST", { position })),
