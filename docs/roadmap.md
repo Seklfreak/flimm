@@ -28,8 +28,9 @@
 - **Native Apple apps** — iOS, iPadOS and tvOS in SwiftUI, sharing one Swift
   package (API client, models, playback state) and talking to the same
   `/api/v1` backend. Server URL is the only setup; OIDC settings come from
-  `GET /api/v1/config`. See [design.md](design.md#platforms) for the
-  per-platform layout.
+  `GET /api/v1/config`. **Plan: [apple-apps.md](apple-apps.md)** — read it
+  before starting; the codec question should be settled first. See
+  [design.md](design.md#platforms) for the per-platform layout.
 
 ## Ideas
 
