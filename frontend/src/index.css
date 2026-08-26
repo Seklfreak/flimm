@@ -217,18 +217,25 @@ a:hover {
   }
 }
 
-/* Native <track> cue styling per subtitle_size pref. */
+/* Native <track> cue styling per subtitle_size pref.
+   All three sizes need an explicit font-size: with no rule, cues fall through
+   to the browser default (5vh of the video box in Chrome), which reads
+   oversized in the inline player. em on ::cue is relative to that default, so
+   these scale correctly in fullscreen too. */
 video::cue {
-  background: rgba(0, 0, 0, 0.75);
+  background: rgba(0, 0, 0, 0.72);
   color: #fff;
   font-family: var(--font-sans);
   font-weight: 700;
 }
 video.cc-small::cue {
-  font-size: 0.8em;
+  font-size: 0.55em;
+}
+video.cc-medium::cue {
+  font-size: 0.7em;
 }
 video.cc-large::cue {
-  font-size: 1.35em;
+  font-size: 0.9em;
 }
 
 @utility no-scrollbar {
