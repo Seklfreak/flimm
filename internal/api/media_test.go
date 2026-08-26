@@ -252,3 +252,17 @@ func TestSPAFallback(t *testing.T) {
 		t.Errorf("api route fell through to SPA")
 	}
 }
+
+func TestTAMediaPath(t *testing.T) {
+	cases := map[string]string{
+		"/youtube/UCabc/vid.mp4":    "/media/UCabc/vid.mp4",
+		"/youtube/UCabc/vid.en.vtt": "/media/UCabc/vid.en.vtt",
+		"/media/UCabc/vid.mp4":      "/media/UCabc/vid.mp4",
+		"UCabc/vid.mp4":             "/media/UCabc/vid.mp4",
+	}
+	for in, want := range cases {
+		if got := taMediaPath(in); got != want {
+			t.Errorf("taMediaPath(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
