@@ -4,22 +4,70 @@
     "config:recommended",
     "group:allNonMajor"
   ],
-  "assignees": ["Seklfreak"],
+  "assignees": [
+    "Seklfreak"
+  ],
   "packageRules": [
     {
       "description": "Auto-merge non-major updates once the test workflow passes.",
-      "matchUpdateTypes": ["minor", "patch", "pin", "digest"],
+      "matchUpdateTypes": [
+        "minor",
+        "patch",
+        "pin",
+        "digest"
+      ],
       "automerge": true
     },
     {
       "description": "Major updates: open a PR but require manual review/merge.",
-      "matchUpdateTypes": ["major"],
+      "matchUpdateTypes": [
+        "major"
+      ],
       "automerge": false
     },
     {
-      "description": "Skip TypeScript 7.0.x: it ships no stable programmatic API, so typescript-eslint (peer typescript <6.1.0) can't run on it and the frontend install/lint breaks. The API is targeted for 7.1 — allow that through so a fresh PR reopens when it lands.",
-      "matchPackageNames": ["typescript"],
+      "description": "Skip TypeScript 7.0.x: it ships no stable programmatic API, so typescript-eslint (peer typescript <6.1.0) can't run on it and the frontend install/lint breaks. The API is targeted for 7.1 \u2014 allow that through so a fresh PR reopens when it lands.",
+      "matchPackageNames": [
+        "typescript"
+      ],
       "allowedVersions": "<7.0.0 || >=7.1.0"
+    },
+    {
+      "description": "Node is pinned in three places (Dockerfile, .nvmrc, setup-node). A split bump would leave CI building on a different major than the image, so bump them together.",
+      "matchPackageNames": [
+        "node",
+        "node/**"
+      ],
+      "groupName": "node"
+    }
+  ],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "golangci-lint is curl-installed in CI, so no built-in manager sees the pinned version.",
+      "managerFilePatterns": [
+        "/(^|/)\\.github/workflows/.*\\.ya?ml$/"
+      ],
+      "matchStrings": [
+        "-b \"\\$\\(go env GOPATH\\)/bin\" v(?<currentValue>\\d+\\.\\d+\\.\\d+)"
+      ],
+      "depNameTemplate": "golangci/golangci-lint",
+      "datasourceTemplate": "github-releases",
+      "extractVersionTemplate": "^v(?<version>.*)$",
+      "versioningTemplate": "semver"
+    },
+    {
+      "customType": "regex",
+      "description": "setup-node's node-version. Kept in one group with the Dockerfile node image and .nvmrc so all three move together.",
+      "managerFilePatterns": [
+        "/(^|/)\\.github/workflows/.*\\.ya?ml$/"
+      ],
+      "matchStrings": [
+        "node-version: \"(?<currentValue>\\d+)\""
+      ],
+      "depNameTemplate": "node",
+      "datasourceTemplate": "node-version",
+      "versioningTemplate": "node"
     }
   ]
 }
