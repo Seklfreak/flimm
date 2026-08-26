@@ -229,6 +229,12 @@ and `feed` filter the video results in the backend.
 
 Thumbnails are cacheable (`Cache-Control: private, max-age=86400`).
 
+The proxy rewrites `Content-Type` from the file extension when TA returns
+`application/octet-stream`, and sets `Accept-Ranges: bytes` on 200/206. TA's
+nginx declares a `types { text/vtt vtt; }` block on `/media/`, which replaces
+the default MIME map for that location, so `.mp4` would otherwise arrive as
+`application/octet-stream` and `<video>` refuses to decode it.
+
 ## Backend ↔ TubeArchivist mapping
 
 | Archive | TubeArchivist |
