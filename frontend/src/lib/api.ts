@@ -146,7 +146,8 @@ export interface Page<T> {
 export interface Prefs {
   autoplay: boolean;
   playback_speed: number;
-  subtitle_lang: string | null;
+  /** Language code, or "off" when the viewer turned subtitles off. Defaults to "en". */
+  subtitle_lang: string;
   subtitle_size: "small" | "medium" | "large";
   skip_sponsors: boolean;
   everything_sort: FeedSort;

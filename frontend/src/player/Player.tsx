@@ -54,7 +54,10 @@ export function Player({ video, prefs, startAt, onPrefs, onWatched, onStartOver,
     el.playbackRate = prefs.playback_speed || 1;
     const onMeta = () => {
       setDuration(el.duration || video.duration);
-      const resume = startAt ?? (!video.watched && video.position > 5 ? video.position : 0);
+      // Resume is the default action from every entry point — the card, the
+      // title and the Resume button all link here, so any saved position is
+      // honoured (matching the "Resume · m:ss" pill the card shows).
+      const resume = startAt ?? (!video.watched && video.position > 0 ? video.position : 0);
       if (resume > 0 && resume < (el.duration || video.duration) - 5) {
         el.currentTime = resume;
         if (startAt === undefined) setResumedFrom(resume);
@@ -105,7 +108,7 @@ export function Player({ video, prefs, startAt, onPrefs, onWatched, onStartOver,
     else void w.requestFullscreen?.();
   }, []);
   const toggleCC = useCallback(() => {
-    if (activeTrack) onPrefs({ subtitle_lang: null });
+    if (activeTrack) onPrefs({ subtitle_lang: SUBTITLE_OFF });
     else {
       const first = video.subtitles[0];
       if (first) onPrefs({ subtitle_lang: first.lang });
@@ -285,7 +288,7 @@ export function Player({ video, prefs, startAt, onPrefs, onWatched, onStartOver,
         <Popover anchor={ccAnchor} onClose={() => setMenu(null)} width={220}>
           <div className="pop">
             <span className="sec px-2.5 pb-1 pt-1.5 !text-muted-3">Subtitles</span>
-            <button className={`pop-item ${!activeTrack ? "on" : ""}`} onClick={() => onPrefs({ subtitle_lang: null })}>
+            <button className={`pop-item ${!activeTrack ? "on" : ""}`} onClick={() => onPrefs({ subtitle_lang: SUBTITLE_OFF })}>
               <span>Off</span>
               {!activeTrack && <CheckIcon size={14} />}
             </button>
@@ -326,9 +329,21 @@ export function Player({ video, prefs, startAt, onPrefs, onWatched, onStartOver,
   );
 }
 
+export const SUBTITLE_OFF = "off";
+
+// Resolve the preferred language to a track: exact match first (archived
+// before auto-generated), then the same base language ("en" matches "en-US").
 export function pickTrack(tracks: SubtitleTrack[], lang: string | null): SubtitleTrack | null {
-  if (!lang) return null;
-  return tracks.find((t) => t.lang === lang && t.source === "user") ?? tracks.find((t) => t.lang === lang) ?? null;
+  if (!lang || lang === SUBTITLE_OFF) return null;
+  const base = lang.split("-")[0].toLowerCase();
+  const sameBase = (t: SubtitleTrack) => t.lang.split("-")[0].toLowerCase() === base;
+  return (
+    tracks.find((t) => t.lang === lang && t.source === "user") ??
+    tracks.find((t) => t.lang === lang) ??
+    tracks.find((t) => sameBase(t) && t.source === "user") ??
+    tracks.find(sameBase) ??
+    null
+  );
 }
 
 export function trackLabel(t: SubtitleTrack): string {

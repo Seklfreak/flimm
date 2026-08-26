@@ -57,6 +57,11 @@ return 404 so existence isn't leaked. 502 when TA is unreachable, with
 Archive's `watch_events` table, falling back to TA's watched flag when Archive
 has no event.
 
+Any `position > 0` on an unwatched video means "in progress": the card shows a
+`Resume · m:ss` pill and **every** link to the player (thumbnail, title, Resume
+button) resumes from it. Clients must not require a `t=` parameter to resume —
+resume is the default action, and `t=` only exists to jump to a subtitle hit.
+
 ### Video (detail) — VideoSummary plus
 ```json
 {
@@ -147,7 +152,7 @@ Prefs:
 {
   "autoplay": true,
   "playback_speed": 1.0,
-  "subtitle_lang": "en" | null,        // null = off
+  "subtitle_lang": "en",               // language code, or "off"; defaults to "en"
   "subtitle_size": "small|medium|large",
   "skip_sponsors": true,
   "everything_sort": "newest", "everything_hide_seen": true, "everything_include_shorts": false,
