@@ -1,7 +1,8 @@
 // Package media derives and caches alternative renditions of archived videos.
 //
 // TubeArchivist stores one muxed file per video. Anything else a client needs —
-// audio only today, an Apple-compatible rendition later — is derived from that
+// two audio renditions today (Opus in WebM for browsers, AAC in MP4 for
+// AVFoundation), a compatible video rendition later — is derived from that
 // file on first request and cached on disk. Every entry can be rebuilt from
 // TubeArchivist, so losing the directory costs CPU and nothing else, which is
 // what lets the cache live on ephemeral storage.

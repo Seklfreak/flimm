@@ -59,14 +59,30 @@ type VideoPlaylistRef struct {
 	Count    int    `json:"count"`
 }
 
+// StreamInfo describes one source rendition TA muxed the video from. Native
+// clients use Codec to decide whether MediaURL is directly playable by
+// AVFoundation (H.264/AAC always is; VP9/AV1/Opus support is device-dependent).
+type StreamInfo struct {
+	Type    string `json:"type"` // video|audio
+	Codec   string `json:"codec"`
+	Width   int    `json:"width"`
+	Height  int    `json:"height"`
+	Bitrate int    `json:"bitrate"`
+}
+
 type VideoDetail struct {
 	VideoSummary
 	Description string `json:"description"`
 	Height      int    `json:"height"`
 	MediaURL    string `json:"media_url"`
 	// AudioURL is the derived audio-only rendition; see internal/media.
-	AudioURL     string             `json:"audio_url"`
+	AudioURL string `json:"audio_url"`
+	// AudioAACURL is the same audio as AAC in MP4, for players that cannot
+	// decode Opus in WebM (AVFoundation); a re-encode unless the source is
+	// already AAC.
+	AudioAACURL  string             `json:"audio_aac_url"`
 	YoutubeURL   string             `json:"youtube_url"`
+	Streams      []StreamInfo       `json:"streams"`
 	Subtitles    []SubtitleTrack    `json:"subtitles"`
 	Sponsorblock []SponsorSegment   `json:"sponsorblock"`
 	Stats        VideoStats         `json:"stats"`
