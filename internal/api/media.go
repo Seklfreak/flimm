@@ -12,6 +12,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/Seklfreak/flimm/internal/media"
+	"github.com/Seklfreak/flimm/internal/ta"
 )
 
 // proxyTo rewrites the request path to the TA path and streams the upstream
@@ -114,10 +115,41 @@ func (s *Server) mediaPlaylistThumb(w http.ResponseWriter, r *http.Request) {
 // filesystem or ffmpeg.
 var validMediaID = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
 
-// mediaAudio serves the audio-only rendition, deriving it on first request.
-// Once on disk it is served with http.ServeContent, which handles Range,
-// If-Range and 206 — so seeking and resume behave as they do for video.
+// mediaAudio serves the WebM (Opus) audio-only rendition.
 func (s *Server) mediaAudio(w http.ResponseWriter, r *http.Request) {
+	s.serveDerivedAudio(w, r, media.AudioVariant, media.AudioExt, media.AudioType,
+		func(_ *ta.Video, open media.SourceFunc) media.DeriveFunc {
+			return media.Audio(s.ffmpegPath, open)
+		})
+}
+
+// mediaAudioAAC serves the AAC/MP4 audio-only rendition, the one Apple clients
+// can decode. The source audio codec decides copy vs re-encode, so it is read
+// off the video document rather than probed.
+func (s *Server) mediaAudioAAC(w http.ResponseWriter, r *http.Request) {
+	s.serveDerivedAudio(w, r, media.AudioAACVariant, media.AudioAACExt, media.AudioAACType,
+		func(v *ta.Video, open media.SourceFunc) media.DeriveFunc {
+			return media.AudioAAC(s.ffmpegPath, sourceAudioCodec(v), open)
+		})
+}
+
+// sourceAudioCodec is the codec of the video's first audio stream, "" when TA
+// reports none.
+func sourceAudioCodec(v *ta.Video) string {
+	for _, st := range v.Streams {
+		if st.Type == "audio" {
+			return st.Codec
+		}
+	}
+	return ""
+}
+
+// serveDerivedAudio serves an audio-only rendition, deriving it on first
+// request. Once on disk it is served with http.ServeContent, which handles
+// Range, If-Range and 206 — so seeking and resume behave as they do for video.
+func (s *Server) serveDerivedAudio(w http.ResponseWriter, r *http.Request, variant, ext, contentType string,
+	derive func(v *ta.Video, open media.SourceFunc) media.DeriveFunc,
+) {
 	if s.mediaCache == nil {
 		writeError(w, http.StatusNotFound, "not found")
 		return
@@ -137,12 +169,12 @@ func (s *Server) mediaAudio(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	src := taMediaPath(v.MediaURL)
-	path, err := s.mediaCache.Get(r.Context(), media.AudioVariant+"-"+id+media.AudioExt,
-		media.Audio(s.ffmpegPath, func(ctx context.Context) (io.ReadCloser, error) {
+	path, err := s.mediaCache.Get(r.Context(), variant+"-"+id+ext,
+		derive(v, func(ctx context.Context) (io.ReadCloser, error) {
 			return s.ta.OpenMedia(ctx, src)
 		}))
 	if err != nil {
-		s.log.Error("derive audio", "video", id, "err", err)
+		s.log.Error("derive audio", "video", id, "variant", variant, "err", err)
 		writeError(w, http.StatusBadGateway, "could not prepare audio")
 		return
 	}
@@ -157,7 +189,7 @@ func (s *Server) mediaAudio(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "not found")
 		return
 	}
-	w.Header().Set("Content-Type", media.AudioType)
+	w.Header().Set("Content-Type", contentType)
 	w.Header().Set("Cache-Control", "private, max-age=3600")
-	http.ServeContent(w, r, id+media.AudioExt, st.ModTime(), f)
+	http.ServeContent(w, r, id+ext, st.ModTime(), f)
 }

@@ -273,7 +273,9 @@ func (s *Server) getVideo(w http.ResponseWriter, r *http.Request) {
 		Height:       v.Height(),
 		MediaURL:     "/media/video/" + v.YoutubeID + ".mp4",
 		AudioURL:     "/media/audio/" + v.YoutubeID + media.AudioExt,
+		AudioAACURL:  "/media/audio/" + v.YoutubeID + media.AudioAACExt,
 		YoutubeURL:   "https://www.youtube.com/watch?v=" + v.YoutubeID,
+		Streams:      []StreamInfo{},
 		Subtitles:    []SubtitleTrack{},
 		Sponsorblock: []SponsorSegment{},
 		Stats:        VideoStats{Views: v.Stats.ViewCount, Likes: v.Stats.LikeCount},
@@ -283,6 +285,15 @@ func (s *Server) getVideo(w http.ResponseWriter, r *http.Request) {
 	}
 	if detail.Tags == nil {
 		detail.Tags = []string{}
+	}
+	for _, st := range v.Streams {
+		detail.Streams = append(detail.Streams, StreamInfo{
+			Type:    st.Type,
+			Codec:   st.Codec,
+			Width:   st.Width,
+			Height:  st.Height,
+			Bitrate: st.Bitrate,
+		})
 	}
 	for _, st := range v.Subtitles {
 		if st.Lang == "" {

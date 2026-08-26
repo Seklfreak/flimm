@@ -19,8 +19,11 @@ func audioServer(t *testing.T, body []byte) http.Handler {
 	t.Helper()
 	dir := t.TempDir()
 	if body != nil {
-		if err := os.WriteFile(filepath.Join(dir, "audio-v1.webm"), body, 0o600); err != nil {
-			t.Fatal(err)
+		// One file per variant, named the way the cache keys them.
+		for _, name := range []string{"audio-v1.webm", "audio-aac-v1.m4a"} {
+			if err := os.WriteFile(filepath.Join(dir, name), body, 0o600); err != nil {
+				t.Fatal(err)
+			}
 		}
 	}
 	cache, err := media.NewCache(dir, 0, nil)
@@ -40,6 +43,16 @@ func audioServer(t *testing.T, body []byte) http.Handler {
 }
 
 func TestAudioServesCachedRenditionWithRanges(t *testing.T) {
+	for _, tc := range []struct{ path, contentType string }{
+		{"/media/audio/v1.webm", media.AudioType},
+		{"/media/audio/v1.m4a", media.AudioAACType},
+	} {
+		t.Run(tc.path, func(t *testing.T) { assertServesWithRanges(t, tc.path, tc.contentType) })
+	}
+}
+
+func assertServesWithRanges(t *testing.T, path, contentType string) {
+	t.Helper()
 	body := make([]byte, 5000)
 	for i := range body {
 		body[i] = byte(i % 251)
@@ -49,7 +62,7 @@ func TestAudioServesCachedRenditionWithRanges(t *testing.T) {
 	// Media routes take a Bearer header or the media cookie; the dev verifier
 	// accepts any bearer.
 	get := func(rangeHdr string) *httptest.ResponseRecorder {
-		req := httptest.NewRequest(http.MethodGet, "/media/audio/v1.webm", nil)
+		req := httptest.NewRequest(http.MethodGet, path, nil)
 		req.Header.Set("Authorization", "Bearer test")
 		if rangeHdr != "" {
 			req.Header.Set("Range", rangeHdr)
@@ -62,8 +75,8 @@ func TestAudioServesCachedRenditionWithRanges(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d: %s", rec.Code, rec.Body.String())
 	}
-	if ct := rec.Header().Get("Content-Type"); ct != media.AudioType {
-		t.Errorf("Content-Type = %q, want %q", ct, media.AudioType)
+	if ct := rec.Header().Get("Content-Type"); ct != contentType {
+		t.Errorf("Content-Type = %q, want %q", ct, contentType)
 	}
 	if rec.Body.Len() != len(body) {
 		t.Errorf("body = %d bytes, want %d", rec.Body.Len(), len(body))
@@ -85,13 +98,30 @@ func TestAudioServesCachedRenditionWithRanges(t *testing.T) {
 // A path outside the id charset must never reach the filesystem or ffmpeg.
 func TestAudioRejectsBadVideoID(t *testing.T) {
 	h := audioServer(t, nil)
-	for _, id := range []string{"..%2f..%2fetc%2fpasswd", "a/b", "a.b"} {
-		req := httptest.NewRequest(http.MethodGet, "/media/audio/"+id+".webm", nil)
-		req.Header.Set("Authorization", "Bearer test")
-		rec := httptest.NewRecorder()
-		h.ServeHTTP(rec, req)
-		if rec.Code == http.StatusOK {
-			t.Errorf("id %q was accepted", id)
+	for _, ext := range []string{".webm", ".m4a"} {
+		for _, id := range []string{"..%2f..%2fetc%2fpasswd", "a/b", "a.b"} {
+			req := httptest.NewRequest(http.MethodGet, "/media/audio/"+id+ext, nil)
+			req.Header.Set("Authorization", "Bearer test")
+			rec := httptest.NewRecorder()
+			h.ServeHTTP(rec, req)
+			if rec.Code == http.StatusOK {
+				t.Errorf("id %q%s was accepted", id, ext)
+			}
 		}
+	}
+}
+
+// The AAC variant copies or re-encodes depending on the source track, which is
+// read off the TA document rather than probed.
+func TestSourceAudioCodec(t *testing.T) {
+	v := &ta.Video{Streams: []ta.Stream{
+		{Type: "video", Codec: "vp09"},
+		{Type: "audio", Codec: "opus"},
+	}}
+	if got := sourceAudioCodec(v); got != "opus" {
+		t.Errorf("sourceAudioCodec = %q, want opus", got)
+	}
+	if got := sourceAudioCodec(&ta.Video{}); got != "" {
+		t.Errorf("no streams = %q, want empty", got)
 	}
 }

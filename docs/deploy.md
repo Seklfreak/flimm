@@ -165,6 +165,29 @@ and others all work:
 Put the issuer URL and client id in the ConfigMap. Users are created on first
 login; there is no user management in Flimm itself.
 
+### Native apps
+
+The iOS/iPadOS/tvOS clients (see [roadmap.md](roadmap.md)) reuse the same
+public OIDC client as the web app — no separate client id, no client secret.
+Configure the provider to also allow:
+
+- **Redirect URI**: `dev.winktech.flimm://auth` (custom-scheme, public client,
+  Authorization Code + PKCE, no client secret) in addition to the web
+  callback above.
+- **Scope**: `offline_access` alongside `openid profile email`, so the
+  provider issues a refresh token — without it the app silently logs the user
+  out when the access token expires, since there's no browser session to
+  re-authenticate against.
+- **Device authorization grant** (RFC 8628), enabled **for the same client
+  id**: this is how the tvOS app signs in ("go to this URL and enter this
+  code", with a QR code beside it). It is **not optional on Apple TV** —
+  tvOS has no browser and no `ASWebAuthenticationSession`, so there is no
+  fallback: without the grant the app can only tell the user that the
+  provider doesn't support it. The provider must advertise
+  `device_authorization_endpoint` in its discovery document and issue
+  `offline_access` on this grant too. The iOS, iPadOS and web clients are
+  unaffected either way.
+
 ## Postgres
 
 Any Postgres 15+ works: a managed instance, a CloudNativePG cluster, or the

@@ -29,27 +29,33 @@ const (
 // fallback, which keeps mixed libraries working instead of 500ing.
 func Audio(ffmpegPath string, source SourceFunc) DeriveFunc {
 	return func(ctx context.Context, dst string) error {
-		err := runFFmpeg(ctx, ffmpegPath, source, dst, "copy")
+		err := runFFmpeg(ctx, ffmpegPath, source, "copy", webmArgs("copy", dst))
 		if err == nil {
 			return nil
 		}
 		if ctx.Err() != nil {
 			return err
 		}
-		if reErr := runFFmpeg(ctx, ffmpegPath, source, dst, "libopus"); reErr != nil {
+		if reErr := runFFmpeg(ctx, ffmpegPath, source, "libopus", webmArgs("libopus", dst)); reErr != nil {
 			return fmt.Errorf("derive audio: copy failed (%w) and re-encode failed: %w", err, reErr)
 		}
 		return nil
 	}
 }
 
-func runFFmpeg(ctx context.Context, ffmpegPath string, source SourceFunc, dst, codec string) error {
-	src, err := source(ctx)
-	if err != nil {
-		return fmt.Errorf("derive audio: open source: %w", err)
-	}
-	defer src.Close()
+// webmArgs builds the ffmpeg command line for the `audio` variant.
+func webmArgs(codec, dst string) []string {
+	args := audioInputArgs(codec)
+	// The source is faststart (moov up front), so a streamed, unseekable input
+	// remuxes fine — which is what lets the file be piped in rather than the
+	// API token being handed to ffmpeg on a command line.
+	return append(args, "-f", "webm", "-y", dst)
+}
 
+// audioInputArgs is the part every audio variant shares: read the muxed file
+// from stdin, drop the video, keep the first audio track, and set the bitrate
+// whenever the track is actually re-encoded.
+func audioInputArgs(codec string) []string {
 	args := []string{
 		"-hide_banner", "-loglevel", "error",
 		"-i", "pipe:0",
@@ -59,10 +65,17 @@ func runFFmpeg(ctx context.Context, ffmpegPath string, source SourceFunc, dst, c
 	if codec != "copy" {
 		args = append(args, "-b:a", "128k")
 	}
-	// The source is faststart (moov up front), so a streamed, unseekable input
-	// remuxes fine — which is what lets the file be piped in rather than the
-	// API token being handed to ffmpeg on a command line.
-	args = append(args, "-f", "webm", "-y", dst)
+	return args
+}
+
+// runFFmpeg pipes the source through ffmpeg into dst. codec is used only to
+// label the error; args is the full command line.
+func runFFmpeg(ctx context.Context, ffmpegPath string, source SourceFunc, codec string, args []string) error {
+	src, err := source(ctx)
+	if err != nil {
+		return fmt.Errorf("derive audio: open source: %w", err)
+	}
+	defer src.Close()
 
 	// ffmpegPath comes from configuration, and every argument is either a
 	// literal or a path this package generated — no request data reaches argv.

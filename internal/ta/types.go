@@ -60,9 +60,11 @@ type Stats struct {
 }
 
 type Stream struct {
-	Type   string `json:"type"`
-	Height int    `json:"height"`
-	Width  int    `json:"width"`
+	Type    string `json:"type"`
+	Codec   string `json:"codec"`
+	Height  int    `json:"height"`
+	Width   int    `json:"width"`
+	Bitrate int    `json:"bitrate"`
 }
 
 // Channel is a TA channel document (also embedded in videos).

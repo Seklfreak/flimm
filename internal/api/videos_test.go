@@ -126,7 +126,10 @@ func TestVideoDetail(t *testing.T) {
 	v := video("v1", "A", "2026-08-01", 1000, false)
 	v.Subtitles = []ta.Subtitle{{Lang: "en", Source: "auto", MediaURL: "A/v1.en.vtt"}}
 	v.Sponsorblock.Segments = []ta.SponsorSegment{{Category: "sponsor", Segment: [2]float64{12.3, 45.6}}}
-	v.Streams = []ta.Stream{{Type: "video", Height: 1080}}
+	v.Streams = []ta.Stream{
+		{Type: "video", Codec: "avc1", Width: 1920, Height: 1080, Bitrate: 4500000},
+		{Type: "audio", Codec: "mp4a", Bitrate: 130000},
+	}
 	v.Playlist = []string{"PL1"}
 	client.AddVideo(v)
 	client.Playlists["PL1"] = &ta.Playlist{PlaylistID: "PL1", PlaylistName: "Series", PlaylistType: "regular", PlaylistEntries: []ta.PlaylistEntry{{YoutubeID: "x"}, {YoutubeID: "v1"}}}
@@ -142,8 +145,20 @@ func TestVideoDetail(t *testing.T) {
 	if d.MediaURL != "/media/video/v1.mp4" || d.Height != 1080 || d.Progress != 0.25 || !d.HasAutoSubtitles {
 		t.Errorf("detail = %+v", d)
 	}
+	// Both audio renditions are advertised: WebM/Opus for browsers, AAC/MP4
+	// for players that cannot decode Opus.
+	if d.AudioURL != "/media/audio/v1.webm" || d.AudioAACURL != "/media/audio/v1.m4a" {
+		t.Errorf("audio urls = %q / %q", d.AudioURL, d.AudioAACURL)
+	}
 	if len(d.Subtitles) != 1 || d.Subtitles[0].URL != "/media/subtitles/v1/en.vtt" {
 		t.Errorf("subtitles = %+v", d.Subtitles)
+	}
+	wantStreams := []StreamInfo{
+		{Type: "video", Codec: "avc1", Width: 1920, Height: 1080, Bitrate: 4500000},
+		{Type: "audio", Codec: "mp4a", Bitrate: 130000},
+	}
+	if !reflect.DeepEqual(d.Streams, wantStreams) {
+		t.Errorf("streams = %+v, want %+v", d.Streams, wantStreams)
 	}
 	if len(d.Sponsorblock) != 1 || d.Sponsorblock[0].End != 45.6 {
 		t.Errorf("sponsorblock = %+v", d.Sponsorblock)

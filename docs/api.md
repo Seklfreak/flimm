@@ -68,8 +68,11 @@ resume is the default action, and `t=` only exists to jump to a subtitle hit.
   "description": "…",
   "height": 1080,
   "media_url": "/media/video/yt-id.mp4",
-  "audio_url": "/media/audio/yt-id.webm",   // derived on first request; see Derived media
+  "audio_url": "/media/audio/yt-id.webm",       // Opus in WebM; derived on first request, see Derived media
+  "audio_aac_url": "/media/audio/yt-id.m4a",   // the same audio as AAC in MP4, for AVFoundation
   "youtube_url": "https://www.youtube.com/watch?v=yt-id",
+  "streams": [ { "type": "video", "codec": "avc1", "width": 1920, "height": 1080, "bitrate": 4500000 },
+               { "type": "audio", "codec": "mp4a", "width": 0, "height": 0, "bitrate": 130000 } ],
   "subtitles": [ { "lang": "en", "source": "user|auto", "url": "/media/subtitles/yt-id/en.vtt" } ],
   "sponsorblock": [ { "category": "sponsor", "start": 12.3, "end": 45.6 } ],
   "stats": { "views": 0, "likes": 0 },
@@ -78,6 +81,11 @@ resume is the default action, and `t=` only exists to jump to a subtitle hit.
   "channel": { …ChannelSummary… }
 }
 ```
+`streams` mirrors TA's per-video source renditions as parsed from the video
+document (never re-muxed by Flimm). Native clients use `codec` to decide
+whether `media_url` is directly playable by AVFoundation: H.264 (`avc1`) video
+with AAC (`mp4a`) audio always is; VP9 (`vp09`)/AV1 (`av01`) video or Opus
+audio support is device-dependent.
 
 ### ChannelSummary
 ```json
@@ -255,7 +263,8 @@ and the API treats it as one rather than leaving each client to paper over it:
   `progress` and `resume_video_id` come back zeroed, and the playlist's videos
   carry no `watched`, `position` or `last_played_at`. Clients therefore render
   no seen ticks, progress bars or resume chips without special-casing music.
-- **Playback is audio-only**: clients use `audio_url` and carry `audio=1`.
+- **Playback is audio-only**: clients use `audio_url` (`audio_aac_url` on
+  Apple platforms, see [Derived media](#derived-media)) and carry `audio=1`.
 
 The flag is per user and per playlist, and the same video played from
 somewhere else is ordinary viewing again — watch state is only suppressed for
@@ -341,7 +350,8 @@ and `feed` filter the video results in the backend.
 | Path | Notes |
 |---|---|
 | `GET /media/video/{id}.mp4` | reverse-proxies TA `/media/<media_url>` with `Range`, `If-Range`, `Accept-Ranges`, `Content-Length`, `Content-Type` passthrough |
-| `GET /media/audio/{id}.webm` | audio-only stream, derived and cached on first request (see below); supports `Range` |
+| `GET /media/audio/{id}.webm` | audio-only stream, Opus in WebM, derived and cached on first request (see below); supports `Range` |
+| `GET /media/audio/{id}.m4a` | the same audio as AAC in MP4 (`audio/mp4`), for players that cannot decode Opus in WebM; derived and cached the same way; supports `Range` |
 | `GET /media/subtitles/{id}/{lang}.vtt` | TA subtitle track |
 | `GET /media/thumb/video/{id}` | TA `/cache/videos/…` |
 | `GET /media/thumb/channel/{id}` and `/media/thumb/channel/{id}/banner` | TA `/cache/channels/…` |
@@ -358,13 +368,27 @@ the default MIME map for that location, so `.mp4` would otherwise arrive as
 ### Derived media
 
 TubeArchivist stores one file per video, muxed. Anything else a client needs —
-audio only today, an Apple-compatible rendition later — is *derived* from that
-file and cached on disk, keyed by `(video id, variant)`.
+two audio renditions today, a compatible video rendition later — is *derived*
+from that file and cached on disk, keyed by `(video id, variant)`.
+
+There are two audio variants. They carry the same audio; they differ only in
+what can decode them, so a client picks one and never both.
 
 - `GET /media/audio/{id}.webm` is the `audio` variant. The archived audio is
   already Opus, so it is **remuxed, not re-encoded** (`-vn -c:a copy`): no
   quality loss, negligible CPU, and roughly 20–30× less data than the source
-  (a 40-minute 1080p video is ~1.2 GB muxed and ~37 MB as audio).
+  (a 40-minute 1080p video is ~1.2 GB muxed and ~37 MB as audio). Browsers
+  play it; this is what the web client uses.
+- `GET /media/audio/{id}.m4a` is the `audio-aac` variant, AAC in MP4
+  (`audio/mp4`). It exists because AVFoundation cannot decode Opus in WebM at
+  all, so the native clients use `audio_aac_url` — for music playlists and as
+  the fallback when a video codec is unplayable. Unless the source track is
+  already AAC (`mp4a`, per `streams`), in which case it is copied like the
+  WebM variant, this is a **real re-encode** (`-vn -c:a aac -b:a 128k
+  -movflags +faststart`): it costs CPU and the first listener waits for the
+  whole file, roughly a tenth of the video's duration on a modern core.
+  Afterwards it is cached like any other variant and costs nothing.
+  `+faststart` puts the MP4 index up front so byte-range seeking works.
 - The first request for a variant produces it; concurrent requests for the same
   variant wait on that one job rather than each starting their own.
 - Once produced, the file is served from disk with full `Range` support, so

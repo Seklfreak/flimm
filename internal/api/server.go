@@ -47,7 +47,7 @@ type Options struct {
 	MediaSecret  string
 	// SecureCookies sets the Secure flag on the media cookie (https deploys).
 	SecureCookies bool
-	// MediaCache stores derived renditions; nil disables /media/audio.
+	// MediaCache stores derived renditions; nil disables /media/audio/*.
 	MediaCache *media.Cache
 	// FFmpegPath is the ffmpeg binary used for derivations.
 	FFmpegPath string
@@ -222,6 +222,7 @@ func (s *Server) Router() http.Handler {
 		r.Use(s.mediaAuthMiddleware)
 		r.Get("/video/{id}.mp4", s.mediaVideo)
 		r.Get("/audio/{id}.webm", s.mediaAudio)
+		r.Get("/audio/{id}.m4a", s.mediaAudioAAC)
 		r.Get("/subtitles/{id}/{lang}.vtt", s.mediaSubtitles)
 		r.Get("/thumb/video/{id}", s.mediaVideoThumb)
 		r.Get("/thumb/channel/{id}", s.mediaChannelThumb)
