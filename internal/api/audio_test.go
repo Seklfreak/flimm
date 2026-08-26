@@ -9,8 +9,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/Seklfreak/archive-client/internal/media"
-	"github.com/Seklfreak/archive-client/internal/ta"
+	"github.com/Seklfreak/flimm/internal/media"
+	"github.com/Seklfreak/flimm/internal/ta"
 )
 
 // Serves an already-derived rendition, so the test needs no ffmpeg: it pins
@@ -33,7 +33,7 @@ func audioServer(t *testing.T, body []byte) http.Handler {
 		Querier:     newEventStore().querier(),
 		TA:          client,
 		Log:         slog.New(slog.NewTextHandler(io.Discard, nil)),
-		AppName:     "Archive",
+		AppName:     "Flimm",
 		MediaSecret: testSecret,
 		MediaCache:  cache,
 	}).Router()

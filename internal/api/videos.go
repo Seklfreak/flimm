@@ -15,9 +15,9 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
-	"github.com/Seklfreak/archive-client/internal/db/sqlc"
-	"github.com/Seklfreak/archive-client/internal/media"
-	"github.com/Seklfreak/archive-client/internal/ta"
+	"github.com/Seklfreak/flimm/internal/db/sqlc"
+	"github.com/Seklfreak/flimm/internal/media"
+	"github.com/Seklfreak/flimm/internal/ta"
 )
 
 // ---- listing core ----
@@ -643,7 +643,7 @@ func (s *Server) deleteProgress(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// markAllSeen flags every unseen video of a list watched in TA and Archive.
+// markAllSeen flags every unseen video of a list watched in TA and Flimm.
 func (s *Server) markAllSeen(ctx context.Context, uid uuid.UUID, items []VideoSummary) error {
 	return parallel(ctx, items, func(ctx context.Context, _ int, it VideoSummary) error {
 		if it.Watched {

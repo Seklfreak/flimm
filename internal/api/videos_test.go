@@ -11,8 +11,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/Seklfreak/archive-client/internal/db/sqlc"
-	"github.com/Seklfreak/archive-client/internal/ta"
+	"github.com/Seklfreak/flimm/internal/db/sqlc"
+	"github.com/Seklfreak/flimm/internal/ta"
 )
 
 var errNoRows = pgx.ErrNoRows
@@ -54,7 +54,7 @@ func TestProgressHeartbeatAt90PercentMarksWatched(t *testing.T) {
 		t.Errorf("resp = %v", got)
 	}
 	if !client.Videos["v1"].Player.Watched || !es.events["v1"].CompletedAt.Valid {
-		t.Error("expected watched in TA and Archive")
+		t.Error("expected watched in TA and Flimm")
 	}
 	if !reflect.DeepEqual(client.Calls, []string{"progress:v1", "watched:v1"}) {
 		t.Errorf("calls = %v", client.Calls)
@@ -232,7 +232,7 @@ func TestConfigIsPublic(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d", rec.Code)
 	}
-	if got := decode[map[string]string](t, rec); got["app_name"] != "Archive" || got["version"] == "" {
+	if got := decode[map[string]string](t, rec); got["app_name"] != "Flimm" || got["version"] == "" {
 		t.Errorf("config = %v", got)
 	}
 }

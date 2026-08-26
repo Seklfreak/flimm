@@ -9,8 +9,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/Seklfreak/archive-client/internal/db/sqlc"
-	"github.com/Seklfreak/archive-client/internal/ta"
+	"github.com/Seklfreak/flimm/internal/db/sqlc"
+	"github.com/Seklfreak/flimm/internal/ta"
 )
 
 // feedFixture wires one feed (channels A + B) with a seeded TA.
@@ -40,7 +40,7 @@ func feedFixture(t *testing.T, feed sqlc.Feed, chans []string) (*ta.Fake, *event
 func TestFeedVideosUnseenMergesAndHidesSeen(t *testing.T) {
 	feed := sqlc.Feed{ID: uuid.New(), Name: "Home", Sort: "newest", HideSeen: true}
 	client, es, h := feedFixture(t, feed, []string{"A", "B"})
-	// b1 completed in Archive but TA doesn't know (should still be hidden).
+	// b1 completed in Flimm but TA doesn't know (should still be hidden).
 	es.events["b1"] = sqlc.WatchEvent{VideoID: "b1", CompletedAt: pgtype.Timestamptz{Valid: true}}
 	_ = client
 
@@ -49,7 +49,7 @@ func TestFeedVideosUnseenMergesAndHidesSeen(t *testing.T) {
 		t.Fatalf("status = %d: %s", rec.Code, rec.Body.String())
 	}
 	page := decode[Page[VideoSummary]](t, rec)
-	// a2 is TA-watched, b1 is Archive-completed, b2 is a short (excluded), c1 not in feed.
+	// a2 is TA-watched, b1 is Flimm-completed, b2 is a short (excluded), c1 not in feed.
 	if got := ids(page.Items); !reflect.DeepEqual(got, []string{"a1"}) {
 		t.Errorf("items = %v, want [a1]", got)
 	}
@@ -149,7 +149,7 @@ func TestMarkFeedSeen(t *testing.T) {
 			t.Errorf("%s not watched in TA", id)
 		}
 		if !es.events[id].CompletedAt.Valid {
-			t.Errorf("%s not completed in Archive", id)
+			t.Errorf("%s not completed in Flimm", id)
 		}
 	}
 	if client.Videos["b2"].Player.Watched {

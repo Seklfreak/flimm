@@ -11,7 +11,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/Seklfreak/archive-client/internal/media"
+	"github.com/Seklfreak/flimm/internal/media"
 )
 
 // proxyTo rewrites the request path to the TA path and streams the upstream

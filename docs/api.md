@@ -1,7 +1,7 @@
-# Archive API contract (v1)
+# Flimm API contract (v1)
 
-Archive is a client for a single [TubeArchivist](https://github.com/tubearchivist/tubearchivist)
-instance. All clients (web, iOS, iPadOS, tvOS) talk **only** to the Archive backend;
+Flimm is a client for a single [TubeArchivist](https://github.com/tubearchivist/tubearchivist)
+instance. All clients (web, iOS, iPadOS, tvOS) talk **only** to the Flimm backend;
 the backend talks to TubeArchivist (TA) with a server-side API token. The backend
 adds the state TA lacks (feeds, history, preferences) and writes everything TA
 *can* hold (watched flag, resume position, custom playlists) back to TA so the
@@ -17,7 +17,7 @@ Base path: `/api/v1`. JSON, snake_case. Times are RFC 3339 UTC. IDs are strings.
   and upserts a `users` row keyed by the token `sub`.
 - `AUTH_DISABLED=true` (dev only) skips validation and uses a fixed dev user.
 - Media (`/media/*`) is fetched by `<video>` / `AVPlayer`, which cannot always
-  set headers, so media accepts **either** a Bearer header **or** an `archive_media`
+  set headers, so media accepts **either** a Bearer header **or** an `flimm_media`
   cookie. `POST /api/v1/session/media` (authenticated) sets that HttpOnly,
   SameSite=Lax, Secure cookie containing a signed, short-lived (12h) media token;
   the web app calls it after login and again when a media request returns 401.
@@ -54,7 +54,7 @@ return 404 so existence isn't leaked. 502 when TA is unreachable, with
 }
 ```
 `watched`, `position`, `progress`, `last_played_at` are per-user and come from
-Archive's `watch_events` table, falling back to TA's watched flag when Archive
+Flimm's `watch_events` table, falling back to TA's watched flag when Flimm
 has no event.
 
 Any `position > 0` on an unwatched video means "in progress": the card shows a
@@ -127,7 +127,7 @@ resume is the default action, and `t=` only exists to jump to a subtitle hit.
 
 #### Pinned playlists
 
-Pins are Archive's own state (TubeArchivist has no concept of them) and are
+Pins are Flimm's own state (TubeArchivist has no concept of them) and are
 per user, so they follow the account across web and native clients. A pin
 survives the playlist being renamed or reordered, and pinning a playlist that
 is later deleted in TubeArchivist simply drops out of
@@ -157,7 +157,7 @@ return `{ "items": [...], "page": 0, "page_size": 30, "total": 123 }`.
 | GET | `/healthz` | unauthenticated; 200 when DB ok; `ta` field reports TA reachability |
 | GET | `/me` | `{ "id", "name", "email", "is_admin", "prefs": Prefs }` |
 | PATCH | `/me/prefs` | partial update of Prefs, returns Prefs |
-| POST | `/session/media` | sets `archive_media` cookie, 204 |
+| POST | `/session/media` | sets `flimm_media` cookie, 204 |
 
 Prefs:
 ```json
@@ -250,7 +250,7 @@ Reshuffling means picking a new seed. A client starts a run by requesting
 }
 ```
 
-TubeArchivist stores no chapters, so Archive derives them, preferring the
+TubeArchivist stores no chapters, so Flimm derives them, preferring the
 authoritative source:
 
 1. **`embedded`** — yt-dlp embeds YouTube's chapters into the container at
@@ -361,7 +361,7 @@ next/previous, autoplay and a reload, exactly as the shuffle seed does.
 
 ## Backend ↔ TubeArchivist mapping
 
-| Archive | TubeArchivist |
+| Flimm | TubeArchivist |
 |---|---|
 | video list for feed/channel | `GET /api/video/?channel=&watch=&sort=&order=&type=&page=` (fan out per channel for feeds; merge + sort in backend; cache per user 30 s) |
 | unseen counts | `GET /api/video/?channel=<id>&watch=unwatched&page_size=1` total hits, cached 60 s per channel |
@@ -392,7 +392,7 @@ tested against a fake.
 | `MEDIA_CACHE_DIR` | no | where derived media is cached; default a temp dir |
 | `MEDIA_CACHE_MAX_BYTES` | no | cache size cap before LRU eviction; default 5 GiB |
 | `FFMPEG_PATH` | no | ffmpeg binary; default `ffmpeg` on `PATH` |
-| `APP_NAME` | no | default `Archive` |
+| `APP_NAME` | no | default `Flimm` |
 | `PORT` | no | default 8080 |
 | `SENTRY_DSN` | no | |
 | `LOG_LEVEL` | no | |

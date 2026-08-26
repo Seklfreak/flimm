@@ -33,12 +33,12 @@ are not obvious from the web client.
 └───────┬───────┴───────┬───────┴───────┬───────┘
         └───────────────┼───────────────┘
                 ┌───────▼────────┐
-                │ ArchiveKit     │   one Swift package:
+                │ FlimmKit       │   one Swift package:
                 │ (Swift package)│   models, API client, auth, playback state
                 └───────┬────────┘
                         │  HTTPS, /api/v1 + /media
                 ┌───────▼────────┐
-                │ Archive backend│
+                │ Flimm backend  │
                 └───────┬────────┘
                         │
                  TubeArchivist
@@ -51,7 +51,7 @@ feed composition, resume, watch state, chapters, shuffle order — is already
 decided by the server. Resist reimplementing any of it locally; that is how
 the clients drift apart.
 
-**Talk only to the Archive backend.** Never to TubeArchivist directly. TA sits
+**Talk only to the Flimm backend.** Never to TubeArchivist directly. TA sits
 behind an auth proxy in typical deployments and native clients cannot complete
 that flow — this is the reason the backend exists.
 
@@ -178,7 +178,7 @@ a side effect of caching.
 
 ## Suggested order
 
-1. `ArchiveKit`: models, API client, auth, keychain. Test it against a real
+1. `FlimmKit`: models, API client, auth, keychain. Test it against a real
    deployment before any UI exists.
 2. **Settle the codec question** on a real device.
 3. iOS: feeds → player → history. The player is the risk; do it early.

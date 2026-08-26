@@ -1,7 +1,7 @@
-// Package archive holds the embedded web frontend. It lives at the module
+// Package flimm holds the embedded web frontend. It lives at the module
 // root because go:embed cannot reach outside a package directory and the
 // Vite build lands in frontend/dist; cmd/server serves it as the SPA.
-package archive
+package flimm
 
 import "embed"
 

@@ -8,7 +8,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/Seklfreak/archive-client/internal/db/sqlc"
+	"github.com/Seklfreak/flimm/internal/db/sqlc"
 )
 
 type FakeQuerier struct {

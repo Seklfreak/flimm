@@ -17,9 +17,9 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/Seklfreak/archive-client/internal/db/sqlc"
-	"github.com/Seklfreak/archive-client/internal/sqlctest"
-	"github.com/Seklfreak/archive-client/internal/ta"
+	"github.com/Seklfreak/flimm/internal/db/sqlc"
+	"github.com/Seklfreak/flimm/internal/sqlctest"
+	"github.com/Seklfreak/flimm/internal/ta"
 )
 
 const testSecret = "test-secret"
@@ -173,7 +173,7 @@ func newTestServer(client ta.Client, q sqlc.Querier) *Server {
 		Querier:     q,
 		TA:          client,
 		Log:         slog.New(slog.NewTextHandler(io.Discard, nil)),
-		AppName:     "Archive",
+		AppName:     "Flimm",
 		MediaSecret: testSecret,
 	})
 }

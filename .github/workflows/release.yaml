@@ -2,7 +2,7 @@ name: Release
 
 # Auto-cut a release on every push to main.
 # The bump decision, release notes, tagging and build dispatch all live in
-# Seklfreak/ai-release-action — this file supplies only what is specific to archive-client.
+# Seklfreak/ai-release-action — this file supplies only what is specific to flimm.
 #
 # project-description is what the classifier judges "can this change reach a user?"
 # against, so it must describe THIS project. A description carried over from another
@@ -46,7 +46,7 @@ jobs:
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
           build-workflow: "build.yaml"
           project-description: >-
-            Archive is a self-hosted client for a single TubeArchivist instance: a Go
+            Flimm is a self-hosted client for a single TubeArchivist instance: a Go
             backend (chi, pgx/sqlc, golang-migrate, go-oidc) plus a React frontend shipped
             as one container image. It adds feeds (named channel sets), per-user watch
             history and resume positions, and preferences on top of TubeArchivist, proxies

@@ -31,7 +31,7 @@ type Config struct {
 	// details. Comma-separated.
 	AdminEmails []string
 
-	// MediaTokenSecret signs the archive_media cookie.
+	// MediaTokenSecret signs the flimm_media cookie.
 	MediaTokenSecret string
 	// MinPlaySeconds is how long a video must be played before it is recorded
 	// at all: below it, opening a video by accident leaves no history entry and
@@ -74,12 +74,12 @@ func Load() (*Config, error) {
 		AdminEmails:        splitCSV(os.Getenv("ADMIN_EMAILS")),
 		MediaTokenSecret:   os.Getenv("MEDIA_TOKEN_SECRET"),
 		MinPlaySeconds:     envFloat("MIN_PLAY_SECONDS", 15),
-		MediaCacheDir:      cmp.Or(os.Getenv("MEDIA_CACHE_DIR"), filepath.Join(os.TempDir(), "archive-media")),
+		MediaCacheDir:      cmp.Or(os.Getenv("MEDIA_CACHE_DIR"), filepath.Join(os.TempDir(), "flimm-media")),
 		MediaCacheMaxBytes: int64(envFloat("MEDIA_CACHE_MAX_BYTES", 5<<30)),
 		FFmpegPath:         cmp.Or(os.Getenv("FFMPEG_PATH"), "ffmpeg"),
 		PublicURL:          strings.TrimRight(os.Getenv("PUBLIC_URL"), "/"),
 		CORSOrigins:        splitCSV(os.Getenv("CORS_ORIGINS")),
-		AppName:            getenvDefault("APP_NAME", "Archive"),
+		AppName:            getenvDefault("APP_NAME", "Flimm"),
 		LogLevel:           parseLevel(os.Getenv("LOG_LEVEL")),
 	}
 

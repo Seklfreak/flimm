@@ -1,6 +1,6 @@
 # Deploying on Kubernetes
 
-Archive is one container image (`ghcr.io/seklfreak/archive-client:<version>`)
+Flimm is one container image (`ghcr.io/seklfreak/flimm:<version>`)
 that needs a Postgres database, a reachable TubeArchivist and an OIDC provider.
 The manifests below are a generic starting point; adapt names, storage class,
 ingress class and TLS to your cluster. Every hostname here is an example.
@@ -13,12 +13,12 @@ Browser ──HTTPS──▶ Ingress ──▶ Service ──▶ archive (Deploy
                                         Postgres ┘         └──▶ TubeArchivist (in-cluster Service)
 ```
 
-Run Archive **in the same cluster as TubeArchivist** and point `TA_URL` at
+Run Flimm **in the same cluster as TubeArchivist** and point `TA_URL` at
 TA's in-cluster Service (`http://tubearchivist.<ns>.svc.cluster.local:8000`).
-Video streaming is a range-request reverse proxy through Archive; going through
+Video streaming is a range-request reverse proxy through Flimm; going through
 TA's public hostname would push every byte through your ingress and any
 auth proxy (Authentik/oauth2-proxy/Cloudflare Access) in front of TA, which
-either breaks range requests or doubles the traffic. Archive authenticates to
+either breaks range requests or doubles the traffic. Flimm authenticates to
 TA with the API token, so TA's own auth is satisfied without a proxy.
 
 ## Secret
@@ -48,11 +48,11 @@ metadata:
   name: archive-config
 data:
   TA_URL: "http://tubearchivist.media.svc.cluster.local:8000"
-  PUBLIC_URL: "https://archive.example.com"
+  PUBLIC_URL: "https://flimm.example.com"
   OIDC_ISSUER: "https://auth.example.com/application/o/archive/"
   OIDC_CLIENT_ID: "archive"
   ADMIN_EMAILS: "you@example.com"
-  APP_NAME: "Archive"
+  APP_NAME: "Flimm"
   PORT: "8080"
   LOG_LEVEL: "info"
 ```
@@ -76,7 +76,7 @@ spec:
     spec:
       containers:
         - name: archive
-          image: ghcr.io/seklfreak/archive-client:0.1.0
+          image: ghcr.io/seklfreak/flimm:0.1.0
           ports:
             - name: http
               containerPort: 8080
@@ -127,10 +127,10 @@ metadata:
 spec:
   ingressClassName: nginx
   tls:
-    - hosts: [archive.example.com]
+    - hosts: [flimm.example.com]
       secretName: archive-tls
   rules:
-    - host: archive.example.com
+    - host: flimm.example.com
       http:
         paths:
           - path: /
@@ -141,12 +141,12 @@ spec:
                 port: { name: http }
 ```
 
-**HTTPS is required.** The `archive_media` cookie that lets `<video>` stream
+**HTTPS is required.** The `flimm_media` cookie that lets `<video>` stream
 without headers is set with `Secure`, so over plain HTTP the browser drops it
 and every media request returns 401. Terminate TLS at the ingress (cert-manager
 or your own certificate) and set `PUBLIC_URL` to the `https://` origin.
 
-Do **not** put a forward-auth / auth proxy in front of Archive: it does its own
+Do **not** put a forward-auth / auth proxy in front of Flimm: it does its own
 OIDC validation, and native apps send Bearer tokens that an auth proxy would
 reject.
 
@@ -156,25 +156,25 @@ Create a public (PKCE) OIDC client — Authentik, Keycloak, Auth0, Zitadel, Dex
 and others all work:
 
 - Grant type: Authorization Code with PKCE, no client secret.
-- Redirect URI: `https://archive.example.com/auth/callback`
+- Redirect URI: `https://flimm.example.com/auth/callback`
   (plus the native apps' custom-scheme URI once you use them, see the roadmap).
 - Scopes: `openid profile email`.
 - The token must carry `sub` (user key) and ideally `email` / `name`;
   `ADMIN_EMAILS` matches against `email`.
 
 Put the issuer URL and client id in the ConfigMap. Users are created on first
-login; there is no user management in Archive itself.
+login; there is no user management in Flimm itself.
 
 ## Postgres
 
 Any Postgres 15+ works: a managed instance, a CloudNativePG cluster, or the
-plain `postgres` image with a PVC. Archive needs one database and a role that
+plain `postgres` image with a PVC. Flimm needs one database and a role that
 can create tables; it stores only small per-user rows (feeds, watch events,
 history, prefs), so a few hundred MB is plenty.
 
 ## Upgrading
 
-Bump the image tag. Releases are semver (`ghcr.io/seklfreak/archive-client:1.2.3`);
+Bump the image tag. Releases are semver (`ghcr.io/seklfreak/flimm:1.2.3`);
 `:latest` tracks the newest release. Migrations run forward automatically on
 start; roll back by deploying the previous tag (down-migrations exist but are
 not applied automatically).

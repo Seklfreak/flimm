@@ -14,7 +14,7 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE: ghcr.io/seklfreak/archive-client
+  IMAGE: ghcr.io/seklfreak/flimm
 
 jobs:
   build:
@@ -66,8 +66,8 @@ jobs:
           # Credentials are passed explicitly instead of via AWS_* env — the
           # docs do not say whether the daemon or the client resolves the
           # credential chain, and buildkit is a separate container here.
-          cache-from: type=s3,region=us-east-1,bucket=buildkit-cache,endpoint_url=http://minio.minio.svc.cluster.local:9000,use_path_style=true,name=archive-client,access_key_id=${{ secrets.MINIO_CACHE_ACCESS_KEY_ID }},secret_access_key=${{ secrets.MINIO_CACHE_SECRET_ACCESS_KEY }}
-          cache-to: type=s3,region=us-east-1,bucket=buildkit-cache,endpoint_url=http://minio.minio.svc.cluster.local:9000,use_path_style=true,name=archive-client,mode=max,access_key_id=${{ secrets.MINIO_CACHE_ACCESS_KEY_ID }},secret_access_key=${{ secrets.MINIO_CACHE_SECRET_ACCESS_KEY }}
+          cache-from: type=s3,region=us-east-1,bucket=buildkit-cache,endpoint_url=http://minio.minio.svc.cluster.local:9000,use_path_style=true,name=flimm,access_key_id=${{ secrets.MINIO_CACHE_ACCESS_KEY_ID }},secret_access_key=${{ secrets.MINIO_CACHE_SECRET_ACCESS_KEY }}
+          cache-to: type=s3,region=us-east-1,bucket=buildkit-cache,endpoint_url=http://minio.minio.svc.cluster.local:9000,use_path_style=true,name=flimm,mode=max,access_key_id=${{ secrets.MINIO_CACHE_ACCESS_KEY_ID }},secret_access_key=${{ secrets.MINIO_CACHE_SECRET_ACCESS_KEY }}
 
       # Sourcemaps exist only to make Sentry stack traces readable: they are
       # built "hidden" (no sourceMappingURL comment) and deleted before the Go
@@ -81,7 +81,7 @@ jobs:
           docker buildx build --target frontend \
             --build-arg APP_VERSION="$APP_VERSION" \
             --build-arg VITE_SENTRY_DSN="$VITE_SENTRY_DSN" \
-            --cache-from type=s3,region=us-east-1,bucket=buildkit-cache,endpoint_url=http://minio.minio.svc.cluster.local:9000,use_path_style=true,name=archive-client,access_key_id=${{ secrets.MINIO_CACHE_ACCESS_KEY_ID }},secret_access_key=${{ secrets.MINIO_CACHE_SECRET_ACCESS_KEY }} \
+            --cache-from type=s3,region=us-east-1,bucket=buildkit-cache,endpoint_url=http://minio.minio.svc.cluster.local:9000,use_path_style=true,name=flimm,access_key_id=${{ secrets.MINIO_CACHE_ACCESS_KEY_ID }},secret_access_key=${{ secrets.MINIO_CACHE_SECRET_ACCESS_KEY }} \
             --output type=local,dest=./fe-stage .
           ls -la ./fe-stage/app/frontend/dist/assets/ | head
 
@@ -97,8 +97,8 @@ jobs:
         env:
           SENTRY_ORG: winktech
         with:
-          projects: archive-client-be archive-client-fe
-          release: archive-client@${{ env.APP_VERSION }}
+          projects: flimm-be flimm-fe
+          release: flimm@${{ env.APP_VERSION }}
           environment: production
           set_commits: auto
           ignore_missing: true
