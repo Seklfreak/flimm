@@ -24,6 +24,7 @@ export const keys = {
   playlist: (id: string) => ["playlists", id] as const,
   pinnedPlaylists: ["playlists", "pinned"] as const,
   history: (filter: string, q: string) => ["history", { filter, q }] as const,
+  inProgress: ["history", "in-progress-sidebar"] as const,
   search: (q: string, scope: string, unseen: boolean, feed: string | undefined) =>
     ["search", { q, scope, unseen, feed }] as const,
 };
@@ -237,6 +238,26 @@ export function useSetPlaylistAudioOnly() {
       void qc.invalidateQueries({ queryKey: keys.pinnedPlaylists });
       void qc.invalidateQueries({ queryKey: ["playlists"] });
       void qc.invalidateQueries({ queryKey: keys.playlist(v.id) });
+    },
+  });
+}
+
+// The sidebar's "Continue watching" list. Only the first page is fetched — the
+// History page is where the full list lives.
+export function useInProgress() {
+  return useQuery({
+    queryKey: keys.inProgress,
+    queryFn: () => api.history("in_progress", "", 0),
+    staleTime: 30_000,
+  });
+}
+
+export function useRemoveHistoryEntry() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (entryId: string) => api.deleteHistory(entryId),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["history"] });
     },
   });
 }
