@@ -69,6 +69,22 @@ jobs:
           cache-from: type=s3,region=us-east-1,bucket=buildkit-cache,endpoint_url=http://minio.minio.svc.cluster.local:9000,use_path_style=true,name=archive-client,access_key_id=${{ secrets.MINIO_CACHE_ACCESS_KEY_ID }},secret_access_key=${{ secrets.MINIO_CACHE_SECRET_ACCESS_KEY }}
           cache-to: type=s3,region=us-east-1,bucket=buildkit-cache,endpoint_url=http://minio.minio.svc.cluster.local:9000,use_path_style=true,name=archive-client,mode=max,access_key_id=${{ secrets.MINIO_CACHE_ACCESS_KEY_ID }},secret_access_key=${{ secrets.MINIO_CACHE_SECRET_ACCESS_KEY }}
 
+      # Sourcemaps exist only to make Sentry stack traces readable: they are
+      # built "hidden" (no sourceMappingURL comment) and deleted before the Go
+      # binary embeds the frontend, so they are never served. Re-running the
+      # frontend stage is a cache hit against the same MinIO buildkit cache.
+      - name: Export frontend sourcemaps
+        if: env.SENTRY_AUTH_TOKEN != ''
+        env:
+          VITE_SENTRY_DSN: ${{ vars.VITE_SENTRY_DSN }}
+        run: |
+          docker buildx build --target frontend \
+            --build-arg APP_VERSION="$APP_VERSION" \
+            --build-arg VITE_SENTRY_DSN="$VITE_SENTRY_DSN" \
+            --cache-from type=s3,region=us-east-1,bucket=buildkit-cache,endpoint_url=http://minio.minio.svc.cluster.local:9000,use_path_style=true,name=archive-client,access_key_id=${{ secrets.MINIO_CACHE_ACCESS_KEY_ID }},secret_access_key=${{ secrets.MINIO_CACHE_SECRET_ACCESS_KEY }} \
+            --output type=local,dest=./fe-stage .
+          ls -la ./fe-stage/app/frontend/dist/assets/ | head
+
       # Register the release in both Sentry projects and mark it deployed to
       # production. The image is live ~1 min after the push (Flux automation),
       # so CI is the deploy signal. Needs the SENTRY_AUTH_TOKEN secret.
@@ -86,3 +102,5 @@ jobs:
           environment: production
           set_commits: auto
           ignore_missing: true
+          sourcemaps: ./fe-stage/app/frontend/dist/assets
+          url_prefix: "~/assets"

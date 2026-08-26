@@ -31,7 +31,7 @@ func main() {
 	// logger below forwards error records as events. Only API request
 	// transactions are traced; media streaming, health checks and static
 	// paths are dropped.
-	flush, sentryErr := obs.Init("archive@"+version, func(name string) bool {
+	flush, sentryErr := obs.Init("archive-client@"+version, func(name string) bool {
 		return strings.Contains(name, "/api/")
 	})
 	defer flush()
