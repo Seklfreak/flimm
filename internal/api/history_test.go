@@ -9,8 +9,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/Seklfreak/archive-client/internal/db/sqlc"
-	"github.com/Seklfreak/archive-client/internal/ta"
+	"github.com/Seklfreak/flimm/internal/db/sqlc"
+	"github.com/Seklfreak/flimm/internal/ta"
 )
 
 func TestHistoryListAndDelete(t *testing.T) {

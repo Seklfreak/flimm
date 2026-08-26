@@ -6,8 +6,8 @@ import (
 	"regexp"
 	"time"
 
-	"github.com/Seklfreak/archive-client/internal/db/sqlc"
-	"github.com/Seklfreak/archive-client/internal/ta"
+	"github.com/Seklfreak/flimm/internal/db/sqlc"
+	"github.com/Seklfreak/flimm/internal/ta"
 )
 
 // ---- video ----
@@ -168,7 +168,7 @@ type PlaylistSummary struct {
 	InProgressCount int                 `json:"in_progress_count"`
 	Progress        float64             `json:"progress"`
 	ResumeVideoID   *string             `json:"resume_video_id"`
-	// Pinned and AudioOnly are Archive's own per-user state — TubeArchivist
+	// Pinned and AudioOnly are Flimm's own per-user state — TubeArchivist
 	// has no concept of either.
 	Pinned    bool `json:"pinned"`
 	AudioOnly bool `json:"audio_only"`

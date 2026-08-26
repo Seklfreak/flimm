@@ -1,4 +1,4 @@
-// Command server runs the Archive backend: the /api/v1 JSON API, the /media
+// Command server runs the Flimm backend: the /api/v1 JSON API, the /media
 // proxy to TubeArchivist and the embedded web frontend.
 package main
 
@@ -14,13 +14,13 @@ import (
 
 	"github.com/coreos/go-oidc/v3/oidc"
 
-	archive "github.com/Seklfreak/archive-client"
-	"github.com/Seklfreak/archive-client/internal/api"
-	"github.com/Seklfreak/archive-client/internal/config"
-	"github.com/Seklfreak/archive-client/internal/db"
-	"github.com/Seklfreak/archive-client/internal/media"
-	"github.com/Seklfreak/archive-client/internal/obs"
-	"github.com/Seklfreak/archive-client/internal/ta"
+	"github.com/Seklfreak/flimm"
+	"github.com/Seklfreak/flimm/internal/api"
+	"github.com/Seklfreak/flimm/internal/config"
+	"github.com/Seklfreak/flimm/internal/db"
+	"github.com/Seklfreak/flimm/internal/media"
+	"github.com/Seklfreak/flimm/internal/obs"
+	"github.com/Seklfreak/flimm/internal/ta"
 )
 
 // version is the release version, injected at build time via
@@ -32,7 +32,7 @@ func main() {
 	// logger below forwards error records as events. Only API request
 	// transactions are traced; media streaming, health checks and static
 	// paths are dropped.
-	flush, sentryErr := obs.Init("archive-client@"+version, func(name string) bool {
+	flush, sentryErr := obs.Init("flimm@"+version, func(name string) bool {
 		return strings.Contains(name, "/api/")
 	})
 	defer flush()
@@ -92,7 +92,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	dist, err := fs.Sub(archive.FrontendFS, "frontend/dist")
+	dist, err := fs.Sub(flimm.FrontendFS, "frontend/dist")
 	if err != nil {
 		log.Error("frontend fs", "err", err)
 		os.Exit(1)

@@ -13,7 +13,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/Seklfreak/archive-client/internal/ta"
+	"github.com/Seklfreak/flimm/internal/ta"
 )
 
 const (

@@ -1,7 +1,7 @@
 import { api } from "./api";
 
 // <video>/<img> cannot send the Bearer header, so media auth rides on the
-// archive_media cookie set by POST /session/media. We call it once after
+// flimm_media cookie set by POST /session/media. We call it once after
 // login and again (deduplicated) when a media request 401s.
 let inflight: Promise<void> | null = null;
 let lastRefresh = 0;

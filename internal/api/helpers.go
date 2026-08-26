@@ -13,8 +13,8 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/Seklfreak/archive-client/internal/db/sqlc"
-	"github.com/Seklfreak/archive-client/internal/ta"
+	"github.com/Seklfreak/flimm/internal/db/sqlc"
+	"github.com/Seklfreak/flimm/internal/ta"
 )
 
 const (

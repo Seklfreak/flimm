@@ -8,7 +8,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
-	"github.com/Seklfreak/archive-client/internal/db/sqlc"
+	"github.com/Seklfreak/flimm/internal/db/sqlc"
 )
 
 func (s *Server) loadPrefs(r *http.Request, uid uuid.UUID) (Prefs, error) {

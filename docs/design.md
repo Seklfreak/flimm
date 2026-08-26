@@ -1,7 +1,7 @@
 # Product model
 
-Archive is a viewing client for one TubeArchivist instance. TubeArchivist does
-the downloading, indexing and storage; Archive adds a per-user way to *watch*
+Flimm is a viewing client for one TubeArchivist instance. TubeArchivist does
+the downloading, indexing and storage; Flimm adds a per-user way to *watch*
 what it holds. The design canvas (screens for web, iPhone, iPad and Apple TV)
 lives outside this repo; this page is the written summary of the model it
 encodes.
@@ -74,7 +74,7 @@ results to one kind, to unseen videos, or to the current feed.
 
 Autoplay, playback speed, subtitle language and size, skip sponsors, the
 Everything-feed options and theme (system / light / dark). Stored per user in
-Archive.
+Flimm.
 
 ## Platforms
 

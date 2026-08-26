@@ -7,7 +7,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/Seklfreak/archive-client/internal/ta"
+	"github.com/Seklfreak/flimm/internal/ta"
 )
 
 // ---- synthetic mp4 with a Nero chpl box ----

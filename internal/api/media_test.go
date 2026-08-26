@@ -10,12 +10,12 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/Seklfreak/archive-client/internal/ta"
+	"github.com/Seklfreak/flimm/internal/ta"
 )
 
-// testCookie builds an archive_media cookie the way the server issues it.
+// testCookie builds an flimm_media cookie the way the server issues it.
 func testCookie(value string) *http.Cookie {
-	return &http.Cookie{Name: "archive_media", Value: value, Path: "/media", HttpOnly: true, Secure: true, SameSite: http.SameSiteLaxMode}
+	return &http.Cookie{Name: "flimm_media", Value: value, Path: "/media", HttpOnly: true, Secure: true, SameSite: http.SameSiteLaxMode}
 }
 
 func mediaServer(t *testing.T) (*Server, *httptest.Server, *[]*http.Request) {
@@ -92,7 +92,7 @@ func TestMediaAuthCookieVsBearer(t *testing.T) {
 		t.Fatalf("session/media: %d", rec.Code)
 	}
 	cookies := rec.Result().Cookies()
-	if len(cookies) != 1 || cookies[0].Name != "archive_media" || !cookies[0].HttpOnly || cookies[0].SameSite != http.SameSiteLaxMode || cookies[0].Path != "/media" {
+	if len(cookies) != 1 || cookies[0].Name != "flimm_media" || !cookies[0].HttpOnly || cookies[0].SameSite != http.SameSiteLaxMode || cookies[0].Path != "/media" {
 		t.Fatalf("cookie = %+v", cookies)
 	}
 	if cookies[0].MaxAge != int((12 * time.Hour).Seconds()) {

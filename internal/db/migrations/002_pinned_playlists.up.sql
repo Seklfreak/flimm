@@ -1,5 +1,5 @@
 -- Playlists the user pinned to the sidebar. TubeArchivist has no concept of
--- pinning, so this is Archive's own state, per user. playlist_id is a TA id
+-- pinning, so this is Flimm's own state, per user. playlist_id is a TA id
 -- (custom or channel playlist) and is deliberately not a foreign key: TA owns
 -- those, and a playlist deleted there should simply stop resolving rather than
 -- break a write here.

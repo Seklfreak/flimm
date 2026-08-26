@@ -1,7 +1,7 @@
-# Archive
+# Flimm
 
 A self-hosted client for a single [TubeArchivist](https://github.com/tubearchivist/tubearchivist)
-instance. TubeArchivist downloads and indexes your YouTube channels; Archive is
+instance. TubeArchivist downloads and indexes your YouTube channels; Flimm is
 the place you *watch* them: feeds built from named sets of channels, automatic
 resume, per-user history, subtitle search, and a clean player — with every
 piece of state that TubeArchivist can hold (watched flag, resume position,
@@ -45,7 +45,7 @@ flowchart LR
     Web["Web app<br/>(React, embedded)"]
     Native["iOS / iPadOS / tvOS<br/>(roadmap)"]
   end
-  subgraph archive [Archive container]
+  subgraph flimm [Flimm container]
     API["Go backend<br/>/api/v1 · /media"]
   end
   PG[(Postgres<br/>users · feeds · watch events · history · prefs)]
@@ -60,20 +60,20 @@ flowchart LR
   API -- "Authorization: Token" --> TA
 ```
 
-Clients talk **only** to the Archive backend. The backend validates OIDC
+Clients talk **only** to the Flimm backend. The backend validates OIDC
 tokens, keeps the state TubeArchivist lacks in Postgres, reads everything else
 live from TubeArchivist with a server-side API token, and reverse-proxies video
 (with range requests), subtitles and thumbnails.
 
 ## How it maps onto TubeArchivist
 
-| Archive | TubeArchivist |
+| Flimm | TubeArchivist |
 |---|---|
 | Video lists, channels, playlists, search, similar, comments | read live from the TA API (short per-user caches) |
 | Watched flag | `POST /api/watched/` — written on every change |
 | Resume position | `POST/DELETE /api/video/{id}/progress/` — written on every heartbeat |
 | Custom playlists | created / reordered / deleted via `/api/playlist/custom/` |
-| Feeds, history, prefs, per-user watch events | **Archive's Postgres only** — TA has no per-user model |
+| Feeds, history, prefs, per-user watch events | **Flimm's Postgres only** — TA has no per-user model |
 | Video, subtitles, thumbnails | proxied from TA's `/media` and `/cache` with the API token |
 
 The full contract — every endpoint, object and the exact TA calls behind them —
@@ -82,13 +82,13 @@ is in [docs/api.md](docs/api.md).
 ## Requirements
 
 - A **TubeArchivist** instance (v0.4+) and an **API token** for it
-  (Settings → User). Ideally reachable over the network from Archive without an
+  (Settings → User). Ideally reachable over the network from Flimm without an
   auth proxy in between.
 - **Postgres** 15+.
 - An **OIDC provider** — any: Authentik, Keycloak, Auth0, Zitadel, Dex,
-  Google… Archive needs a public (PKCE) client with redirect URI
+  Google… Flimm needs a public (PKCE) client with redirect URI
   `https://<host>/auth/callback`.
-- HTTPS in front of Archive (the media cookie is `Secure`).
+- HTTPS in front of Flimm (the media cookie is `Secure`).
 - **ffmpeg** for audio-only playback. It ships in the container image; a local
   build needs it on `PATH` (or set `FFMPEG_PATH`). Without it everything else
   works and only `/media/audio/*` fails.
@@ -103,12 +103,12 @@ All configuration is via environment variables.
 | `TA_TOKEN` | yes | TubeArchivist API token (Settings → User) |
 | `DATABASE_URL` | yes | Postgres DSN |
 | `MEDIA_TOKEN_SECRET` | yes | HMAC secret for the media cookie (`openssl rand -hex 32`) |
-| `PUBLIC_URL` | yes | the `https://` origin users reach Archive on; used for cookies/CORS |
+| `PUBLIC_URL` | yes | the `https://` origin users reach Flimm on; used for cookies/CORS |
 | `OIDC_ISSUER` | unless `AUTH_DISABLED=true` | issuer URL (discovery at `<issuer>/.well-known/openid-configuration`) |
 | `OIDC_CLIENT_ID` | unless `AUTH_DISABLED=true` | public client id |
 | `AUTH_DISABLED` | no | `true` skips auth and uses a fixed dev user — **dev only** |
 | `ADMIN_EMAILS` | no | comma-separated; admins see `/healthz` details |
-| `APP_NAME` | no | default `Archive` |
+| `APP_NAME` | no | default `Flimm` |
 | `PORT` | no | default `8080` |
 | `MIN_PLAY_SECONDS` | no | how long a video must play before it enters history and gets a resume position (default 15) |
 | `SENTRY_DSN` | no | backend error reporting |
@@ -146,8 +146,8 @@ Tests: `go test ./...` and `cd frontend && npm run lint && npm run build`.
 ## Container image
 
 ```
-ghcr.io/seklfreak/archive-client:<version>   # semver, e.g. 1.2.3
-ghcr.io/seklfreak/archive-client:latest      # newest release
+ghcr.io/seklfreak/flimm:<version>   # semver, e.g. 1.2.3
+ghcr.io/seklfreak/flimm:latest      # newest release
 ```
 
 `linux/amd64`. Listens on `PORT` (8080), serves the API, media proxy and web
@@ -155,7 +155,7 @@ app from one port, runs migrations on start.
 
 ## Deploying
 
-Archive is a stateless single container next to Postgres and TubeArchivist.
+Flimm is a stateless single container next to Postgres and TubeArchivist.
 [docs/deploy.md](docs/deploy.md) has a generic Kubernetes example (Deployment,
 Service, Ingress, Secret, ConfigMap) plus notes on placing it in the same
 cluster as TubeArchivist so streaming doesn't cross an auth proxy, OIDC

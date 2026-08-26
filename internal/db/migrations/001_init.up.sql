@@ -1,4 +1,4 @@
--- Archive keeps only what TubeArchivist cannot hold: users, feeds, per-user
+-- Flimm keeps only what TubeArchivist cannot hold: users, feeds, per-user
 -- watch history and preferences. Videos/channels/playlists live in TA and are
 -- referenced by their TA (YouTube) ids as text.
 

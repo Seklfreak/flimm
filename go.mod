@@ -1,4 +1,4 @@
-module github.com/Seklfreak/archive-client
+module github.com/Seklfreak/flimm
 
 go 1.26
 

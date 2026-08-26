@@ -6,7 +6,7 @@
   audio track on first request (~20–30× less data) and playlists can be marked
   audio-only for music. See [api.md](api.md#derived-media).
 - **Pinned playlists** (2026-08-26) — pin a playlist to the sidebar from the
-  playlist page or its card. Pins are Archive's own per-user state, so they
+  playlist page or its card. Pins are Flimm's own per-user state, so they
   follow the account to every client. See [api.md](api.md#pinned-playlists).
 - **Seeded shuffle** (2026-08-26) — Shuffle starts a real shuffled run that
   previous/next and autoplay follow, and reshuffles on every press. The seed
@@ -38,6 +38,6 @@
   Segments already render on the timeline.
 - **Comments** — render TubeArchivist's archived comments under the video.
 - **Download queue management** — view and manage TubeArchivist's download
-  queue and subscriptions from Archive (add URLs, retry, ignore).
-- **Multi-instance** — one Archive backend fronting several TubeArchivist
+  queue and subscriptions from Flimm (add URLs, retry, ignore).
+- **Multi-instance** — one Flimm backend fronting several TubeArchivist
   instances, with feeds spanning them.

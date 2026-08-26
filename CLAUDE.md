@@ -4,10 +4,10 @@ Guidance for working in this repo. Read before making changes.
 
 ## This repo is public and generic
 
-Archive is published as a generic self-hosted TubeArchivist client. Nothing in
+Flimm is published as a generic self-hosted TubeArchivist client. Nothing in
 this repo may reference a specific deployment: **no homelab hostnames,
 Kubernetes namespaces, kubeconfig paths, cluster-internal service names,
-Sentry DSNs, tokens, or personal data**. Examples use `archive.example.com`,
+Sentry DSNs, tokens, or personal data**. Examples use `flimm.example.com`,
 `tubearchivist.example.com`, `tubearchivist:8000` and the like. Deployment
 specifics (manifests, secrets, image pins) live outside this repo; the only
 deployment doc here is the generic `docs/deploy.md`.
@@ -56,7 +56,7 @@ follow-up.
   `internal/db/sqlc/*` by hand.
 - Migrations are embedded and run on server boot. Add paired
   `NNN_name.up.sql` / `NNN_name.down.sql`.
-- Archive stores only what TubeArchivist cannot: users, feeds, watch events,
+- Flimm stores only what TubeArchivist cannot: users, feeds, watch events,
   history, prefs. Video/channel/playlist data is read from TA and never copied
   into Postgres beyond ids.
 
@@ -73,7 +73,7 @@ follow-up.
   **404, not 403**, so existence isn't leaked. When adding an endpoint that
   touches user data, scope it the same way and add an isolation test (user A
   must not reach user B's data).
-- `/media/*` accepts a Bearer header **or** the `archive_media` cookie (signed
+- `/media/*` accepts a Bearer header **or** the `flimm_media` cookie (signed
   with `MEDIA_TOKEN_SECRET`, 12h, HttpOnly, Secure, SameSite=Lax) because
   `<video>` / `AVPlayer` cannot always set headers. Never relax the cookie
   flags; never serve media unauthenticated.
@@ -82,7 +82,7 @@ follow-up.
 
 ## Frontend conventions
 
-- Talk only to the Archive backend (`/api/v1`, `/media`) — never to
+- Talk only to the Flimm backend (`/api/v1`, `/media`) — never to
   TubeArchivist directly.
 - Modals/overlays must render through a **portal to `document.body`**
   (`createPortal`). A header with `backdrop-blur` creates a containing block
@@ -100,7 +100,7 @@ follow-up.
   (config in `.golangci.yml`; it includes govet).
 - Frontend: `cd frontend && npm run lint && npm run build`.
 - Go imports follow goimports grouping with the local module
-  (`github.com/Seklfreak/archive-client/...`) last.
+  (`github.com/Seklfreak/flimm/...`) last.
 - Handler tests use the fake TA client and a fake querier; set only what a test
   needs.
 - Re-read the "public and generic" rule above before adding any example value.
@@ -110,5 +110,5 @@ follow-up.
 `.github/workflows/test.yaml` runs golangci-lint + `go test` and the frontend
 `lint` + `build` on every push/PR. Green `main` auto-cuts a versioned release
 (`release.yaml`, Seklfreak/ai-release-action) which dispatches `build.yaml` to
-push `ghcr.io/seklfreak/archive-client:<version>` and `:latest`. Keep both
+push `ghcr.io/seklfreak/flimm:<version>` and `:latest`. Keep both
 test jobs green. Docs/CI-only commits do not cut a release.

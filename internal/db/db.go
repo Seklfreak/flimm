@@ -15,7 +15,7 @@ import (
 	"github.com/golang-migrate/migrate/v4/source/iofs"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/Seklfreak/archive-client/internal/obs"
+	"github.com/Seklfreak/flimm/internal/obs"
 )
 
 //go:embed migrations/*.sql

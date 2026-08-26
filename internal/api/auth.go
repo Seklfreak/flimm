@@ -15,7 +15,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/Seklfreak/archive-client/internal/db/sqlc"
+	"github.com/Seklfreak/flimm/internal/db/sqlc"
 )
 
 // NewVerifier builds an OIDC token verifier from the issuer's discovery document.
@@ -113,7 +113,7 @@ func withUser(ctx context.Context, u *authedUser) context.Context {
 }
 
 // mediaAuthMiddleware guards /media/*: a Bearer header (native players) or
-// the signed archive_media cookie (browser <video>) is accepted.
+// the signed flimm_media cookie (browser <video>) is accepted.
 func (s *Server) mediaAuthMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if bearerToken(r) != "" {
@@ -139,7 +139,7 @@ func (s *Server) mediaAuthMiddleware(next http.Handler) http.Handler {
 // ---- media token ----
 
 const (
-	mediaCookieName = "archive_media"
+	mediaCookieName = "flimm_media"
 	mediaTokenTTL   = 12 * time.Hour
 )
 
@@ -176,7 +176,7 @@ func (s *Server) verifyMediaToken(tok string, now time.Time) (uuid.UUID, bool) {
 	return uid, true
 }
 
-// setMediaCookie issues the archive_media cookie for the current user.
+// setMediaCookie issues the flimm_media cookie for the current user.
 func (s *Server) setMediaCookie(w http.ResponseWriter, r *http.Request) {
 	uid := currentUserID(r.Context())
 	// Secure follows PUBLIC_URL's scheme: on in every https deploy, off only
