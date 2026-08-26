@@ -1,0 +1,16 @@
+# Local Postgres for development. State is container-local:
+# `docker compose down -v` resets it. Matches DATABASE_URL in .env.example.
+services:
+  postgres:
+    image: postgres:17-alpine
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: archive
+      POSTGRES_PASSWORD: archive
+      POSTGRES_DB: archive
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+volumes:
+  pgdata:

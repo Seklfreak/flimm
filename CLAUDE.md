@@ -1,0 +1,114 @@
+# CLAUDE.md
+
+Guidance for working in this repo. Read before making changes.
+
+## This repo is public and generic
+
+Archive is published as a generic self-hosted TubeArchivist client. Nothing in
+this repo may reference a specific deployment: **no homelab hostnames,
+Kubernetes namespaces, kubeconfig paths, cluster-internal service names,
+Sentry DSNs, tokens, or personal data**. Examples use `archive.example.com`,
+`tubearchivist.example.com`, `tubearchivist:8000` and the like. Deployment
+specifics (manifests, secrets, image pins) live outside this repo; the only
+deployment doc here is the generic `docs/deploy.md`.
+
+## Keep the docs in sync
+
+When a change affects behavior, features, endpoints, the data model, config, or
+setup, update the docs in the **same change**:
+
+- **`README.md`** — user/dev-facing: intro, features, requirements, the
+  configuration table, running locally, image name.
+- **`docs/api.md`** — the API contract (endpoints, objects, TA mapping, env
+  vars). Clients (web and native) are written against it, so it is normative.
+- **`docs/design.md`** — the product model; update when a concept changes.
+- **`docs/roadmap.md`** — move items to **Done** (with a date) when shipped; add
+  new ideas under the appropriate heading. Don't restate roadmap detail in the
+  README — link to it.
+
+If a change makes a doc wrong, fixing the doc is part of the change, not a
+follow-up.
+
+## Layout
+
+- Repo root is the Go module (chi, pgx + sqlc, golang-migrate, go-oidc).
+  - `cmd/server` — the HTTP server: `/api/v1/*` JSON API, `/media/*` reverse
+    proxy to TubeArchivist, and the embedded frontend for everything else.
+  - `internal/ta` — TubeArchivist client behind an interface so handlers can be
+    tested against a fake.
+  - `internal/db/migrations` — SQL migrations; `internal/db/queries` — sqlc
+    input; `internal/db/sqlc` — generated (do **not** hand-edit).
+- `frontend/` — React + TypeScript + Vite. `frontend/dist` is `//go:embed`-ed
+  into the binary, so the whole app ships as one container image.
+- `docs/` — `api.md` (contract), `design.md`, `deploy.md`, `roadmap.md`.
+
+## Toolchain
+
+- **Go 1.26+.**
+- **Node 24** for the frontend (matches CI). Use nvm/mise if the machine's
+  default `node` is older — old versions fail in confusing ways.
+- Postgres for local dev; see README "Running locally".
+
+## Database / sqlc
+
+- After editing `internal/db/queries/*.sql` or adding a migration, regenerate
+  with `make sqlc` (pinned sqlc version in the Makefile). Never edit
+  `internal/db/sqlc/*` by hand.
+- Migrations are embedded and run on server boot. Add paired
+  `NNN_name.up.sql` / `NNN_name.down.sql`.
+- Archive stores only what TubeArchivist cannot: users, feeds, watch events,
+  history, prefs. Video/channel/playlist data is read from TA and never copied
+  into Postgres beyond ids.
+
+## Auth & access model (important)
+
+- Clients send an OIDC access token (`Authorization: Bearer <jwt>`) on every
+  `/api/v1/*` request. The auth middleware validates it against
+  `OIDC_ISSUER` / `OIDC_CLIENT_ID`, upserts a `users` row keyed by `sub`, and
+  puts the user id + `isAdmin` in the request context. `AUTH_DISABLED=true`
+  → fixed dev user, treated as admin. Admin gating uses the `ADMIN_EMAILS`
+  allowlist.
+- All per-user state (feeds, watch events, history, prefs) is scoped by user
+  id in every query. A feed/history id that belongs to another user returns
+  **404, not 403**, so existence isn't leaked. When adding an endpoint that
+  touches user data, scope it the same way and add an isolation test (user A
+  must not reach user B's data).
+- `/media/*` accepts a Bearer header **or** the `archive_media` cookie (signed
+  with `MEDIA_TOKEN_SECRET`, 12h, HttpOnly, Secure, SameSite=Lax) because
+  `<video>` / `AVPlayer` cannot always set headers. Never relax the cookie
+  flags; never serve media unauthenticated.
+- The TubeArchivist token (`TA_TOKEN`) is server-side only and must never reach
+  a client, a log line, or an error message.
+
+## Frontend conventions
+
+- Talk only to the Archive backend (`/api/v1`, `/media`) — never to
+  TubeArchivist directly.
+- Modals/overlays must render through a **portal to `document.body`**
+  (`createPortal`). A header with `backdrop-blur` creates a containing block
+  for `position: fixed` descendants, so a `fixed inset-0` overlay rendered
+  inside it is sized to the header, not the viewport.
+- Obey the Rules of Hooks. `npm run lint` (ESLint + `react-hooks`) catches
+  hook-order bugs that `tsc` and `vite build` do **not** (a hook after an
+  early `return` → blank page). Lint runs in CI.
+- Progress heartbeats go through `POST /videos/{id}/progress`; on a media 401
+  call `POST /session/media` once and retry.
+
+## Before committing
+
+- Backend: `golangci-lint run ./... && go build ./... && go test ./...`
+  (config in `.golangci.yml`; it includes govet).
+- Frontend: `cd frontend && npm run lint && npm run build`.
+- Go imports follow goimports grouping with the local module
+  (`github.com/Seklfreak/archive-client/...`) last.
+- Handler tests use the fake TA client and a fake querier; set only what a test
+  needs.
+- Re-read the "public and generic" rule above before adding any example value.
+
+## CI
+
+`.github/workflows/test.yaml` runs golangci-lint + `go test` and the frontend
+`lint` + `build` on every push/PR. Green `main` auto-cuts a versioned release
+(`release.yaml`, Seklfreak/ai-release-action) which dispatches `build.yaml` to
+push `ghcr.io/seklfreak/archive-client:<version>` and `:latest`. Keep both
+test jobs green. Docs/CI-only commits do not cut a release.

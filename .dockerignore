@@ -1,0 +1,4 @@
+bin/
+.env
+.git/
+frontend/node_modules/

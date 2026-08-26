@@ -1,0 +1,57 @@
+name: Release
+
+# Auto-cut a release on every push to main.
+# The bump decision, release notes, tagging and build dispatch all live in
+# Seklfreak/ai-release-action — this file supplies only what is specific to archive-client.
+#
+# project-description is what the classifier judges "can this change reach a user?"
+# against, so it must describe THIS project. A description carried over from another
+# repo silently suppresses real releases; that is why it has no default.
+on:
+  push:
+    branches: [main]
+    # Don't even start the classifier for changes that cannot reach a user.
+    # ai-release-action's own non-shipping list is consulted only on its no-API
+    # fallback path — with a key present the model decides, and it is told to
+    # prefer patch when in doubt. This filter makes the same set deterministic;
+    # it mirrors the action's NON_SHIPPING regex. A push mixing these with real
+    # code still releases, because paths-ignore only skips when every changed
+    # file matches.
+    paths-ignore:
+      - "**.md"
+      - ".github/**"
+      - ".golangci*"
+      - "docs/**"
+      - "scripts/**"
+      - "LICENSE"
+      - ".gitignore"
+
+permissions:
+  contents: write # push tag + create release
+  actions: write # dispatch the build workflow
+
+jobs:
+  release:
+    # Self-hosted runner in the homelab cluster. Only private repos may use
+    # this — see docs/self-hosted-runners.md in the homelab repo.
+    runs-on: homelab
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # the bump is read from the commit range
+          fetch-tags: true # the previous tag is the baseline
+
+      - uses: Seklfreak/ai-release-action@v1
+        with:
+          anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+          build-workflow: "build.yaml"
+          project-description: >-
+            Archive is a self-hosted client for a single TubeArchivist instance: a Go
+            backend (chi, pgx/sqlc, golang-migrate, go-oidc) plus a React frontend shipped
+            as one container image. It adds feeds (named channel sets), per-user watch
+            history and resume positions, and preferences on top of TubeArchivist, proxies
+            media/thumbnails from it, and writes watched state, progress and custom
+            playlists back to TubeArchivist. frontend/dist is //go:embed-ed into the
+            binary, so frontend changes — including styling — ship to users, as do SQL
+            migrations, sqlc queries and the Dockerfile. Only docs, CI workflows and
+            scripts/ live outside the image.

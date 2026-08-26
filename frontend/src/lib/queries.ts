@@ -1,0 +1,204 @@
+import {
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+  type QueryClient,
+} from "@tanstack/react-query";
+import { api, type Feed, type FeedInput, type Page, type Prefs, EVERYTHING_ID } from "./api";
+
+export const keys = {
+  me: ["me"] as const,
+  feeds: ["feeds"] as const,
+  feed: (id: string) => ["feeds", id] as const,
+  feedVideos: (id: string, view: string | undefined) => ["feeds", id, "videos", view ?? "default"] as const,
+  channels: (q: string, sort: string, unfeeded: boolean) => ["channels", { q, sort, unfeeded }] as const,
+  channel: (id: string) => ["channels", id] as const,
+  channelVideos: (id: string, view: string) => ["channels", id, "videos", view] as const,
+  channelPlaylists: (id: string) => ["channels", id, "playlists"] as const,
+  video: (id: string) => ["videos", id] as const,
+  upNext: (id: string, ctx: Record<string, string | undefined>) => ["videos", id, "up-next", ctx] as const,
+  playlists: (kind: string | undefined) => ["playlists", kind ?? "all"] as const,
+  playlist: (id: string) => ["playlists", id] as const,
+  history: (filter: string, q: string) => ["history", { filter, q }] as const,
+  search: (q: string, scope: string, unseen: boolean, feed: string | undefined) =>
+    ["search", { q, scope, unseen, feed }] as const,
+};
+
+// Generic paged → infinite adapter for the { items, page, page_size, total } shape.
+export function pageParams<T>() {
+  return {
+    initialPageParam: 0,
+    getNextPageParam: (last: Page<T>) => {
+      const seen = (last.page + 1) * last.page_size;
+      return seen < last.total ? last.page + 1 : undefined;
+    },
+  };
+}
+
+export function useMe() {
+  return useQuery({ queryKey: keys.me, queryFn: api.me, staleTime: 5 * 60_000 });
+}
+
+export function usePrefs(): Prefs | undefined {
+  return useMe().data?.prefs;
+}
+
+export function useUpdatePrefs() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (patch: Partial<Prefs>) => api.updatePrefs(patch),
+    onMutate: async (patch) => {
+      await qc.cancelQueries({ queryKey: keys.me });
+      qc.setQueryData(keys.me, (old: { prefs: Prefs } | undefined) =>
+        old ? { ...old, prefs: { ...old.prefs, ...patch } } : old,
+      );
+    },
+    onSettled: () => qc.invalidateQueries({ queryKey: keys.me }),
+  });
+}
+
+export function useFeeds() {
+  return useQuery({ queryKey: keys.feeds, queryFn: api.feeds, staleTime: 30_000 });
+}
+
+export function useFeed(id: string | undefined) {
+  const feeds = useFeeds();
+  return useQuery({
+    queryKey: keys.feed(id ?? ""),
+    queryFn: () => api.feed(id!),
+    enabled: !!id,
+    // Seed from the sidebar list so the header renders instantly.
+    initialData: () => feeds.data?.find((f) => f.id === id),
+    initialDataUpdatedAt: () => feeds.dataUpdatedAt,
+  });
+}
+
+export function pinnedFeed(feeds: Feed[] | undefined): Feed | undefined {
+  if (!feeds || feeds.length === 0) return undefined;
+  return feeds.find((f) => f.pinned) ?? feeds.find((f) => f.id !== EVERYTHING_ID) ?? feeds[0];
+}
+
+export function useFeedVideos(id: string, view: "unseen" | "continue" | "all" | undefined) {
+  return useInfiniteQuery({
+    queryKey: keys.feedVideos(id, view),
+    queryFn: ({ pageParam }) => api.feedVideos(id, view, pageParam),
+    ...pageParams(),
+  });
+}
+
+export function useSaveFeed() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, input }: { id?: string; input: FeedInput }) =>
+      id ? api.updateFeed(id, input) : api.createFeed(input),
+    onSuccess: () => invalidateFeedish(qc),
+  });
+}
+
+export function useDeleteFeed() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.deleteFeed(id),
+    onSuccess: () => invalidateFeedish(qc),
+  });
+}
+
+export function invalidateFeedish(qc: QueryClient) {
+  void qc.invalidateQueries({ queryKey: ["feeds"] });
+  void qc.invalidateQueries({ queryKey: ["channels"] });
+}
+
+// After any watch-state change (progress, mark seen, start over) everything
+// that shows progress or unseen counts is stale.
+export function invalidateWatchState(qc: QueryClient, videoId?: string) {
+  void qc.invalidateQueries({ queryKey: ["feeds"] });
+  void qc.invalidateQueries({ queryKey: ["channels"] });
+  void qc.invalidateQueries({ queryKey: ["playlists"] });
+  void qc.invalidateQueries({ queryKey: ["history"] });
+  if (videoId) void qc.invalidateQueries({ queryKey: keys.video(videoId) });
+}
+
+export function useSetWatched() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, watched }: { id: string; watched: boolean }) => api.setWatched(id, watched),
+    onSuccess: (_d, v) => invalidateWatchState(qc, v.id),
+  });
+}
+
+export function useChannels(q: string, sort: "name" | "videos" | "unseen" | "last_upload", unfeeded: boolean) {
+  return useInfiniteQuery({
+    queryKey: keys.channels(q, sort, unfeeded),
+    queryFn: ({ pageParam }) => api.channels({ q, sort, unfeeded, page: pageParam }),
+    ...pageParams(),
+  });
+}
+
+// Whole directory for pickers (feed editor); pages through to the end.
+export function useAllChannels() {
+  return useQuery({
+    queryKey: ["channels", "all"],
+    queryFn: async () => {
+      const out = [];
+      let page = 0;
+      for (;;) {
+        const p = await api.channels({ sort: "name", page, page_size: 100 });
+        out.push(...p.items);
+        if ((p.page + 1) * p.page_size >= p.total || p.items.length === 0) break;
+        page = p.page + 1;
+      }
+      return out;
+    },
+    staleTime: 60_000,
+  });
+}
+
+export function useChannel(id: string) {
+  return useQuery({ queryKey: keys.channel(id), queryFn: () => api.channel(id) });
+}
+
+export function useChannelVideos(id: string, view: "all" | "unseen") {
+  return useInfiniteQuery({
+    queryKey: keys.channelVideos(id, view),
+    queryFn: ({ pageParam }) => api.channelVideos(id, view, pageParam),
+    ...pageParams(),
+  });
+}
+
+export function useChannelPlaylists(id: string, enabled = true) {
+  return useQuery({ queryKey: keys.channelPlaylists(id), queryFn: () => api.channelPlaylists(id), enabled });
+}
+
+export function useVideo(id: string) {
+  return useQuery({ queryKey: keys.video(id), queryFn: () => api.video(id) });
+}
+
+export function usePlaylists(kind: "custom" | "channel" | undefined) {
+  return useInfiniteQuery({
+    queryKey: keys.playlists(kind),
+    queryFn: ({ pageParam }) => api.playlists(kind, pageParam),
+    ...pageParams(),
+  });
+}
+
+export function usePlaylist(id: string) {
+  return useQuery({ queryKey: keys.playlist(id), queryFn: () => api.playlist(id) });
+}
+
+export function useHistory(filter: "all" | "in_progress" | "seen", q: string) {
+  return useInfiniteQuery({
+    queryKey: keys.history(filter, q),
+    queryFn: ({ pageParam }) => api.history(filter, q, pageParam),
+    ...pageParams(),
+  });
+}
+
+export function useSearch(q: string, scope: "all" | "titles" | "subtitles" | "channels" | "playlists", unseen: boolean, feed: string | undefined) {
+  return useQuery({
+    queryKey: keys.search(q, scope, unseen, feed),
+    queryFn: () => api.search(q, { scope, unseen, feed }),
+    enabled: q.trim().length > 0,
+    staleTime: 30_000,
+  });
+}
