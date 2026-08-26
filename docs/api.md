@@ -198,7 +198,7 @@ Prefs:
 | Method | Path | Notes |
 |---|---|---|
 | GET | `/videos/{id}` | Video detail |
-| GET | `/videos/{id}/up-next` | query `feed=<id>` or `playlist=<id>` or `channel=<id>`; returns next VideoSummary[] (max 20) in that context, falling back to `similar` |
+| GET | `/videos/{id}/up-next` | query `feed=<id>` or `playlist=<id>` or `channel=<id>`; **paged** VideoSummary of everything following the video in that context, falling back to `similar` when nothing follows. Paged so a long playlist scrolls rather than being truncated |
 | GET | `/videos/{id}/nav` | same context query; `{ "index", "total", "previous", "next" }` for stepping through the list in both directions |
 | GET | `/videos/{id}/similar` | VideoSummary[] (TA similar) |
 | GET | `/videos/{id}/comments` | TA comments passthrough |

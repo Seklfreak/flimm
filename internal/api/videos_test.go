@@ -179,12 +179,12 @@ func TestUpNextInFeedAndFallback(t *testing.T) {
 
 	// unseen, newest: b1 (08-02), a1 (08-01). After b1 → a1.
 	rec := do(t, h, http.MethodGet, "/api/v1/videos/b1/up-next?feed="+feed.ID.String(), "")
-	if got := ids(decode[[]VideoSummary](t, rec)); !reflect.DeepEqual(got, []string{"a1"}) {
+	if got := ids(decode[Page[VideoSummary]](t, rec).Items); !reflect.DeepEqual(got, []string{"a1"}) {
 		t.Errorf("up-next = %v", got)
 	}
 	// After the last one nothing is left → similar.
 	rec = do(t, h, http.MethodGet, "/api/v1/videos/a1/up-next?feed="+feed.ID.String(), "")
-	if got := ids(decode[[]VideoSummary](t, rec)); !reflect.DeepEqual(got, []string{"c1"}) {
+	if got := ids(decode[Page[VideoSummary]](t, rec).Items); !reflect.DeepEqual(got, []string{"c1"}) {
 		t.Errorf("fallback = %v", got)
 	}
 	if rec := do(t, h, http.MethodGet, "/api/v1/videos/a1/up-next?feed="+uuid.NewString(), ""); rec.Code != http.StatusNotFound {

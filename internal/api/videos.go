@@ -439,7 +439,6 @@ func (s *Server) videoNav(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) upNext(w http.ResponseWriter, r *http.Request) {
-	const limit = 20
 	uid := currentUserID(r.Context())
 	id := chi.URLParam(r, "id")
 	items, err := s.contextList(r, uid)
@@ -451,8 +450,11 @@ func (s *Server) upNext(w http.ResponseWriter, r *http.Request) {
 		s.writeTAError(w, "up next", err)
 		return
 	}
-	next := afterID(items, id, limit)
+	next := afterID(items, id)
 	if len(next) == 0 {
+		// No context, or the current video is last: suggest something rather
+		// than ending on an empty panel. Similar videos are a flat list with
+		// nothing after them, so they only ever fill the first page.
 		vids, err := s.ta.SimilarVideos(r.Context(), id)
 		if err != nil {
 			s.writeTAError(w, "up next", err)
@@ -462,16 +464,14 @@ func (s *Server) upNext(w http.ResponseWriter, r *http.Request) {
 			s.writeDBError(w, "load watch state", err)
 			return
 		}
-		if len(next) > limit {
-			next = next[:limit]
-		}
 	}
-	writeJSON(w, http.StatusOK, next)
+	writeJSON(w, http.StatusOK, slicePage(next, parsePaging(r)))
 }
 
-// afterID returns up to limit items following id; when id isn't in the list
-// (already hidden as seen, say) the head of the list minus id.
-func afterID(items []VideoSummary, id string, limit int) []VideoSummary {
+// afterID returns every item following id; when id isn't in the list (already
+// hidden as seen, say) the whole list minus id. The caller paginates — a long
+// playlist should be scrollable, not truncated at an arbitrary cut-off.
+func afterID(items []VideoSummary, id string) []VideoSummary {
 	out := []VideoSummary{}
 	idx := -1
 	for i, it := range items {
@@ -485,9 +485,6 @@ func afterID(items []VideoSummary, id string, limit int) []VideoSummary {
 			continue
 		}
 		out = append(out, it)
-		if len(out) == limit {
-			break
-		}
 	}
 	return out
 }

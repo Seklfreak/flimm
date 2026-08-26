@@ -5,7 +5,7 @@ import {
   useQueryClient,
   type QueryClient,
 } from "@tanstack/react-query";
-import { api, type Feed, type FeedInput, type Page, type Prefs, EVERYTHING_ID } from "./api";
+import { api, type Feed, type FeedInput, type Page, type Prefs, type VideoSummary, EVERYTHING_ID } from "./api";
 
 export const keys = {
   me: ["me"] as const,
@@ -87,6 +87,17 @@ export function useFeedVideos(id: string, view: "unseen" | "continue" | "all" | 
     queryKey: keys.feedVideos(id, view),
     queryFn: ({ pageParam }) => api.feedVideos(id, view, pageParam),
     ...pageParams(),
+  });
+}
+
+// Up next is paged so a long playlist scrolls instead of stopping at a fixed
+// number of items.
+export function useUpNext(id: string, ctx: Record<string, string | undefined>) {
+  return useInfiniteQuery({
+    queryKey: keys.upNext(id, ctx),
+    queryFn: ({ pageParam }) => api.upNext(id, ctx, pageParam),
+    staleTime: 60_000,
+    ...pageParams<VideoSummary>(),
   });
 }
 
