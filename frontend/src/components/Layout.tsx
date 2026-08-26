@@ -1,11 +1,12 @@
 import { formatCount, remainingUnseen } from "../lib/format";
 import { useEffect, useState } from "react";
 import { Link, NavLink, Outlet, useLocation, useNavigate, useParams } from "react-router";
-import { EVERYTHING_ID, type Feed, type PlaylistSummary } from "@/lib/api";
+import { EVERYTHING_ID, type Feed, type HistoryEntry, type PlaylistSummary } from "@/lib/api";
 import { useConfig } from "@/lib/config";
-import { pinnedFeed, useFeeds, usePinnedPlaylists } from "@/lib/queries";
-import { plural } from "@/lib/format";
+import { pinnedFeed, useFeeds, useInProgress, usePinnedPlaylists, useRemoveHistoryEntry } from "@/lib/queries";
+import { fmtDuration, plural } from "@/lib/format";
 import { SearchIcon, Sheet } from "./ui";
+import { Thumb, watchHref } from "./VideoCard";
 
 // Sidebar (≥ md) with feeds + library nav, per the Main artboard; bottom tab
 // bar Feeds · Channels · Playlists · History on narrow screens (Mobile board).
@@ -30,9 +31,14 @@ const NAV = [
   { to: "/search", label: "Search", icon: SearchIcon },
 ];
 
+// Keep the sidebar short; the History page holds the full list.
+const CONTINUE_LIMIT = 5;
+
 function Sidebar() {
   const feeds = useFeeds();
   const pinnedPlaylists = usePinnedPlaylists();
+  const inProgress = useInProgress();
+  const removeEntry = useRemoveHistoryEntry();
   const config = useConfig();
   const { pathname } = useLocation();
   const params = useParams();
@@ -67,6 +73,19 @@ function Sidebar() {
           ))}
         </div>
       )}
+      {(inProgress.data?.items ?? []).length > 0 && (
+        <div className="flex flex-col gap-1">
+          <div className="sec flex items-center justify-between px-2.5 pb-1">
+            <span>Continue watching</span>
+            <Link to="/history?filter=in_progress" className="text-[12px] font-bold normal-case tracking-normal no-underline">
+              All
+            </Link>
+          </div>
+          {(inProgress.data?.items ?? []).slice(0, CONTINUE_LIMIT).map((e) => (
+            <ContinueItem key={e.id} entry={e} onRemove={() => removeEntry.mutate(e.id)} />
+          ))}
+        </div>
+      )}
       <nav className="flex flex-col gap-0.5">
         {NAV.map(({ to, label, icon: Icon }) => (
           <NavLink
@@ -94,6 +113,32 @@ function FeedNavItem({ feed, active }: { feed: Feed; active: boolean }) {
       <span className="truncate">{feed.name}</span>
       <UnseenBadge n={feed.unseen_count} />
     </Link>
+  );
+}
+
+// One "Continue watching" row. The dismiss button is a sibling of the link,
+// not nested inside it, so tapping it can never navigate.
+function ContinueItem({ entry, onRemove }: { entry: HistoryEntry; onRemove: () => void }) {
+  const v = entry.video;
+  return (
+    <div className="group relative flex items-center gap-2.5 rounded-[10px] px-2.5 py-[7px] hover:bg-raised/60">
+      <Link to={watchHref(v)} className="flex min-w-0 flex-1 items-center gap-2.5 text-ink no-underline hover:text-ink">
+        <span className="w-14 flex-none">
+          <Thumb video={v} compact className="!rounded-md" />
+        </span>
+        <span className="flex min-w-0 flex-col">
+          <span className="truncate text-[13px] font-bold leading-tight">{v.title}</span>
+          <span className="meta text-[11px]">{fmtDuration(v.position)} / {fmtDuration(v.duration)}</span>
+        </span>
+      </Link>
+      <button
+        className="flex-none text-muted-3 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 hover:text-danger"
+        aria-label={`Dismiss ${v.title}`}
+        onClick={onRemove}
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M6 6l12 12M18 6L6 18" /></svg>
+      </button>
+    </div>
   );
 }
 
