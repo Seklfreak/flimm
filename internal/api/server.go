@@ -3,6 +3,7 @@
 package api
 
 import (
+	"cmp"
 	"context"
 	"io/fs"
 	"log/slog"
@@ -27,6 +28,10 @@ import (
 var BuildVersion = "dev"
 
 // Options configures a Server.
+// defaultMinPlaySeconds mirrors config.MinPlaySeconds' default so tests and
+// embedders that leave Options.MinPlaySeconds at zero behave like production.
+const defaultMinPlaySeconds = 15
+
 type Options struct {
 	Pool         *pgxpool.Pool // nil in tests (Querier used directly)
 	Querier      sqlc.Querier  // defaults to sqlc.New(Pool)
@@ -41,6 +46,9 @@ type Options struct {
 	MediaSecret  string
 	// SecureCookies sets the Secure flag on the media cookie (https deploys).
 	SecureCookies bool
+	// MinPlaySeconds is how long a video must be played before it is recorded;
+	// 0 uses the default.
+	MinPlaySeconds float64
 	// CORSOrigins are the browser origins allowed to call the API.
 	CORSOrigins []string
 	// Frontend is the built SPA (frontend/dist); nil serves no static files.
@@ -65,6 +73,8 @@ type Server struct {
 	frontend      fs.FS
 	// chapters caches derived chapter lists per video id.
 	chapters *chaptersCache
+	// minPlaySeconds gates recording a watch event; see Options.
+	minPlaySeconds float64
 }
 
 func NewServer(o Options) *Server {
@@ -81,21 +91,22 @@ func NewServer(o Options) *Server {
 		log = slog.Default()
 	}
 	s := &Server{
-		pool:          o.Pool,
-		q:             q,
-		ta:            o.TA,
-		mediaProxy:    o.MediaProxy,
-		log:           log,
-		verifier:      o.Verifier,
-		adminEmails:   admins,
-		appName:       o.AppName,
-		oidcIssuer:    o.OIDCIssuer,
-		oidcClientID:  o.OIDCClientID,
-		mediaSecret:   []byte(o.MediaSecret),
-		secureCookies: o.SecureCookies,
-		corsOrigins:   o.CORSOrigins,
-		frontend:      o.Frontend,
-		chapters:      newChaptersCache(),
+		pool:           o.Pool,
+		q:              q,
+		ta:             o.TA,
+		mediaProxy:     o.MediaProxy,
+		log:            log,
+		verifier:       o.Verifier,
+		adminEmails:    admins,
+		appName:        o.AppName,
+		oidcIssuer:     o.OIDCIssuer,
+		oidcClientID:   o.OIDCClientID,
+		mediaSecret:    []byte(o.MediaSecret),
+		secureCookies:  o.SecureCookies,
+		corsOrigins:    o.CORSOrigins,
+		frontend:       o.Frontend,
+		chapters:       newChaptersCache(),
+		minPlaySeconds: cmp.Or(o.MinPlaySeconds, defaultMinPlaySeconds),
 	}
 	if o.MediaProxy != nil {
 		// Thumbnails are immutable per id; let the browser keep them a day.

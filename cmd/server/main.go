@@ -98,19 +98,20 @@ func main() {
 	}
 
 	srv := api.NewServer(api.Options{
-		Pool:          pool,
-		TA:            client,
-		MediaProxy:    proxy,
-		Log:           log,
-		Verifier:      verifier,
-		AdminEmails:   cfg.AdminEmails,
-		AppName:       cfg.AppName,
-		OIDCIssuer:    cfg.OIDCIssuer,
-		OIDCClientID:  cfg.OIDCClientID,
-		MediaSecret:   cfg.MediaTokenSecret,
-		SecureCookies: cfg.SecureCookies(),
-		CORSOrigins:   append([]string{cfg.PublicURL}, cfg.CORSOrigins...),
-		Frontend:      dist,
+		Pool:           pool,
+		TA:             client,
+		MediaProxy:     proxy,
+		Log:            log,
+		Verifier:       verifier,
+		AdminEmails:    cfg.AdminEmails,
+		AppName:        cfg.AppName,
+		OIDCIssuer:     cfg.OIDCIssuer,
+		OIDCClientID:   cfg.OIDCClientID,
+		MediaSecret:    cfg.MediaTokenSecret,
+		MinPlaySeconds: cfg.MinPlaySeconds,
+		SecureCookies:  cfg.SecureCookies(),
+		CORSOrigins:    append([]string{cfg.PublicURL}, cfg.CORSOrigins...),
+		Frontend:       dist,
 	})
 
 	// Header timeout only: /media streams hold the connection for as long as

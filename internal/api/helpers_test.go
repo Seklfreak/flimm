@@ -47,6 +47,15 @@ func (es *eventStore) querier() *sqlctest.FakeQuerier {
 			}
 			return out, nil
 		},
+		GetWatchEventFn: func(_ context.Context, arg sqlc.GetWatchEventParams) (sqlc.WatchEvent, error) {
+			es.mu.Lock()
+			defer es.mu.Unlock()
+			ev, ok := es.events[arg.VideoID]
+			if !ok {
+				return sqlc.WatchEvent{}, pgx.ErrNoRows
+			}
+			return ev, nil
+		},
 		UpsertProgressFn: func(_ context.Context, arg sqlc.UpsertProgressParams) (sqlc.WatchEvent, error) {
 			es.mu.Lock()
 			defer es.mu.Unlock()

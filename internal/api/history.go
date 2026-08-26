@@ -33,14 +33,14 @@ func (s *Server) listHistory(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query().Get("q")
 	p := parsePaging(r)
 	rows, err := s.q.ListHistory(r.Context(), sqlc.ListHistoryParams{
-		UserID: uid, Filter: filter, Q: q,
+		UserID: uid, Filter: filter, Q: q, MinPosition: s.minPlaySeconds,
 		PageLimit: int32(p.Size), PageOffset: int32(p.offset()), //nolint:gosec // bounded by parsePaging
 	})
 	if err != nil {
 		s.writeDBError(w, "list history", err)
 		return
 	}
-	total, err := s.q.CountHistory(r.Context(), sqlc.CountHistoryParams{UserID: uid, Filter: filter, Q: q})
+	total, err := s.q.CountHistory(r.Context(), sqlc.CountHistoryParams{UserID: uid, Filter: filter, Q: q, MinPosition: s.minPlaySeconds})
 	if err != nil {
 		s.writeDBError(w, "count history", err)
 		return
