@@ -1,0 +1,25 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    "group:allNonMajor"
+  ],
+  "assignees": ["Seklfreak"],
+  "packageRules": [
+    {
+      "description": "Auto-merge non-major updates once the test workflow passes.",
+      "matchUpdateTypes": ["minor", "patch", "pin", "digest"],
+      "automerge": true
+    },
+    {
+      "description": "Major updates: open a PR but require manual review/merge.",
+      "matchUpdateTypes": ["major"],
+      "automerge": false
+    },
+    {
+      "description": "Skip TypeScript 7.0.x: it ships no stable programmatic API, so typescript-eslint (peer typescript <6.1.0) can't run on it and the frontend install/lint breaks. The API is targeted for 7.1 — allow that through so a fresh PR reopens when it lands.",
+      "matchPackageNames": ["typescript"],
+      "allowedVersions": "<7.0.0 || >=7.1.0"
+    }
+  ]
+}

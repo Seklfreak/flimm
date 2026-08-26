@@ -1,0 +1,5 @@
+DROP TABLE IF EXISTS user_prefs;
+DROP TABLE IF EXISTS watch_events;
+DROP TABLE IF EXISTS feed_channels;
+DROP TABLE IF EXISTS feeds;
+DROP TABLE IF EXISTS users;

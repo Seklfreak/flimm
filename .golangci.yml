@@ -1,0 +1,35 @@
+version: "2"
+
+# Standard linters (errcheck, govet, ineffassign, staticcheck, unused) plus a
+# few high-signal extras. Kept focused so the output stays meaningful.
+# Shared verbatim across all Go repos (tradebot, lab-tracker, winklibot,
+# grocery-snap) — keep edits in sync.
+linters:
+  default: standard
+  enable:
+    - bodyclose # HTTP response bodies get closed
+    - misspell # typos in comments/strings
+    - unconvert # redundant type conversions
+    - errorlint # correct error wrapping/comparison (errors.Is / %w)
+    - gosec # common security issues
+    - revive # style / complexity
+  exclusions:
+    # Some npm packages ship Go source (e.g. flatted); never lint node_modules.
+    paths:
+      - frontend/node_modules
+    rules:
+      # Deferred cleanup (Close / tx.Rollback) is idiomatically fire-and-forget.
+      - linters:
+          - errcheck
+        source: 'defer .*\.(Close|CloseNow|Rollback)\('
+      # Doc-comment-on-every-export is low value for internal app packages; keep
+      # the rest of revive (unused params, blank imports, complexity, …).
+      - linters:
+          - revive
+        text: '^(exported|package-comments):'
+      # G706 (log injection, CWE-117) taint-flags nearly every logged %s.
+      # Accepted repo-wide: logs go to stdout for humans (kubectl logs), not
+      # to parsers or systems that trust log lines.
+      - linters:
+          - gosec
+        text: 'G706:'

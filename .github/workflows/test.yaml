@@ -1,0 +1,53 @@
+name: Test
+
+# Runs on every PR and on main. Release (release.yaml) triggers on push to
+# main independently — keep this green before merging.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+env:
+  CGO_ENABLED: "0"
+
+jobs:
+  backend:
+    # Self-hosted runner in the homelab cluster. Only private repos may use
+    # this — see docs/self-hosted-runners.md in the homelab repo.
+    runs-on: homelab
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      # Includes govet, so this replaces a standalone `go vet` step.
+      - name: Lint
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/HEAD/install.sh \
+            | sh -s -- -b "$(go env GOPATH)/bin" v2.12.2
+          "$(go env GOPATH)/bin/golangci-lint" run ./...
+
+      - run: go test ./...
+
+  frontend:
+    # Self-hosted runner in the homelab cluster. Only private repos may use
+    # this — see docs/self-hosted-runners.md in the homelab repo.
+    runs-on: homelab
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      # lint = eslint (rules-of-hooks — bugs tsc/vite miss) + tsc typecheck.
+      - name: Install + lint + build
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run lint
+          npm run build

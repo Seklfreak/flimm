@@ -1,0 +1,88 @@
+name: Build and Push Image
+
+# Version-tagged builds only: triggered by the Release workflow (dispatch with
+# a version) or by pushing a v*.*.* tag by hand. The homelab cluster is
+# amd64-only, so no multi-arch/QEMU.
+on:
+  push:
+    tags: ["v*.*.*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Image version to tag (e.g. 0.1.2)"
+        required: true
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE: ghcr.io/seklfreak/archive-client
+
+jobs:
+  build:
+    # Self-hosted runner in the homelab cluster. Only private repos may use
+    # this — see docs/self-hosted-runners.md in the homelab repo.
+    runs-on: homelab
+    permissions:
+      contents: read
+      packages: write
+    env:
+      # Job-level so the Sentry step's `if` can see it; the step is skipped
+      # entirely until the secret exists.
+      SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Resolve version
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          ver="$INPUT_VERSION"
+          [ -z "$ver" ] && ver="${GITHUB_REF_NAME#v}"
+          echo "APP_VERSION=$ver" >> "$GITHUB_ENV"
+          echo "Building version $ver"
+
+      - uses: docker/setup-buildx-action@v4
+
+      - uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: linux/amd64
+          push: true
+          # VITE_SENTRY_DSN is a repo *variable* (Settings → Variables), not a
+          # hardcoded DSN; leave it unset to build without frontend Sentry.
+          build-args: |
+            APP_VERSION=${{ env.APP_VERSION }}
+            VITE_SENTRY_DSN=${{ vars.VITE_SENTRY_DSN }}
+          tags: |
+            ${{ env.IMAGE }}:${{ env.APP_VERSION }}
+            ${{ env.IMAGE }}:latest
+          # buildx cache in the cluster's MinIO rather than GitHub's cache
+          # service, which cost seconds-to-a-minute per build over the WAN.
+          # Credentials are passed explicitly instead of via AWS_* env — the
+          # docs do not say whether the daemon or the client resolves the
+          # credential chain, and buildkit is a separate container here.
+          cache-from: type=s3,region=us-east-1,bucket=buildkit-cache,endpoint_url=http://minio.minio.svc.cluster.local:9000,use_path_style=true,name=archive-client,access_key_id=${{ secrets.MINIO_CACHE_ACCESS_KEY_ID }},secret_access_key=${{ secrets.MINIO_CACHE_SECRET_ACCESS_KEY }}
+          cache-to: type=s3,region=us-east-1,bucket=buildkit-cache,endpoint_url=http://minio.minio.svc.cluster.local:9000,use_path_style=true,name=archive-client,mode=max,access_key_id=${{ secrets.MINIO_CACHE_ACCESS_KEY_ID }},secret_access_key=${{ secrets.MINIO_CACHE_SECRET_ACCESS_KEY }}
+
+      # Register the release in both Sentry projects and mark it deployed to
+      # production. The image is live ~1 min after the push (Flux automation),
+      # so CI is the deploy signal. Needs the SENTRY_AUTH_TOKEN secret.
+      # Commit association powers suspect commits; ignore_missing keeps the
+      # first releases green while Sentry has no previous release to diff
+      # against.
+      - name: Post release + deploy to Sentry
+        if: env.SENTRY_AUTH_TOKEN != ''
+        uses: getsentry/action-release@v3
+        env:
+          SENTRY_ORG: winktech
+        with:
+          projects: archive-client-be archive-client-fe
+          release: archive-client@${{ env.APP_VERSION }}
+          environment: production
+          set_commits: auto
+          ignore_missing: true
