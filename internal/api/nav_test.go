@@ -67,3 +67,34 @@ func TestVideoNavWithoutContext(t *testing.T) {
 		t.Errorf("nav without context = %+v, want empty", got)
 	}
 }
+
+// With a seed the endpoint walks the shuffled order, and reports its head so a
+// client can start a shuffled run without knowing the order itself.
+func TestVideoNavShuffled(t *testing.T) {
+	h := navFixture(t)
+	const seed = "?playlist=PL1&shuffle=abc123"
+
+	first := decode[NavResponse](t, do(t, h, http.MethodGet, "/api/v1/videos/p1/nav"+seed, ""))
+	if first.First == nil {
+		t.Fatal("no first item reported")
+	}
+	// Walking forward from the head must reach every item exactly once.
+	seen := []string{first.First.ID}
+	cur := *first.First
+	for range 5 {
+		got := decode[NavResponse](t, do(t, h, http.MethodGet, "/api/v1/videos/"+cur.ID+"/nav"+seed, ""))
+		if got.Next == nil {
+			break
+		}
+		seen = append(seen, got.Next.ID)
+		cur = *got.Next
+	}
+	if len(seen) != 3 {
+		t.Fatalf("walked %v, want all 3 items once", seen)
+	}
+	// Stepping back from the end must retrace the same order.
+	back := decode[NavResponse](t, do(t, h, http.MethodGet, "/api/v1/videos/"+seen[2]+"/nav"+seed, ""))
+	if back.Previous == nil || back.Previous.ID != seen[1] {
+		t.Errorf("previous = %+v, want %s", back.Previous, seen[1])
+	}
+}

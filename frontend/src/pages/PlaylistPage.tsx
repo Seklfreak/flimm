@@ -17,6 +17,9 @@ export default function PlaylistPage() {
   const setWatched = useSetWatched();
   const [unseenOnly, setUnseenOnly] = useState(false);
   const [editing, setEditing] = useState(false);
+  // Must sit with the other hooks: everything below the early returns runs
+  // conditionally, and a hook there changes hook order between renders.
+  const [shuffling, setShuffling] = useState(false);
   const [name, setName] = useState("");
 
   const p = playlist.data;
@@ -31,11 +34,27 @@ export default function PlaylistPage() {
   const isCustom = p.kind === "custom";
   const ctx = { playlist: p.id };
   const resumeItem = p.items.find((i) => i.video.id === p.resume_video_id);
-  const shuffle = () => {
+  // Shuffle hands the player a seed rather than a single random pick: the
+  // server derives a stable order from it, so previous/next and autoplay walk
+  // the shuffled run instead of falling back to playlist order. A fresh seed
+  // each press is what "reshuffle" means. The server owns the ordering, so we
+  // ask it where the run starts rather than duplicating the hash here.
+  const shuffle = async () => {
     const pool = items.length > 0 ? items : p.items;
-    if (pool.length === 0) return;
-    const pick = pool[Math.floor(Math.random() * pool.length)];
-    navigate(watchHref(pick.video, ctx));
+    if (pool.length === 0 || shuffling) return;
+    const seed = crypto.randomUUID().slice(0, 8);
+    const shuffledCtx = { ...ctx, shuffle: seed };
+    setShuffling(true);
+    try {
+      const nav = await api.nav(pool[0].video.id, shuffledCtx);
+      const start = nav.first ?? pool[0].video;
+      navigate(watchHref(start, shuffledCtx));
+    } catch {
+      // The order is a nicety; if the lookup fails still start playing.
+      navigate(watchHref(pool[0].video, ctx));
+    } finally {
+      setShuffling(false);
+    }
   };
   const move = async (videoId: string, action: "up" | "down" | "top" | "bottom" | "remove") => {
     await api.playlistAction(p.id, videoId, action);
@@ -102,7 +121,7 @@ export default function PlaylistPage() {
                 <PlayIcon /> Play
               </Link>
             ) : null}
-            <button className="btn" onClick={shuffle} disabled={p.items.length === 0}>
+            <button className="btn" onClick={() => void shuffle()} disabled={p.items.length === 0 || shuffling}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M4 6h3l10 12h3M20 18l-2 2 2 2M4 18h3l3-4M14 6h3l3 0M20 6l-2-2 2-2" /></svg>
               Shuffle
             </button>

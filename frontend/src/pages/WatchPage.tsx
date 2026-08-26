@@ -14,7 +14,14 @@ export default function WatchPage() {
   const { id = "" } = useParams();
   const [params] = useSearchParams();
   const ctx = useMemo(
-    () => ({ feed: params.get("feed") ?? undefined, playlist: params.get("playlist") ?? undefined, channel: params.get("channel") ?? undefined }),
+    () => ({
+      feed: params.get("feed") ?? undefined,
+      playlist: params.get("playlist") ?? undefined,
+      channel: params.get("channel") ?? undefined,
+      // Carried through every next/previous link so a shuffled run keeps its
+      // order across navigations and survives a reload.
+      shuffle: params.get("shuffle") ?? undefined,
+    }),
     [params],
   );
   const t = params.get("t");
