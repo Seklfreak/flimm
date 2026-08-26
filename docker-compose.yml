@@ -2,7 +2,7 @@
 # `docker compose down -v` resets it. Matches DATABASE_URL in .env.example.
 services:
   postgres:
-    image: postgres:17-alpine
+    image: postgres:18-alpine
     ports:
       - "5432:5432"
     environment:
