@@ -108,6 +108,7 @@ All configuration is via environment variables.
 | `APP_NAME` | no | default `Archive` |
 | `PORT` | no | default `8080` |
 | `SENTRY_DSN` | no | backend error reporting |
+| `VITE_SENTRY_DSN` | no | frontend error reporting; a **build arg**, baked into the bundle at image build time (not a runtime env var) |
 | `LOG_LEVEL` | no | `debug`, `info` (default), `warn`, `error` |
 
 ## Running locally
