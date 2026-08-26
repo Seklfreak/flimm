@@ -1,3 +1,4 @@
+import { formatCount } from "../lib/format";
 import { useEffect, useState } from "react";
 import { Link, NavLink, Outlet, useLocation, useNavigate, useParams } from "react-router";
 import { EVERYTHING_ID, type Feed } from "@/lib/api";
@@ -84,7 +85,7 @@ function FeedNavItem({ feed, active }: { feed: Feed; active: boolean }) {
 }
 
 export function UnseenBadge({ n }: { n: number }) {
-  return n > 0 ? <span className="badge">{n}</span> : <span className="text-[12px] font-semibold text-muted-3">·</span>;
+  return n > 0 ? <span className="badge">{formatCount(n)}</span> : <span className="text-[12px] font-semibold text-muted-3">·</span>;
 }
 
 function MobileTabBar() {

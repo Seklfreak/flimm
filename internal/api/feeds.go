@@ -78,10 +78,15 @@ func (s *Server) everythingFeed(ctx context.Context, uid uuid.UUID, position int
 	if err != nil {
 		return FeedDTO{}, err
 	}
+	channels, err := s.ta.ListChannels(ctx)
+	if err != nil {
+		return FeedDTO{}, err
+	}
 	return FeedDTO{
 		ID:            everythingFeedID,
 		Name:          "Everything",
 		ChannelIDs:    []string{},
+		ChannelCount:  len(channels),
 		UnseenCount:   unseen,
 		Sort:          prefs.EverythingSort,
 		HideSeen:      prefs.EverythingHideSeen,
