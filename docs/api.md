@@ -121,7 +121,7 @@ resume is the default action, and `t=` only exists to jump to a subtitle hit.
   "progress": 0.78,
   "resume_video_id": "yt-id" | null,   // first in-progress, else first unseen
   "pinned": false,                     // shown in the client's sidebar
-  "audio_only": false                  // play this playlist as audio (music)
+  "music": false                       // a music playlist: audio-only, and no watch state
 }
 ```
 
@@ -203,7 +203,7 @@ Prefs:
 | GET | `/videos/{id}/similar` | VideoSummary[] (TA similar) |
 | GET | `/videos/{id}/comments` | TA comments passthrough |
 | GET | `/videos/{id}/chapters` | chapter markers for the scrubber (see below); cached per video |
-| POST | `/videos/{id}/progress` | `{ "position": 561 }` — heartbeat. Upserts watch_event; writes TA `/video/{id}/progress/`; at ≥90% (or ≤30 s remaining) marks watched. Returns `{ "position", "watched" }`. **Nothing is recorded below `MIN_PLAY_SECONDS`** unless the video completes or an event already exists — see below |
+| POST | `/videos/{id}/progress` | `{ "position": 561 }` — heartbeat. Upserts watch_event; writes TA `/video/{id}/progress/`; at ≥90% (or ≤30 s remaining) marks watched. Returns `{ "position", "watched" }`. **Nothing is recorded below `MIN_PLAY_SECONDS`** unless the video completes or an event already exists — see below | Pass `?playlist=<id>` so the server can skip recording for music playlists.
 | POST | `/videos/{id}/watched` | `{ "watched": true\|false }` — writes TA `/watched/`; true completes the watch_event, false clears position and TA progress |
 | DELETE | `/videos/{id}/progress` | "Start over": position → 0, TA progress deleted, 204 |
 
@@ -241,6 +241,26 @@ There is no server-side shuffle state: the seed in the URL *is* the shuffle.
 Reshuffling means picking a new seed. A client starts a run by requesting
 `nav` with the seed and jumping to `first`.
 
+#### Music playlists
+
+A playlist marked `music` is a different kind of thing from a video playlist,
+and the API treats it as one rather than leaving each client to paper over it:
+
+- **No watch state is recorded.** The progress heartbeat takes the playlist it
+  is playing from (`?playlist=<id>`); when that playlist is music, nothing is
+  written — no watch event, no watched flag, no history entry, and so nothing
+  in "continue watching". A song is replayed, so "seen" means nothing, and
+  recording it would fill history with tracks.
+- **No watch state is reported.** `seen_count`, `in_progress_count`,
+  `progress` and `resume_video_id` come back zeroed, and the playlist's videos
+  carry no `watched`, `position` or `last_played_at`. Clients therefore render
+  no seen ticks, progress bars or resume chips without special-casing music.
+- **Playback is audio-only**: clients use `audio_url` and carry `audio=1`.
+
+The flag is per user and per playlist, and the same video played from
+somewhere else is ordinary viewing again — watch state is only suppressed for
+playback *from* the music playlist.
+
 #### Chapters
 
 ```json
@@ -271,7 +291,7 @@ Clients treat an empty list as "no chapter UI", never as an error.
 |---|---|---|
 | GET | `/playlists/pinned` | PlaylistSummary[] the user pinned to the sidebar, in `position` order; unpaged |
 | PUT | `/playlists/{id}/pinned` | `{ "pinned": true\|false }` → 204. Pinning appends to the end; unpinning closes the gap |
-| PUT | `/playlists/{id}/audio-only` | `{ "audio_only": true\|false }` → 204. Clients open this playlist's videos in audio mode |
+| PUT | `/playlists/{id}/music` | `{ "music": true\|false }` → 204. Marks the playlist as music: audio-only playback and no watch state (see below) |
 | GET | `/playlists` | query `kind=custom\|channel`, paged PlaylistSummary; custom first |
 | POST | `/playlists` | `{ "name" }` → TA `/playlist/custom/` (201) |
 | GET | `/playlists/{id}` | PlaylistSummary + `items: [{ "position", "video": VideoSummary }]` |

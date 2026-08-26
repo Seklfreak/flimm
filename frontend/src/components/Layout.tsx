@@ -149,7 +149,10 @@ function PlaylistNavItem({ playlist, active }: { playlist: PlaylistSummary; acti
       className={`flex items-center justify-between rounded-[10px] px-2.5 py-[9px] text-[14px] font-bold text-ink no-underline hover:text-ink ${active ? "bg-raised" : "hover:bg-raised/60"}`}
     >
       <span className="truncate">{playlist.name}</span>
-      <UnseenBadge n={remainingUnseen(playlist.video_count, playlist.seen_count)} />
+      {/* A music playlist carries no watch state (see docs/api.md "Music
+          playlists") — seen_count comes back zeroed, so an "unseen" badge
+          here would misleadingly count every track. */}
+      {!playlist.music && <UnseenBadge n={remainingUnseen(playlist.video_count, playlist.seen_count)} />}
     </Link>
   );
 }

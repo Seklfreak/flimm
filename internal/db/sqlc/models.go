@@ -35,7 +35,7 @@ type PlaylistSetting struct {
 	Position   int32              `json:"position"`
 	CreatedAt  pgtype.Timestamptz `json:"created_at"`
 	Pinned     bool               `json:"pinned"`
-	AudioOnly  bool               `json:"audio_only"`
+	Music      bool               `json:"music"`
 }
 
 type User struct {

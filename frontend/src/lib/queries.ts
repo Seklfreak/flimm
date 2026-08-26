@@ -230,10 +230,10 @@ export function useSetPlaylistPinned() {
   });
 }
 
-export function useSetPlaylistAudioOnly() {
+export function useSetPlaylistMusic() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, audioOnly }: { id: string; audioOnly: boolean }) => api.setPlaylistAudioOnly(id, audioOnly),
+    mutationFn: ({ id, music }: { id: string; music: boolean }) => api.setPlaylistMusic(id, music),
     onSuccess: (_d, v) => {
       void qc.invalidateQueries({ queryKey: keys.pinnedPlaylists });
       void qc.invalidateQueries({ queryKey: ["playlists"] });

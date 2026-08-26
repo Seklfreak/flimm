@@ -150,16 +150,16 @@ func (es *eventStore) querier() *sqlctest.FakeQuerier {
 			es.upsertSetting(arg.PlaylistID, func(p *sqlc.PlaylistSetting) { p.Pinned = arg.Pinned })
 			return nil
 		},
-		SetPlaylistAudioOnlyFn: func(_ context.Context, arg sqlc.SetPlaylistAudioOnlyParams) error {
+		SetPlaylistMusicFn: func(_ context.Context, arg sqlc.SetPlaylistMusicParams) error {
 			es.mu.Lock()
 			defer es.mu.Unlock()
-			es.upsertSetting(arg.PlaylistID, func(p *sqlc.PlaylistSetting) { p.AudioOnly = arg.AudioOnly })
+			es.upsertSetting(arg.PlaylistID, func(p *sqlc.PlaylistSetting) { p.Music = arg.Music })
 			return nil
 		},
 		PruneEmptyPlaylistSettingsFn: func(context.Context, uuid.UUID) error {
 			es.mu.Lock()
 			defer es.mu.Unlock()
-			es.settings = slices.DeleteFunc(es.settings, func(p sqlc.PlaylistSetting) bool { return !p.Pinned && !p.AudioOnly })
+			es.settings = slices.DeleteFunc(es.settings, func(p sqlc.PlaylistSetting) bool { return !p.Pinned && !p.Music })
 			return nil
 		},
 		ListFeedChannelsForUserFn: func(context.Context, uuid.UUID) ([]sqlc.ListFeedChannelsForUserRow, error) {

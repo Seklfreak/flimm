@@ -42,7 +42,7 @@ type Querier interface {
 	// "Start over": position back to 0, completion untouched.
 	ResetPosition(ctx context.Context, arg ResetPositionParams) error
 	SetFeedPosition(ctx context.Context, arg SetFeedPositionParams) error
-	SetPlaylistAudioOnly(ctx context.Context, arg SetPlaylistAudioOnlyParams) error
+	SetPlaylistMusic(ctx context.Context, arg SetPlaylistMusicParams) error
 	// Appends to the end of the user's pins on first insert; re-pinning an
 	// already pinned playlist keeps its position rather than moving it.
 	SetPlaylistPinned(ctx context.Context, arg SetPlaylistPinnedParams) error

@@ -117,7 +117,9 @@ export function PlaylistStack({ playlist, compact = false }: { playlist: Playlis
             {playlist.video_count}
           </span>
         )}
-        {playlist.progress > 0 && <ProgressBar value={playlist.progress} className="absolute inset-x-3 bottom-3" />}
+        {/* A music playlist reports no watch progress to show (see docs/api.md
+            "Music playlists"). */}
+        {!playlist.music && playlist.progress > 0 && <ProgressBar value={playlist.progress} className="absolute inset-x-3 bottom-3" />}
       </div>
     </div>
   );
@@ -125,7 +127,11 @@ export function PlaylistStack({ playlist, compact = false }: { playlist: Playlis
 
 export function PlaylistCard({ playlist }: { playlist: PlaylistSummary }) {
   const seen =
-    playlist.seen_count === 0 ? "" : playlist.seen_count >= playlist.video_count ? " · all seen" : ` · ${playlist.seen_count} seen`;
+    playlist.music || playlist.seen_count === 0
+      ? ""
+      : playlist.seen_count >= playlist.video_count
+        ? " · all seen"
+        : ` · ${playlist.seen_count} seen`;
   const setPinned = useSetPlaylistPinned();
   return (
     <div className="relative flex flex-col gap-2.5">
@@ -134,8 +140,8 @@ export function PlaylistCard({ playlist }: { playlist: PlaylistSummary }) {
         <span className="flex flex-col gap-0.5">
           <span className="flex items-center gap-1.5 text-[16px] font-extrabold leading-[1.25] tracking-[-0.01em]">
             <span className="line-clamp-2">{playlist.name}</span>
-            {playlist.audio_only && (
-              <span className="flex-none text-muted-2" title="Plays as audio only">
+            {playlist.music && (
+              <span className="flex-none text-muted-2" title="Music playlist: audio only, no watch history">
                 <HeadphonesIcon size={13} />
               </span>
             )}

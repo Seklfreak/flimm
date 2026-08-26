@@ -33,6 +33,12 @@ export interface PlayerProps {
   audioOnly: boolean;
   /** Flips the mode; the caller owns persisting it into the URL. */
   onToggleAudioOnly: () => void;
+  /**
+   * The playlist this video is being played *from* (the play context), so
+   * progress heartbeats can carry it — the server needs it to recognize
+   * playback from a music playlist and skip recording watch state.
+   */
+  playlistId?: string;
 }
 
 export interface PlayerHandle {
@@ -42,7 +48,7 @@ export interface PlayerHandle {
 // HTML5 player with custom controls per the Player artboard: resume chip,
 // progress scrubber, play / ±10s, time, CC menu, speed menu, mute, fullscreen.
 export const Player = forwardRef<PlayerHandle, PlayerProps>(function Player(
-  { video, prefs, startAt, onPrefs, onWatched, onStartOver, onEnded, onChapterChange, nav, audioOnly, onToggleAudioOnly },
+  { video, prefs, startAt, onPrefs, onWatched, onStartOver, onEnded, onChapterChange, nav, audioOnly, onToggleAudioOnly, playlistId },
   ref,
 ) {
   const [el, setEl] = useState<HTMLVideoElement | null>(null);
@@ -131,7 +137,7 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(function Player(
   }, [el, activeTrack, video.subtitles]);
 
   useSponsorSkip(el, video.sponsorblock, prefs.skip_sponsors);
-  useProgressHeartbeat(el, video.id, onWatched);
+  useProgressHeartbeat(el, video.id, onWatched, playlistId);
 
   // Chapters degrade silently: an empty list or a failed request just means
   // no marks/title/list, never an error or a blocking spinner. Memoized so a

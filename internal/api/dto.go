@@ -168,10 +168,11 @@ type PlaylistSummary struct {
 	InProgressCount int                 `json:"in_progress_count"`
 	Progress        float64             `json:"progress"`
 	ResumeVideoID   *string             `json:"resume_video_id"`
-	// Pinned and AudioOnly are Flimm's own per-user state — TubeArchivist
-	// has no concept of either.
-	Pinned    bool `json:"pinned"`
-	AudioOnly bool `json:"audio_only"`
+	// Pinned and Music are Flimm's own per-user state — TubeArchivist has no
+	// concept of either. Music means the playlist is played as audio and
+	// carries no watch state: songs are replayed, so "seen" is meaningless.
+	Pinned bool `json:"pinned"`
+	Music  bool `json:"music"`
 }
 
 type PlaylistItem struct {

@@ -180,8 +180,8 @@ func (s *Server) setPlaylistFlag(w http.ResponseWriter, r *http.Request, field s
 	switch field {
 	case "pinned":
 		err = s.q.SetPlaylistPinned(r.Context(), sqlc.SetPlaylistPinnedParams{UserID: uid, PlaylistID: id, Pinned: *want})
-	case "audio_only":
-		err = s.q.SetPlaylistAudioOnly(r.Context(), sqlc.SetPlaylistAudioOnlyParams{UserID: uid, PlaylistID: id, AudioOnly: *want})
+	case "music":
+		err = s.q.SetPlaylistMusic(r.Context(), sqlc.SetPlaylistMusicParams{UserID: uid, PlaylistID: id, Music: *want})
 	}
 	if err != nil {
 		s.writeDBError(w, "save playlist setting", err)
@@ -222,7 +222,7 @@ func (s *Server) listPinnedPlaylists(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		sum.Pinned = true
-		sum.AudioOnly = row.AudioOnly
+		sum.Music = row.Music
 		out = append(out, *sum)
 	}
 	writeJSON(w, http.StatusOK, out)
@@ -239,15 +239,28 @@ func (s *Server) setPlaylistPinned(w http.ResponseWriter, r *http.Request) {
 	s.setPlaylistFlag(w, r, "pinned", req.Pinned)
 }
 
-func (s *Server) setPlaylistAudioOnly(w http.ResponseWriter, r *http.Request) {
+func (s *Server) setPlaylistMusic(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		AudioOnly *bool `json:"audio_only"`
+		Music *bool `json:"music"`
 	}
-	if err := decodeBody(r, &req); err != nil || req.AudioOnly == nil {
-		writeError(w, http.StatusBadRequest, "audio_only is required")
+	if err := decodeBody(r, &req); err != nil || req.Music == nil {
+		writeError(w, http.StatusBadRequest, "music is required")
 		return
 	}
-	s.setPlaylistFlag(w, r, "audio_only", req.AudioOnly)
+	s.setPlaylistFlag(w, r, "music", req.Music)
+}
+
+// clearWatchState strips watch-derived fields from a music playlist and its
+// items. Songs are replayed, so seen counts, progress and a resume point are
+// noise — reporting them would force every client to special-case music.
+func clearWatchState(sum *PlaylistSummary, items []PlaylistItem) {
+	sum.SeenCount, sum.InProgressCount, sum.Progress, sum.ResumeVideoID = 0, 0, 0, nil
+	for i := range items {
+		items[i].Video.Watched = false
+		items[i].Video.Position = 0
+		items[i].Video.Progress = 0
+		items[i].Video.LastPlayedAt = nil
+	}
 }
 
 func (s *Server) listPlaylists(w http.ResponseWriter, r *http.Request) {
@@ -285,7 +298,7 @@ func (s *Server) listPlaylists(w http.ResponseWriter, r *http.Request) {
 	}
 	for i := range items {
 		st := settings[items[i].ID]
-		items[i].Pinned, items[i].AudioOnly = st.Pinned, st.AudioOnly
+		items[i].Pinned, items[i].Music = st.Pinned, st.Music
 	}
 	writeJSON(w, http.StatusOK, Page[PlaylistSummary]{Items: items, Page: p.Page, PageSize: p.Size, Total: window.Total})
 }
@@ -329,7 +342,10 @@ func (s *Server) getPlaylist(w http.ResponseWriter, r *http.Request) {
 		s.writeDBError(w, "list playlist settings", err)
 		return
 	}
-	sum.Pinned, sum.AudioOnly = settings[sum.ID].Pinned, settings[sum.ID].AudioOnly
+	sum.Pinned, sum.Music = settings[sum.ID].Pinned, settings[sum.ID].Music
+	if sum.Music {
+		clearWatchState(sum, items)
+	}
 	writeJSON(w, http.StatusOK, PlaylistDetail{PlaylistSummary: *sum, Items: items})
 }
 

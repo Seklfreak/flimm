@@ -18,16 +18,16 @@ VALUES (
 )
 ON CONFLICT (user_id, playlist_id) DO UPDATE SET pinned = EXCLUDED.pinned;
 
--- name: SetPlaylistAudioOnly :exec
-INSERT INTO playlist_settings (user_id, playlist_id, audio_only, position)
+-- name: SetPlaylistMusic :exec
+INSERT INTO playlist_settings (user_id, playlist_id, music, position)
 VALUES (
     sqlc.arg(user_id),
     sqlc.arg(playlist_id),
-    sqlc.arg(audio_only),
+    sqlc.arg(music),
     COALESCE((SELECT max(position) + 1 FROM playlist_settings WHERE user_id = sqlc.arg(user_id)), 0)
 )
-ON CONFLICT (user_id, playlist_id) DO UPDATE SET audio_only = EXCLUDED.audio_only;
+ON CONFLICT (user_id, playlist_id) DO UPDATE SET music = EXCLUDED.music;
 
 -- name: PruneEmptyPlaylistSettings :exec
 -- A row with nothing set is noise; drop it so the table only holds intent.
-DELETE FROM playlist_settings WHERE user_id = $1 AND NOT pinned AND NOT audio_only;
+DELETE FROM playlist_settings WHERE user_id = $1 AND NOT pinned AND NOT music;
