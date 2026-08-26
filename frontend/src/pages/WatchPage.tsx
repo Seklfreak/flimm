@@ -28,6 +28,16 @@ export default function WatchPage() {
   const navigate = useNavigate();
   const feeds = useFeeds();
   const upNext = useQuery({ queryKey: keys.upNext(id, ctx), queryFn: () => api.upNext(id, ctx), staleTime: 60_000 });
+  // Neighbours in the playlist/feed/channel the video was opened from. Only
+  // requested when there is such a context; without one there is nothing to
+  // step through and the player hides the buttons.
+  const hasContext = Boolean(ctx.feed || ctx.playlist || ctx.channel);
+  const nav = useQuery({
+    queryKey: keys.nav(id, ctx),
+    queryFn: () => api.nav(id, ctx),
+    enabled: hasContext,
+    staleTime: 60_000,
+  });
   const chapters = useChapters(id).data?.chapters ?? [];
   const [expanded, setExpanded] = useState(false);
   const [activeChapter, setActiveChapter] = useState(-1);
@@ -81,6 +91,14 @@ export default function WatchPage() {
             onStartOver={onStartOver}
             onEnded={onEnded}
             onChapterChange={setActiveChapter}
+            nav={
+              hasContext
+                ? {
+                    onPrev: nav.data?.previous ? () => navigate(watchHref(nav.data!.previous!, ctx)) : undefined,
+                    onNext: nav.data?.next ? () => navigate(watchHref(nav.data!.next!, ctx)) : undefined,
+                  }
+                : undefined
+            }
           />
         </div>
         <div className="flex flex-col gap-4 px-5 md:gap-[18px] md:px-0">

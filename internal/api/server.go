@@ -184,6 +184,7 @@ func (s *Server) Router() http.Handler {
 
 			r.Get("/videos/{id}", s.getVideo)
 			r.Get("/videos/{id}/up-next", s.upNext)
+			r.Get("/videos/{id}/nav", s.videoNav)
 			r.Get("/videos/{id}/similar", s.similarVideos)
 			r.Get("/videos/{id}/comments", s.videoComments)
 			r.Get("/videos/{id}/chapters", s.getChapters)

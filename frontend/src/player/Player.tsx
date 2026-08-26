@@ -22,6 +22,13 @@ export interface PlayerProps {
   onEnded: () => void;
   /** Fires only when the current chapter changes (including to/from -1 = none). */
   onChapterChange?: (index: number) => void;
+  /**
+   * Step through the surrounding playlist/feed/channel. Present only when the
+   * video was opened with a context; a handler is undefined at either end of
+   * the list, which disables that button rather than hiding it so the control
+   * bar doesn't shift as you move through.
+   */
+  nav?: { onPrev?: () => void; onNext?: () => void };
 }
 
 export interface PlayerHandle {
@@ -31,7 +38,7 @@ export interface PlayerHandle {
 // HTML5 player with custom controls per the Player artboard: resume chip,
 // progress scrubber, play / ±10s, time, CC menu, speed menu, mute, fullscreen.
 export const Player = forwardRef<PlayerHandle, PlayerProps>(function Player(
-  { video, prefs, startAt, onPrefs, onWatched, onStartOver, onEnded, onChapterChange },
+  { video, prefs, startAt, onPrefs, onWatched, onStartOver, onEnded, onChapterChange, nav },
   ref,
 ) {
   const [el, setEl] = useState<HTMLVideoElement | null>(null);
@@ -191,11 +198,19 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(function Player(
           if (target !== null) seekTo(target);
           break;
         }
+        // Step through the surrounding list. Lower case only: shifted keys are
+        // left alone so they stay available for text entry elsewhere.
+        case "p":
+          nav?.onPrev?.();
+          break;
+        case "n":
+          nav?.onNext?.();
+          break;
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [el, togglePlay, seekBy, toggleFullscreen, toggleCC, chapters, time, seekTo]);
+  }, [el, togglePlay, seekBy, toggleFullscreen, toggleCC, chapters, time, seekTo, nav]);
 
   const bumpIdle = () => {
     setIdle(false);
@@ -265,6 +280,11 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(function Player(
       >
         <Scrubber time={time} duration={duration} chapters={chapters} sponsorblock={video.sponsorblock} onSeek={seekTo} />
         <div className="flex items-center gap-4 text-[12px] font-bold">
+          {nav && (
+            <button onClick={nav.onPrev} disabled={!nav.onPrev} aria-label="Previous video" className="disabled:opacity-35">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M7 5h2v14H7zM19 5v14l-9-7z" /></svg>
+            </button>
+          )}
           <button onClick={togglePlay} aria-label={playing ? "Pause" : "Play"}>
             {playing ? (
               <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M6 4h4v16H6zM14 4h4v16h-4z" /></svg>
@@ -278,6 +298,11 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(function Player(
           <button onClick={() => seekBy(10)} aria-label="Forward 10 seconds">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 12a8 8 0 1 0-3 6.2" /><path d="M20 18v-6h-6" /></svg>
           </button>
+          {nav && (
+            <button onClick={nav.onNext} disabled={!nav.onNext} aria-label="Next video" className="disabled:opacity-35">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M15 5h2v14h-2zM5 5l9 7-9 7z" /></svg>
+            </button>
+          )}
           <span className="tabular-nums">
             {fmtDuration(time)} / {fmtDuration(duration)}
           </span>
