@@ -32,22 +32,25 @@ type Querier interface {
 	ListHistory(ctx context.Context, arg ListHistoryParams) ([]WatchEvent, error)
 	// "Continue watching": started, not finished, newest activity first.
 	ListInProgress(ctx context.Context, arg ListInProgressParams) ([]WatchEvent, error)
-	ListPinnedPlaylists(ctx context.Context, userID uuid.UUID) ([]PinnedPlaylist, error)
+	ListPinnedPlaylists(ctx context.Context, userID uuid.UUID) ([]PlaylistSetting, error)
+	ListPlaylistSettings(ctx context.Context, userID uuid.UUID) ([]PlaylistSetting, error)
 	ListWatchEventsForVideos(ctx context.Context, arg ListWatchEventsForVideosParams) ([]WatchEvent, error)
 	NextFeedChannelPosition(ctx context.Context, feedID uuid.UUID) (int32, error)
 	NextFeedPosition(ctx context.Context, userID uuid.UUID) (int32, error)
-	// Appends to the end of the user's pins. Re-pinning an already pinned
-	// playlist keeps its position rather than moving it to the end.
-	PinPlaylist(ctx context.Context, arg PinPlaylistParams) error
+	// A row with nothing set is noise; drop it so the table only holds intent.
+	PruneEmptyPlaylistSettings(ctx context.Context, userID uuid.UUID) error
 	// "Start over": position back to 0, completion untouched.
 	ResetPosition(ctx context.Context, arg ResetPositionParams) error
 	SetFeedPosition(ctx context.Context, arg SetFeedPositionParams) error
+	SetPlaylistAudioOnly(ctx context.Context, arg SetPlaylistAudioOnlyParams) error
+	// Appends to the end of the user's pins on first insert; re-pinning an
+	// already pinned playlist keeps its position rather than moving it.
+	SetPlaylistPinned(ctx context.Context, arg SetPlaylistPinnedParams) error
 	// Explicit watched toggle. true completes (keeping position); false clears
 	// both completion and position. Does not bump last_played_at, so toggling
 	// from a list doesn't reorder history.
 	SetWatched(ctx context.Context, arg SetWatchedParams) (WatchEvent, error)
 	UnpinFeeds(ctx context.Context, userID uuid.UUID) error
-	UnpinPlaylist(ctx context.Context, arg UnpinPlaylistParams) error
 	UpdateFeed(ctx context.Context, arg UpdateFeedParams) (Feed, error)
 	UpsertPrefs(ctx context.Context, arg UpsertPrefsParams) error
 	// Heartbeat: creates the event on first play, then moves the position and

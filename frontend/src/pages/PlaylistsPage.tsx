@@ -5,7 +5,7 @@ import { api, type PlaylistSummary } from "@/lib/api";
 import { usePlaylists, useSetPlaylistPinned } from "@/lib/queries";
 import { plural } from "@/lib/format";
 import { PageHeader } from "@/components/Layout";
-import { EmptyState, ErrorState, InfiniteSentinel, MediaImg, PinIcon, ProgressBar, Segmented, Spinner } from "@/components/ui";
+import { EmptyState, ErrorState, HeadphonesIcon, InfiniteSentinel, MediaImg, PinIcon, ProgressBar, Segmented, Spinner } from "@/components/ui";
 import { VideoGrid } from "@/components/VideoCard";
 
 type Filter = "all" | "custom" | "channel";
@@ -132,7 +132,14 @@ export function PlaylistCard({ playlist }: { playlist: PlaylistSummary }) {
       <Link to={`/playlists/${playlist.id}`} className="flex flex-col gap-2.5 text-ink no-underline hover:text-ink">
         <PlaylistStack playlist={playlist} />
         <span className="flex flex-col gap-0.5">
-          <span className="text-[16px] font-extrabold leading-[1.25] tracking-[-0.01em] line-clamp-2">{playlist.name}</span>
+          <span className="flex items-center gap-1.5 text-[16px] font-extrabold leading-[1.25] tracking-[-0.01em]">
+            <span className="line-clamp-2">{playlist.name}</span>
+            {playlist.audio_only && (
+              <span className="flex-none text-muted-2" title="Plays as audio only">
+                <HeadphonesIcon size={13} />
+              </span>
+            )}
+          </span>
           <span className="meta">
             {playlist.channel ? `${playlist.channel.name} · ` : ""}
             {plural(playlist.video_count, "video")}

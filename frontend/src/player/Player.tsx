@@ -2,7 +2,7 @@ import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRe
 import type { Prefs, SubtitleTrack, Video } from "@/lib/api";
 import { fmtDuration } from "@/lib/format";
 import { retryMediaUrl } from "@/lib/media";
-import { CheckIcon, Popover } from "@/components/ui";
+import { CheckIcon, HeadphonesIcon, MediaImg, Popover } from "@/components/ui";
 import { useChapters } from "@/lib/queries";
 import { useSponsorSkip } from "./useSponsorSkip";
 import { useProgressHeartbeat } from "./useProgressHeartbeat";
@@ -29,6 +29,10 @@ export interface PlayerProps {
    * bar doesn't shift as you move through.
    */
   nav?: { onPrev?: () => void; onNext?: () => void };
+  /** `audio=1` in the URL — the live audio/video mode for this video. */
+  audioOnly: boolean;
+  /** Flips the mode; the caller owns persisting it into the URL. */
+  onToggleAudioOnly: () => void;
 }
 
 export interface PlayerHandle {
@@ -38,12 +42,12 @@ export interface PlayerHandle {
 // HTML5 player with custom controls per the Player artboard: resume chip,
 // progress scrubber, play / ±10s, time, CC menu, speed menu, mute, fullscreen.
 export const Player = forwardRef<PlayerHandle, PlayerProps>(function Player(
-  { video, prefs, startAt, onPrefs, onWatched, onStartOver, onEnded, onChapterChange, nav },
+  { video, prefs, startAt, onPrefs, onWatched, onStartOver, onEnded, onChapterChange, nav, audioOnly, onToggleAudioOnly },
   ref,
 ) {
   const [el, setEl] = useState<HTMLVideoElement | null>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
-  const [src, setSrc] = useState(video.media_url);
+  const [src, setSrc] = useState(audioOnly ? video.audio_url : video.media_url);
   const [playing, setPlaying] = useState(false);
   const [time, setTime] = useState(0);
   const [duration, setDuration] = useState(video.duration);
@@ -55,6 +59,11 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(function Player(
   const [idle, setIdle] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const idleTimer = useRef<number | undefined>(undefined);
+  // Set right before a same-video audio/video toggle so the metadata handler
+  // resumes playback where it left off instead of jumping back to the saved
+  // (server) resume position, which was already consumed on initial load.
+  const pendingSeekRef = useRef<number | null>(null);
+  const prevAudioOnlyRef = useRef(audioOnly);
 
   // Active subtitle track: prefs.subtitle_lang → matching archived track first,
   // then auto.
@@ -62,10 +71,13 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(function Player(
   const activeTrack = pickTrack(video.subtitles, activeLang);
 
   useEffect(() => {
-    setSrc(video.media_url);
+    if (prevAudioOnlyRef.current !== audioOnly && el) pendingSeekRef.current = el.currentTime;
+    prevAudioOnlyRef.current = audioOnly;
+    setSrc(audioOnly ? video.audio_url : video.media_url);
     setResumedFrom(null);
     setError(null);
-  }, [video.id, video.media_url]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [video.id, video.media_url, video.audio_url, audioOnly]);
 
   // Seek to resume point / ?t= once metadata is known; apply speed.
   useEffect(() => {
@@ -73,6 +85,18 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(function Player(
     el.playbackRate = prefs.playback_speed || 1;
     const onMeta = () => {
       setDuration(el.duration || video.duration);
+      // A pending seek (set just before an audio/video toggle) wins over the
+      // saved resume position — it's the moment playback was at, not where
+      // the video previously left off.
+      if (pendingSeekRef.current !== null) {
+        const t = pendingSeekRef.current;
+        pendingSeekRef.current = null;
+        if (t > 0 && t < (el.duration || video.duration) - 0.5) el.currentTime = t;
+        void el.play().catch(() => {
+          /* autoplay may be blocked; user presses play */
+        });
+        return;
+      }
       // Resume is the default action from every entry point — the card, the
       // title and the Resume button all link here, so any saved position is
       // honoured (matching the "Resume · m:ss" pill the card shows).
@@ -151,6 +175,50 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(function Player(
       if (first) onPrefs({ subtitle_lang: first.lang });
     }
   }, [activeTrack, onPrefs, video.subtitles]);
+
+  // Media Session: lock-screen / hardware-key controls while playing audio
+  // only. navigator.mediaSession is missing in some browsers (and in jsdom),
+  // so every access is guarded and never allowed to throw. The previous
+  // effect run's cleanup clears the handlers when audioOnly turns off or the
+  // component unmounts.
+  useEffect(() => {
+    const ms = typeof navigator !== "undefined" ? navigator.mediaSession : undefined;
+    if (!ms) return;
+    if (audioOnly) {
+      try {
+        if (typeof MediaMetadata !== "undefined") {
+          ms.metadata = new MediaMetadata({
+            title: video.title,
+            artist: video.channel.name,
+            artwork: video.thumb_url ? [{ src: video.thumb_url }] : [],
+          });
+        }
+        ms.setActionHandler("play", () => {
+          void el?.play().catch(() => {});
+        });
+        ms.setActionHandler("pause", () => el?.pause());
+        ms.setActionHandler("seekbackward", () => seekBy(-10));
+        ms.setActionHandler("seekforward", () => seekBy(10));
+        ms.setActionHandler("previoustrack", () => nav?.onPrev?.());
+        ms.setActionHandler("nexttrack", () => nav?.onNext?.());
+      } catch {
+        /* an unsupported action or metadata shape in this browser */
+      }
+    }
+    return () => {
+      try {
+        ms.metadata = null;
+        ms.setActionHandler("play", null);
+        ms.setActionHandler("pause", null);
+        ms.setActionHandler("seekbackward", null);
+        ms.setActionHandler("seekforward", null);
+        ms.setActionHandler("previoustrack", null);
+        ms.setActionHandler("nexttrack", null);
+      } catch {
+        /* ignore */
+      }
+    };
+  }, [audioOnly, video.title, video.channel.name, video.thumb_url, el, seekBy, nav]);
 
   // Keyboard: space/k play, j/l ±10s, f fullscreen, c CC, m mute, arrows ±5s,
   // [ / ] previous/next chapter.
@@ -231,7 +299,7 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(function Player(
       <video
         ref={setEl}
         src={src}
-        className={`h-full w-full cc-${prefs.subtitle_size}`}
+        className={`h-full w-full cc-${prefs.subtitle_size} ${audioOnly ? "invisible" : ""}`}
         playsInline
         preload="metadata"
         onClick={togglePlay}
@@ -243,9 +311,9 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(function Player(
         onEnded={onEnded}
         onError={() => {
           // Likely an expired media cookie: refresh it once and reload.
-          void retryMediaUrl(video.media_url).then((next) => {
+          void retryMediaUrl(audioOnly ? video.audio_url : video.media_url).then((next) => {
             if (next) setSrc(next);
-            else setError("Could not load the video.");
+            else setError(audioOnly ? "Could not load the audio." : "Could not load the video.");
           });
         }}
       >
@@ -253,6 +321,20 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(function Player(
           <track key={`${t.source}-${t.lang}`} kind="subtitles" srcLang={t.lang} label={trackLabel(t)} src={t.url} default={activeTrack === t} />
         ))}
       </video>
+
+      {/* Same aspect box as the video, so toggling audio mode never reflows
+          the page — only what's painted inside it changes. */}
+      {audioOnly && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 px-6 text-center" onClick={togglePlay}>
+          <div className="aspect-square h-full max-h-[65%] overflow-hidden rounded-2xl bg-thumb shadow-modal">
+            {video.thumb_url && <MediaImg src={video.thumb_url} alt="" className="h-full w-full object-cover" />}
+          </div>
+          <div className="flex max-w-md flex-col gap-1">
+            <p className="truncate text-[16px] font-extrabold text-white">{video.title}</p>
+            <p className="truncate text-[13px] font-semibold text-white/70">{video.channel.name}</p>
+          </div>
+        </div>
+      )}
 
       {error && (
         <div className="absolute inset-0 flex items-center justify-center text-sm font-semibold text-white/80">{error}</div>
@@ -311,40 +393,57 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(function Player(
               · {currentChapter.title}
             </span>
           )}
-          <button
-            ref={setCcAnchor}
-            onClick={() => setMenu(menu === "cc" ? null : "cc")}
-            aria-label="Subtitles"
-            aria-expanded={menu === "cc"}
-            className={`ml-auto rounded px-[7px] py-[3px] text-[11px] font-extrabold ${activeTrack ? "bg-white text-[#17181a]" : "border border-white/60"}`}
-          >
-            CC
-          </button>
-          <button ref={setSpeedAnchor} onClick={() => setMenu(menu === "speed" ? null : "speed")} aria-label="Playback speed" aria-expanded={menu === "speed"}>
-            {fmtSpeed(prefs.playback_speed)}
-          </button>
-          <button
-            onClick={() => {
-              if (el) {
-                el.muted = !el.muted;
-                setMuted(el.muted);
-              }
-            }}
-            aria-label={muted ? "Unmute" : "Mute"}
-          >
-            {muted ? (
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 9h4l5-4v14l-5-4H4z" /><path d="M17 9l4 6M21 9l-4 6" /></svg>
-            ) : (
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 9h4l5-4v14l-5-4H4z" /><path d="M16 9a4 4 0 0 1 0 6" /></svg>
+          <div className="ml-auto flex items-center gap-4">
+            {!audioOnly && (
+              <button
+                ref={setCcAnchor}
+                onClick={() => setMenu(menu === "cc" ? null : "cc")}
+                aria-label="Subtitles"
+                aria-expanded={menu === "cc"}
+                className={`rounded px-[7px] py-[3px] text-[11px] font-extrabold ${activeTrack ? "bg-white text-[#17181a]" : "border border-white/60"}`}
+              >
+                CC
+              </button>
             )}
-          </button>
-          <button onClick={toggleFullscreen} aria-label="Fullscreen">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" /></svg>
-          </button>
+            <button ref={setSpeedAnchor} onClick={() => setMenu(menu === "speed" ? null : "speed")} aria-label="Playback speed" aria-expanded={menu === "speed"}>
+              {fmtSpeed(prefs.playback_speed)}
+            </button>
+            <button
+              onClick={() => {
+                pendingSeekRef.current = el?.currentTime ?? null;
+                onToggleAudioOnly();
+              }}
+              aria-label={audioOnly ? "Switch to video" : "Switch to audio only"}
+              aria-pressed={audioOnly}
+              className={`rounded px-[7px] py-[3px] ${audioOnly ? "bg-white text-[#17181a]" : ""}`}
+            >
+              <HeadphonesIcon size={16} />
+            </button>
+            <button
+              onClick={() => {
+                if (el) {
+                  el.muted = !el.muted;
+                  setMuted(el.muted);
+                }
+              }}
+              aria-label={muted ? "Unmute" : "Mute"}
+            >
+              {muted ? (
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 9h4l5-4v14l-5-4H4z" /><path d="M17 9l4 6M21 9l-4 6" /></svg>
+              ) : (
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 9h4l5-4v14l-5-4H4z" /><path d="M16 9a4 4 0 0 1 0 6" /></svg>
+              )}
+            </button>
+            {!audioOnly && (
+              <button onClick={toggleFullscreen} aria-label="Fullscreen">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" /></svg>
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
-      {menu === "cc" && (
+      {!audioOnly && menu === "cc" && (
         <Popover anchor={ccAnchor} onClose={() => setMenu(null)} width={220}>
           <div className="pop">
             <span className="sec px-2.5 pb-1 pt-1.5 !text-muted-3">Subtitles</span>

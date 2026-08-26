@@ -2,6 +2,9 @@
 
 ## Done
 
+- **Audio-only playback** (2026-08-26) — a derived-media cache remuxes the
+  audio track on first request (~20–30× less data) and playlists can be marked
+  audio-only for music. See [api.md](api.md#derived-media).
 - **Pinned playlists** (2026-08-26) — pin a playlist to the sidebar from the
   playlist page or its card. Pins are Archive's own per-user state, so they
   follow the account to every client. See [api.md](api.md#pinned-playlists).

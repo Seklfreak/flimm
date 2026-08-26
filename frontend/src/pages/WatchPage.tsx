@@ -12,7 +12,12 @@ import { AddToPlaylist } from "@/player/AddToPlaylist";
 
 export default function WatchPage() {
   const { id = "" } = useParams();
-  const [params] = useSearchParams();
+  const [params, setParams] = useSearchParams();
+  // `audio=1` is the live audio/video mode. It seeds from the playlist's
+  // audio_only via the ctx every link already carries (see PlaylistPage) —
+  // this page only ever reads the param, it never fetches the playlist to
+  // re-derive it.
+  const audioOnly = params.get("audio") === "1";
   const ctx = useMemo(
     () => ({
       feed: params.get("feed") ?? undefined,
@@ -21,11 +26,18 @@ export default function WatchPage() {
       // Carried through every next/previous link so a shuffled run keeps its
       // order across navigations and survives a reload.
       shuffle: params.get("shuffle") ?? undefined,
+      audio: params.get("audio") ?? undefined,
     }),
     [params],
   );
   const t = params.get("t");
   const startAt = t !== null && !Number.isNaN(Number(t)) ? Number(t) : undefined;
+  const onToggleAudioOnly = useCallback(() => {
+    const next = new URLSearchParams(params);
+    if (audioOnly) next.delete("audio");
+    else next.set("audio", "1");
+    setParams(next, { replace: true });
+  }, [params, audioOnly, setParams]);
 
   const video = useVideo(id);
   const prefs = usePrefs();
@@ -98,6 +110,8 @@ export default function WatchPage() {
             onStartOver={onStartOver}
             onEnded={onEnded}
             onChapterChange={setActiveChapter}
+            audioOnly={audioOnly}
+            onToggleAudioOnly={onToggleAudioOnly}
             nav={
               hasContext
                 ? {

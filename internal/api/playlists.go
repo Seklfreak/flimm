@@ -149,17 +149,51 @@ func (s *Server) playlistSummaries(ctx context.Context, uid uuid.UUID, lists []t
 	return out, err
 }
 
-// pinnedSet is the user's pinned playlist ids, for stamping onto summaries.
-func (s *Server) pinnedSet(ctx context.Context, uid uuid.UUID) (map[string]bool, error) {
-	rows, err := s.q.ListPinnedPlaylists(ctx, uid)
+// playlistSettings is the user's per-playlist state, for stamping onto
+// summaries. Absent means every setting is off.
+func (s *Server) playlistSettings(ctx context.Context, uid uuid.UUID) (map[string]sqlc.PlaylistSetting, error) {
+	rows, err := s.q.ListPlaylistSettings(ctx, uid)
 	if err != nil {
 		return nil, err
 	}
-	out := make(map[string]bool, len(rows))
+	out := make(map[string]sqlc.PlaylistSetting, len(rows))
 	for _, r := range rows {
-		out[r.PlaylistID] = true
+		out[r.PlaylistID] = r
 	}
 	return out, nil
+}
+
+// setPlaylistFlag applies one boolean setting, then drops the row if nothing
+// is set any more so the table only ever holds real intent.
+func (s *Server) setPlaylistFlag(w http.ResponseWriter, r *http.Request, field string, want *bool) {
+	uid := currentUserID(r.Context())
+	id := chi.URLParam(r, "id")
+	if *want {
+		// Refuse a setting for a playlist TA doesn't have, so the sidebar and
+		// audio mode can't accumulate references that never resolve.
+		if _, err := s.ta.GetPlaylist(r.Context(), id); err != nil {
+			s.writeTAError(w, "get playlist", err)
+			return
+		}
+	}
+	var err error
+	switch field {
+	case "pinned":
+		err = s.q.SetPlaylistPinned(r.Context(), sqlc.SetPlaylistPinnedParams{UserID: uid, PlaylistID: id, Pinned: *want})
+	case "audio_only":
+		err = s.q.SetPlaylistAudioOnly(r.Context(), sqlc.SetPlaylistAudioOnlyParams{UserID: uid, PlaylistID: id, AudioOnly: *want})
+	}
+	if err != nil {
+		s.writeDBError(w, "save playlist setting", err)
+		return
+	}
+	if !*want {
+		if err := s.q.PruneEmptyPlaylistSettings(r.Context(), uid); err != nil {
+			s.writeDBError(w, "prune playlist settings", err)
+			return
+		}
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // listPinnedPlaylists backs the sidebar. Pins name TubeArchivist ids that TA
@@ -188,14 +222,13 @@ func (s *Server) listPinnedPlaylists(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		sum.Pinned = true
+		sum.AudioOnly = row.AudioOnly
 		out = append(out, *sum)
 	}
 	writeJSON(w, http.StatusOK, out)
 }
 
 func (s *Server) setPlaylistPinned(w http.ResponseWriter, r *http.Request) {
-	uid := currentUserID(r.Context())
-	id := chi.URLParam(r, "id")
 	var req struct {
 		Pinned *bool `json:"pinned"`
 	}
@@ -203,22 +236,18 @@ func (s *Server) setPlaylistPinned(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "pinned is required")
 		return
 	}
-	if *req.Pinned {
-		// Reject a pin for a playlist TA doesn't have, so the sidebar can't
-		// accumulate entries that will never resolve.
-		if _, err := s.ta.GetPlaylist(r.Context(), id); err != nil {
-			s.writeTAError(w, "get playlist", err)
-			return
-		}
-		if err := s.q.PinPlaylist(r.Context(), sqlc.PinPlaylistParams{UserID: uid, PlaylistID: id}); err != nil {
-			s.writeDBError(w, "pin playlist", err)
-			return
-		}
-	} else if err := s.q.UnpinPlaylist(r.Context(), sqlc.UnpinPlaylistParams{UserID: uid, PlaylistID: id}); err != nil {
-		s.writeDBError(w, "unpin playlist", err)
+	s.setPlaylistFlag(w, r, "pinned", req.Pinned)
+}
+
+func (s *Server) setPlaylistAudioOnly(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		AudioOnly *bool `json:"audio_only"`
+	}
+	if err := decodeBody(r, &req); err != nil || req.AudioOnly == nil {
+		writeError(w, http.StatusBadRequest, "audio_only is required")
 		return
 	}
-	w.WriteHeader(http.StatusNoContent)
+	s.setPlaylistFlag(w, r, "audio_only", req.AudioOnly)
 }
 
 func (s *Server) listPlaylists(w http.ResponseWriter, r *http.Request) {
@@ -249,13 +278,14 @@ func (s *Server) listPlaylists(w http.ResponseWriter, r *http.Request) {
 		s.writeTAError(w, "playlist summaries", err)
 		return
 	}
-	pinned, err := s.pinnedSet(r.Context(), uid)
+	settings, err := s.playlistSettings(r.Context(), uid)
 	if err != nil {
-		s.writeDBError(w, "list pinned playlists", err)
+		s.writeDBError(w, "list playlist settings", err)
 		return
 	}
 	for i := range items {
-		items[i].Pinned = pinned[items[i].ID]
+		st := settings[items[i].ID]
+		items[i].Pinned, items[i].AudioOnly = st.Pinned, st.AudioOnly
 	}
 	writeJSON(w, http.StatusOK, Page[PlaylistSummary]{Items: items, Page: p.Page, PageSize: p.Size, Total: window.Total})
 }
@@ -294,12 +324,12 @@ func (s *Server) getPlaylist(w http.ResponseWriter, r *http.Request) {
 		s.writeTAError(w, "playlist summary", err)
 		return
 	}
-	pinned, err := s.pinnedSet(r.Context(), uid)
+	settings, err := s.playlistSettings(r.Context(), uid)
 	if err != nil {
-		s.writeDBError(w, "list pinned playlists", err)
+		s.writeDBError(w, "list playlist settings", err)
 		return
 	}
-	sum.Pinned = pinned[sum.ID]
+	sum.Pinned, sum.AudioOnly = settings[sum.ID].Pinned, settings[sum.ID].AudioOnly
 	writeJSON(w, http.StatusOK, PlaylistDetail{PlaylistSummary: *sum, Items: items})
 }
 

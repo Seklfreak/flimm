@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { SUBTITLE_OFF, fmtSpeed, pickTrack, trackLabel } from "./Player";
-import type { SubtitleTrack } from "@/lib/api";
+import { screen } from "@testing-library/react";
+import { Player, SUBTITLE_OFF, fmtSpeed, pickTrack, trackLabel } from "./Player";
+import type { Prefs, SubtitleTrack } from "@/lib/api";
+import { mockFetch, renderWithProviders, videoDetail } from "@/test/helpers";
 
 const tracks: SubtitleTrack[] = [
   { lang: "en", source: "auto", url: "/a" },
@@ -48,5 +50,62 @@ describe("subtitle defaults", () => {
 
   it("returns nothing when the preferred language has no track", () => {
     expect(pickTrack([track("de", "user")], "en")).toBeNull();
+  });
+});
+
+const prefs: Prefs = {
+  autoplay: true,
+  playback_speed: 1,
+  subtitle_lang: SUBTITLE_OFF,
+  subtitle_size: "medium",
+  skip_sponsors: true,
+  everything_sort: "newest",
+  everything_hide_seen: true,
+  everything_include_shorts: false,
+  theme: "system",
+};
+
+function renderPlayer(audioOnly: boolean) {
+  mockFetch({ "GET /api/v1/videos/vid1/chapters": { source: "none", chapters: [] } });
+  return renderWithProviders(
+    <Player
+      video={videoDetail()}
+      prefs={prefs}
+      audioOnly={audioOnly}
+      onToggleAudioOnly={() => {}}
+      onPrefs={() => {}}
+      onWatched={() => {}}
+      onStartOver={async () => {}}
+      onEnded={() => {}}
+    />,
+  );
+}
+
+describe("Player audio mode", () => {
+  it("plays the video source in video mode", () => {
+    const { container } = renderPlayer(false);
+    expect(container.querySelector("video")?.getAttribute("src")).toBe("/media/video/vid1.mp4");
+  });
+
+  it("plays the audio source in audio mode", () => {
+    const { container } = renderPlayer(true);
+    expect(container.querySelector("video")?.getAttribute("src")).toBe("/media/audio/vid1.webm");
+  });
+
+  it("shows the CC and fullscreen buttons in video mode", () => {
+    renderPlayer(false);
+    expect(screen.getByLabelText("Subtitles")).toBeTruthy();
+    expect(screen.getByLabelText("Fullscreen")).toBeTruthy();
+  });
+
+  it("hides the CC and fullscreen buttons in audio mode", () => {
+    renderPlayer(true);
+    expect(screen.queryByLabelText("Subtitles")).toBeNull();
+    expect(screen.queryByLabelText("Fullscreen")).toBeNull();
+  });
+
+  it("labels the audio/video toggle for the opposite action", () => {
+    renderPlayer(false);
+    expect(screen.getByLabelText("Switch to audio only")).toBeTruthy();
   });
 });

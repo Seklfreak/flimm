@@ -2,9 +2,9 @@ import { useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
-import { usePlaylist, useSetPlaylistPinned, useSetWatched } from "@/lib/queries";
+import { usePlaylist, useSetPlaylistAudioOnly, useSetPlaylistPinned, useSetWatched } from "@/lib/queries";
 import { ccLabel, fmtDuration, fmtDurationLong, plural } from "@/lib/format";
-import { CheckIcon, EmptyState, ErrorState, PinIcon, Spinner } from "@/components/ui";
+import { CheckIcon, EmptyState, ErrorState, HeadphonesIcon, PinIcon, Spinner } from "@/components/ui";
 import { VideoRow } from "@/components/VideoRow";
 import { watchHref } from "@/components/VideoCard";
 import { PlaylistStack } from "./PlaylistsPage";
@@ -16,6 +16,7 @@ export default function PlaylistPage() {
   const qc = useQueryClient();
   const setWatched = useSetWatched();
   const setPinned = useSetPlaylistPinned();
+  const setAudioOnly = useSetPlaylistAudioOnly();
   const [unseenOnly, setUnseenOnly] = useState(false);
   const [editing, setEditing] = useState(false);
   // Must sit with the other hooks: everything below the early returns runs
@@ -33,7 +34,10 @@ export default function PlaylistPage() {
   if (!p) return <div className="p-10"><Spinner label="Loading playlist…" /></div>;
 
   const isCustom = p.kind === "custom";
-  const ctx = { playlist: p.id };
+  // Every link this page produces to the player carries the playlist's
+  // persisted audio_only intent, so opening a video (or Resume/Play/Shuffle)
+  // seeds the player already in the right mode.
+  const ctx = { playlist: p.id, audio: p.audio_only ? "1" : undefined };
   const resumeItem = p.items.find((i) => i.video.id === p.resume_video_id);
   // Shuffle hands the player a seed rather than a single random pick: the
   // server derives a stable order from it, so previous/next and autoplay walk
@@ -128,6 +132,16 @@ export default function PlaylistPage() {
             </button>
             <button className={`btn ${unseenOnly ? "pri" : ""}`} onClick={() => setUnseenOnly((u) => !u)} aria-pressed={unseenOnly}>
               Unseen only
+            </button>
+            <button
+              className={`btn ${p.audio_only ? "pri" : ""}`}
+              aria-pressed={p.audio_only}
+              aria-label={p.audio_only ? "Play as video" : "Play as audio only"}
+              title={p.audio_only ? "Play as video" : "Play as audio only"}
+              onClick={() => setAudioOnly.mutate({ id: p.id, audioOnly: !p.audio_only })}
+              disabled={setAudioOnly.isPending}
+            >
+              <HeadphonesIcon size={13} /> Audio only
             </button>
             <button
               className={`btn ${p.pinned ? "pri" : ""}`}

@@ -29,12 +29,26 @@ const testSecret = "test-secret"
 // defensive: markAllSeen fans its writes out across an errgroup, so the
 // querier callbacks below run concurrently.
 type eventStore struct {
-	mu     sync.Mutex
-	events map[string]sqlc.WatchEvent
-	pins   []sqlc.PinnedPlaylist
+	mu       sync.Mutex
+	events   map[string]sqlc.WatchEvent
+	settings []sqlc.PlaylistSetting
 }
 
 func newEventStore() *eventStore { return &eventStore{events: map[string]sqlc.WatchEvent{}} }
+
+// upsertSetting mirrors the ON CONFLICT upsert in playlist_settings.sql: one
+// row per playlist, each flag set independently. Caller holds the lock.
+func (es *eventStore) upsertSetting(id string, apply func(*sqlc.PlaylistSetting)) {
+	for i := range es.settings {
+		if es.settings[i].PlaylistID == id {
+			apply(&es.settings[i])
+			return
+		}
+	}
+	p := sqlc.PlaylistSetting{PlaylistID: id, Position: int32(len(es.settings))} //nolint:gosec // test fixture
+	apply(&p)
+	es.settings = append(es.settings, p)
+}
 
 func (es *eventStore) querier() *sqlctest.FakeQuerier {
 	return &sqlctest.FakeQuerier{
@@ -114,26 +128,38 @@ func (es *eventStore) querier() *sqlctest.FakeQuerier {
 			return out, nil
 		},
 		GetPrefsFn: func(context.Context, uuid.UUID) ([]byte, error) { return nil, pgx.ErrNoRows },
-		ListPinnedPlaylistsFn: func(context.Context, uuid.UUID) ([]sqlc.PinnedPlaylist, error) {
+		ListPinnedPlaylistsFn: func(context.Context, uuid.UUID) ([]sqlc.PlaylistSetting, error) {
 			es.mu.Lock()
 			defer es.mu.Unlock()
-			return slices.Clone(es.pins), nil
-		},
-		PinPlaylistFn: func(_ context.Context, arg sqlc.PinPlaylistParams) error {
-			es.mu.Lock()
-			defer es.mu.Unlock()
-			for _, p := range es.pins {
-				if p.PlaylistID == arg.PlaylistID {
-					return nil
+			out := []sqlc.PlaylistSetting{}
+			for _, p := range es.settings {
+				if p.Pinned {
+					out = append(out, p)
 				}
 			}
-			es.pins = append(es.pins, sqlc.PinnedPlaylist{UserID: arg.UserID, PlaylistID: arg.PlaylistID, Position: int32(len(es.pins))}) //nolint:gosec // test fixture
-			return nil
+			return out, nil
 		},
-		UnpinPlaylistFn: func(_ context.Context, arg sqlc.UnpinPlaylistParams) error {
+		ListPlaylistSettingsFn: func(context.Context, uuid.UUID) ([]sqlc.PlaylistSetting, error) {
 			es.mu.Lock()
 			defer es.mu.Unlock()
-			es.pins = slices.DeleteFunc(es.pins, func(p sqlc.PinnedPlaylist) bool { return p.PlaylistID == arg.PlaylistID })
+			return slices.Clone(es.settings), nil
+		},
+		SetPlaylistPinnedFn: func(_ context.Context, arg sqlc.SetPlaylistPinnedParams) error {
+			es.mu.Lock()
+			defer es.mu.Unlock()
+			es.upsertSetting(arg.PlaylistID, func(p *sqlc.PlaylistSetting) { p.Pinned = arg.Pinned })
+			return nil
+		},
+		SetPlaylistAudioOnlyFn: func(_ context.Context, arg sqlc.SetPlaylistAudioOnlyParams) error {
+			es.mu.Lock()
+			defer es.mu.Unlock()
+			es.upsertSetting(arg.PlaylistID, func(p *sqlc.PlaylistSetting) { p.AudioOnly = arg.AudioOnly })
+			return nil
+		},
+		PruneEmptyPlaylistSettingsFn: func(context.Context, uuid.UUID) error {
+			es.mu.Lock()
+			defer es.mu.Unlock()
+			es.settings = slices.DeleteFunc(es.settings, func(p sqlc.PlaylistSetting) bool { return !p.Pinned && !p.AudioOnly })
 			return nil
 		},
 		ListFeedChannelsForUserFn: func(context.Context, uuid.UUID) ([]sqlc.ListFeedChannelsForUserRow, error) {

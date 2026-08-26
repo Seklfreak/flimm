@@ -127,6 +127,16 @@ export function PinIcon({ size = 14 }: { size?: number }) {
   );
 }
 
+export function HeadphonesIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+      <path d="M4 14v-2a8 8 0 0 1 16 0v2" />
+      <rect x="2" y="13" width="5" height="8" rx="2" />
+      <rect x="17" y="13" width="5" height="8" rx="2" />
+    </svg>
+  );
+}
+
 export function SearchBox({
   value,
   onChange,

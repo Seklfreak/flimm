@@ -52,6 +52,8 @@ export interface PlayContext {
   playlist?: string;
   channel?: string;
   shuffle?: string;
+  /** "1" when the player should open in audio-only mode; carried through every link so the mode survives next/previous, autoplay and a reload. */
+  audio?: string;
 }
 
 /** Where a video sits in the list the player is stepping through. */
@@ -87,6 +89,7 @@ export interface Video extends Omit<VideoSummary, "channel"> {
   description: string;
   height: number;
   media_url: string;
+  audio_url: string;
   youtube_url: string;
   subtitles: SubtitleTrack[];
   sponsorblock: SponsorSegment[];
@@ -160,6 +163,8 @@ export interface PlaylistSummary {
   progress: number;
   resume_video_id: string | null;
   pinned: boolean;
+  /** Play this playlist as audio (music); seeds `audio=1` on every link into it. */
+  audio_only: boolean;
 }
 
 export interface Playlist extends PlaylistSummary {
@@ -325,6 +330,8 @@ export const api = {
   pinnedPlaylists: () => req<PlaylistSummary[]>("/playlists/pinned"),
   setPlaylistPinned: (id: string, pinned: boolean) =>
     req<void>(`/playlists/${id}/pinned`, json("PUT", { pinned })),
+  setPlaylistAudioOnly: (id: string, audioOnly: boolean) =>
+    req<void>(`/playlists/${id}/audio-only`, json("PUT", { audio_only: audioOnly })),
   playlist: (id: string) => req<Playlist>(`/playlists/${id}`),
   createPlaylist: (name: string) => req<PlaylistSummary>("/playlists", json("POST", { name })),
   renamePlaylist: (id: string, name: string) =>

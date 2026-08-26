@@ -18,6 +18,7 @@ import (
 	"github.com/Seklfreak/archive-client/internal/api"
 	"github.com/Seklfreak/archive-client/internal/config"
 	"github.com/Seklfreak/archive-client/internal/db"
+	"github.com/Seklfreak/archive-client/internal/media"
 	"github.com/Seklfreak/archive-client/internal/obs"
 	"github.com/Seklfreak/archive-client/internal/ta"
 )
@@ -97,6 +98,14 @@ func main() {
 		os.Exit(1)
 	}
 
+	mediaCache, err := media.NewCache(cfg.MediaCacheDir, cfg.MediaCacheMaxBytes, log)
+	if err != nil {
+		// Derived media is one feature; the rest of the app still works, so
+		// log and carry on with /media/audio disabled rather than exiting.
+		log.Error("media cache disabled", "dir", cfg.MediaCacheDir, "err", err)
+		mediaCache = nil
+	}
+
 	srv := api.NewServer(api.Options{
 		Pool:           pool,
 		TA:             client,
@@ -109,6 +118,8 @@ func main() {
 		OIDCClientID:   cfg.OIDCClientID,
 		MediaSecret:    cfg.MediaTokenSecret,
 		MinPlaySeconds: cfg.MinPlaySeconds,
+		MediaCache:     mediaCache,
+		FFmpegPath:     cfg.FFmpegPath,
 		SecureCookies:  cfg.SecureCookies(),
 		CORSOrigins:    append([]string{cfg.PublicURL}, cfg.CORSOrigins...),
 		Frontend:       dist,

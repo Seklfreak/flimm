@@ -21,4 +21,9 @@ describe("VideoCard", () => {
   it("watchHref drops empty context keys", () => {
     expect(watchHref({ id: "x" }, { feed: undefined, playlist: "p" })).toBe("/watch/x?playlist=p");
   });
+  it("watchHref round-trips the audio param", () => {
+    expect(watchHref({ id: "x" }, { audio: "1" })).toBe("/watch/x?audio=1");
+    expect(watchHref({ id: "x" }, { playlist: "p", audio: "1" })).toBe("/watch/x?playlist=p&audio=1");
+    expect(watchHref({ id: "x" }, { audio: undefined })).toBe("/watch/x");
+  });
 });
