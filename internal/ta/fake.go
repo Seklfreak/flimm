@@ -27,7 +27,12 @@ type Fake struct {
 	SearchFn func(query string) (*SearchResult, error)
 	// SimilarFn overrides SimilarVideos.
 	SimilarFn func(id string) ([]Video, error)
-	nextID    int
+	// Media holds raw file bytes keyed by the path FetchRange is called with
+	// (the TA nginx path, e.g. "/media/UC1/v1.mp4").
+	Media map[string][]byte
+	// FetchRangeFn overrides FetchRange.
+	FetchRangeFn func(path string, start, end int64) ([]byte, error)
+	nextID       int
 }
 
 var _ Client = (*Fake)(nil)
@@ -39,6 +44,7 @@ func NewFake() *Fake {
 		Channels:  map[string]*Channel{},
 		Playlists: map[string]*Playlist{},
 		Progress:  map[string]float64{},
+		Media:     map[string][]byte{},
 	}
 }
 
@@ -447,4 +453,29 @@ func (f *Fake) Search(_ context.Context, query string) (*SearchResult, error) {
 		}
 	}
 	return res, nil
+}
+
+// FetchRange serves a byte range out of Media (start and end inclusive).
+func (f *Fake) FetchRange(_ context.Context, path string, start, end int64) ([]byte, error) {
+	if f.FetchRangeFn != nil {
+		return f.FetchRangeFn(path, start, end)
+	}
+	if f.Err != nil {
+		return nil, f.Err
+	}
+	if start < 0 || end < start {
+		return nil, ErrNotFound
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.record("fetch-range:" + path)
+	data, ok := f.Media[path]
+	if !ok {
+		return nil, ErrNotFound
+	}
+	if start >= int64(len(data)) {
+		return nil, ErrNotFound
+	}
+	to := min(end+1, int64(len(data)))
+	return append([]byte{}, data[start:to]...), nil
 }

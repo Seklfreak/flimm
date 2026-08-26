@@ -189,9 +189,35 @@ Prefs:
 | GET | `/videos/{id}/up-next` | query `feed=<id>` or `playlist=<id>` or `channel=<id>`; returns next VideoSummary[] (max 20) in that context, falling back to `similar` |
 | GET | `/videos/{id}/similar` | VideoSummary[] (TA similar) |
 | GET | `/videos/{id}/comments` | TA comments passthrough |
+| GET | `/videos/{id}/chapters` | chapter markers for the scrubber (see below); cached per video |
 | POST | `/videos/{id}/progress` | `{ "position": 561 }` — heartbeat. Upserts watch_event; writes TA `/video/{id}/progress/`; at ≥90% (or ≤30 s remaining) marks watched. Returns `{ "position", "watched" }` |
 | POST | `/videos/{id}/watched` | `{ "watched": true\|false }` — writes TA `/watched/`; true completes the watch_event, false clears position and TA progress |
 | DELETE | `/videos/{id}/progress` | "Start over": position → 0, TA progress deleted, 204 |
+
+#### Chapters
+
+```json
+{
+  "source": "embedded|description|none",
+  "chapters": [ { "start": 0, "end": 132.5, "title": "Intro" } ]
+}
+```
+
+TubeArchivist stores no chapters, so Archive derives them, preferring the
+authoritative source:
+
+1. **`embedded`** — yt-dlp embeds YouTube's chapters into the container at
+   download time. The backend range-fetches the `moov` box (files are
+   faststart, so it sits at the front) and reads the Nero `chpl` box, falling
+   back to the QuickTime chapter text track referenced by `tref`/`chap`.
+2. **`description`** — timestamp lines in the description (`0:00 Intro`,
+   `1:02:03 - Something`). Used only when nothing is embedded, and only when at
+   least two timestamps parse and they increase monotonically.
+3. **`none`** — `chapters` is `[]`.
+
+`end` is the next chapter's `start`, and the last chapter ends at the video
+duration. Times are seconds (float). Titles are trimmed and never empty.
+Clients treat an empty list as "no chapter UI", never as an error.
 
 ### Playlists
 | Method | Path | Notes |

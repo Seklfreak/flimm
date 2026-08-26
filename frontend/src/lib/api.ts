@@ -40,6 +40,19 @@ export interface SponsorSegment {
   end: number;
 }
 
+export type ChaptersSource = "embedded" | "description" | "none";
+
+export interface Chapter {
+  start: number;
+  end: number;
+  title: string;
+}
+
+export interface ChaptersResponse {
+  source: ChaptersSource;
+  chapters: Chapter[];
+}
+
 export interface VideoPlaylistRef {
   id: string;
   name: string;
@@ -276,6 +289,7 @@ export const api = {
   video: (id: string) => req<Video>(`/videos/${id}`),
   upNext: (id: string, ctx: { feed?: string; playlist?: string; channel?: string }) =>
     req<VideoSummary[]>(`/videos/${id}/up-next${qs(ctx)}`),
+  chapters: (id: string) => req<ChaptersResponse>(`/videos/${id}/chapters`),
   progress: (id: string, position: number) =>
     req<{ position: number; watched: boolean }>(`/videos/${id}/progress`, json("POST", { position })),
   setWatched: (id: string, watched: boolean) =>

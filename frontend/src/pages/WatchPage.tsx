@@ -1,12 +1,13 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, EVERYTHING_ID, type VideoSummary } from "@/lib/api";
-import { invalidateWatchState, keys, useFeeds, usePrefs, useSetWatched, useUpdatePrefs, useVideo } from "@/lib/queries";
+import { invalidateWatchState, keys, useChapters, useFeeds, usePrefs, useSetWatched, useUpdatePrefs, useVideo } from "@/lib/queries";
 import { fmtDuration, plural, relativeDay } from "@/lib/format";
 import { Avatar, CheckIcon, ErrorState, Spinner, Toggle } from "@/components/ui";
 import { Thumb, watchHref } from "@/components/VideoCard";
-import { Player, SUBTITLE_OFF, langName, pickTrack } from "@/player/Player";
+import { Player, SUBTITLE_OFF, langName, pickTrack, type PlayerHandle } from "@/player/Player";
+import { Chapters } from "@/player/Chapters";
 import { AddToPlaylist } from "@/player/AddToPlaylist";
 
 export default function WatchPage() {
@@ -27,9 +28,13 @@ export default function WatchPage() {
   const navigate = useNavigate();
   const feeds = useFeeds();
   const upNext = useQuery({ queryKey: keys.upNext(id, ctx), queryFn: () => api.upNext(id, ctx), staleTime: 60_000 });
+  const chapters = useChapters(id).data?.chapters ?? [];
   const [expanded, setExpanded] = useState(false);
+  const [activeChapter, setActiveChapter] = useState(-1);
+  const playerRef = useRef<PlayerHandle>(null);
   useEffect(() => {
     setExpanded(false);
+    setActiveChapter(-1);
     window.scrollTo({ top: 0 });
   }, [id]);
 
@@ -40,6 +45,7 @@ export default function WatchPage() {
     await api.startOver(id);
     invalidateWatchState(qc, id);
   }, [qc, id]);
+  const onSeekChapter = useCallback((t: number) => playerRef.current?.seek(t), []);
   const next = upNext.data?.[0];
   const onEnded = useCallback(() => {
     if (prefs?.autoplay && next) navigate(watchHref(next, ctx));
@@ -64,7 +70,18 @@ export default function WatchPage() {
     <div className="flex flex-col gap-6 px-0 pb-10 pt-0 md:flex-row md:gap-8 md:px-10 md:pt-8">
       <div className="flex min-w-0 flex-1 flex-col gap-4 md:gap-[18px]">
         <div className="md:rounded-2xl">
-          <Player key={v.id} video={v} prefs={prefs} startAt={startAt} onPrefs={onPrefs} onWatched={onWatched} onStartOver={onStartOver} onEnded={onEnded} />
+          <Player
+            key={v.id}
+            ref={playerRef}
+            video={v}
+            prefs={prefs}
+            startAt={startAt}
+            onPrefs={onPrefs}
+            onWatched={onWatched}
+            onStartOver={onStartOver}
+            onEnded={onEnded}
+            onChapterChange={setActiveChapter}
+          />
         </div>
         <div className="flex flex-col gap-4 px-5 md:gap-[18px] md:px-0">
           <div className="flex flex-col gap-1.5">
@@ -115,6 +132,7 @@ export default function WatchPage() {
               )}
             </div>
           )}
+          <Chapters chapters={chapters} activeIndex={activeChapter} onSeek={onSeekChapter} />
         </div>
       </div>
       <aside className="flex w-full flex-none flex-col gap-3.5 px-5 md:w-[360px] md:px-0">

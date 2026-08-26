@@ -63,6 +63,8 @@ type Server struct {
 	secureCookies bool
 	corsOrigins   []string
 	frontend      fs.FS
+	// chapters caches derived chapter lists per video id.
+	chapters *chaptersCache
 }
 
 func NewServer(o Options) *Server {
@@ -93,6 +95,7 @@ func NewServer(o Options) *Server {
 		secureCookies: o.SecureCookies,
 		corsOrigins:   o.CORSOrigins,
 		frontend:      o.Frontend,
+		chapters:      newChaptersCache(),
 	}
 	if o.MediaProxy != nil {
 		// Thumbnails are immutable per id; let the browser keep them a day.
@@ -172,6 +175,7 @@ func (s *Server) Router() http.Handler {
 			r.Get("/videos/{id}/up-next", s.upNext)
 			r.Get("/videos/{id}/similar", s.similarVideos)
 			r.Get("/videos/{id}/comments", s.videoComments)
+			r.Get("/videos/{id}/chapters", s.getChapters)
 			r.Post("/videos/{id}/progress", s.postProgress)
 			r.Delete("/videos/{id}/progress", s.deleteProgress)
 			r.Post("/videos/{id}/watched", s.postWatched)

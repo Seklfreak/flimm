@@ -73,6 +73,23 @@ type VideoDetail struct {
 	Channel      ChannelSummary     `json:"channel"`
 }
 
+// ---- chapters ----
+
+// Chapter is one scrubber marker. End is the next chapter's start, or the
+// video duration for the last one.
+type Chapter struct {
+	Start float64 `json:"start"`
+	End   float64 `json:"end"`
+	Title string  `json:"title"`
+}
+
+// ChaptersResponse is GET /videos/{id}/chapters. Source is
+// embedded|description|none; Chapters is never null.
+type ChaptersResponse struct {
+	Source   string    `json:"source"`
+	Chapters []Chapter `json:"chapters"`
+}
+
 // ---- channel ----
 
 type FeedRef struct {

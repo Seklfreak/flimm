@@ -2,7 +2,14 @@
 
 ## Done
 
-_Nothing shipped yet._
+- **Chapters** (2026-08-26) — chapter markers on the scrubber, a chapter list
+  under the video and `[`/`]` jumping. TubeArchivist stores no chapters, so
+  they come from the mp4 itself (yt-dlp embeds YouTube's chapters at download
+  time) with description timestamps as a fallback. See
+  [api.md](api.md#chapters).
+- **SponsorBlock on the timeline** (2026-08-26) — segments are tinted on the
+  scrubber with the category on hover. Per-category skip settings and a manual
+  skip button are still open (see Ideas).
 
 ## Next
 
@@ -14,8 +21,8 @@ _Nothing shipped yet._
 
 ## Ideas
 
-- **SponsorBlock UI** — show segments on the timeline, per-category skip
-  settings, manual skip button (data is already in the video detail).
+- **SponsorBlock UI** — per-category skip settings and a manual skip button.
+  Segments already render on the timeline.
 - **Comments** — render TubeArchivist's archived comments under the video.
 - **Download queue management** — view and manage TubeArchivist's download
   queue and subscriptions from Archive (add URLs, retry, ignore).
