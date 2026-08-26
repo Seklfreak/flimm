@@ -23,10 +23,15 @@ func (s *Server) proxyTo(w http.ResponseWriter, r *http.Request, p *httputil.Rev
 	p.ServeHTTP(w, r2)
 }
 
-// taMediaPath turns a TA media_url (relative, or already /media/-prefixed)
-// into the nginx path.
+// taMediaPath turns a TA media_url into the nginx path. TA stores the path
+// as seen inside its container ("/youtube/<channel>/<file>"); nginx serves
+// that directory as /media/. Accept the already-mapped and the bare relative
+// forms too.
 func taMediaPath(mediaURL string) string {
-	if strings.HasPrefix(mediaURL, "/media/") {
+	switch {
+	case strings.HasPrefix(mediaURL, "/youtube/"):
+		return "/media/" + strings.TrimPrefix(mediaURL, "/youtube/")
+	case strings.HasPrefix(mediaURL, "/media/"):
 		return mediaURL
 	}
 	return "/media/" + strings.TrimPrefix(mediaURL, "/")
@@ -67,7 +72,8 @@ func (s *Server) mediaVideoThumb(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "not found")
 		return
 	}
-	s.proxyTo(w, r, s.thumbProxy, "/cache/videos/"+id[:2]+"/"+id+".jpg")
+	// TA shards video thumbnails by the first character of the id, lowercased.
+	s.proxyTo(w, r, s.thumbProxy, "/cache/videos/"+strings.ToLower(id[:1])+"/"+id+".jpg")
 }
 
 func (s *Server) mediaChannelThumb(w http.ResponseWriter, r *http.Request) {
