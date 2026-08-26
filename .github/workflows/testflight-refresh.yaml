@@ -1,0 +1,70 @@
+name: TestFlight Refresh
+
+# TestFlight builds expire 90 days after upload. Regular releases keep the build
+# fresh, but through a quiet month no new build is uploaded and the last one
+# drifts toward expiry. This monthly job checks when the most recent TestFlight
+# build ran and, if that was more than ~30 days ago (or never), rebuilds the
+# latest released tag so testers always have a valid build.
+#
+# It reuses testflight.yaml (via workflow_dispatch) for the actual build+upload,
+# so signing, secrets, and the "no-op if App Store Connect secrets are absent"
+# behaviour are all inherited. A refresh produces a new build number
+# (GITHUB_RUN_NUMBER) under the same marketing version, which resets the clock.
+#
+# Recency is measured from testflight.yaml's own successful runs, which include
+# both release-driven builds and prior refreshes — so during a long idle stretch
+# this self-throttles to roughly one build every ~30 days rather than every month.
+on:
+  schedule:
+    - cron: "0 9 1 * *" # 09:00 UTC on the 1st of every month
+  workflow_dispatch: # manual "refresh now"
+    inputs:
+      force:
+        description: "Rebuild even if a recent TestFlight build exists"
+        type: boolean
+        default: false
+
+permissions:
+  actions: write # read run history + dispatch testflight.yaml
+  contents: read # checkout to read tags
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Refresh TestFlight if the last build is stale
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FORCE: ${{ github.event.inputs.force }}
+        run: |
+          set -euo pipefail
+
+          # Most recent successful TestFlight build+upload, as an ISO timestamp.
+          last=$(gh run list --workflow testflight.yaml --status success \
+            --limit 1 --json createdAt --jq '.[0].createdAt // empty')
+          if [ -n "$last" ]; then
+            age_days=$(( ( $(date -u +%s) - $(date -u -d "$last" +%s) ) / 86400 ))
+            echo "Last TestFlight build was $age_days day(s) ago ($last)."
+          else
+            age_days=99999
+            echo "No previous successful TestFlight build found."
+          fi
+
+          if [ "$FORCE" != "true" ] && [ "$age_days" -lt 30 ]; then
+            echo "A build was uploaded within the last 30 days; nothing to do."
+            exit 0
+          fi
+
+          tag=$(git tag -l 'v*.*.*' | sort -V | tail -1)
+          if [ -z "$tag" ]; then
+            echo "::warning::No version tag found; cannot refresh TestFlight."
+            exit 0
+          fi
+
+          echo "Refreshing TestFlight from $tag."
+          gh workflow run testflight.yaml --ref "$tag" -f version="${tag#v}"

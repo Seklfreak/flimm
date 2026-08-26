@@ -1,0 +1,245 @@
+name: TestFlight
+
+# Build the iOS and tvOS apps and upload them to TestFlight on every version
+# tag. Dispatched by release.yaml after a release is cut (GITHUB_TOKEN tag
+# pushes don't trigger `on: push: tags`), and runnable by hand.
+#
+# Signing uses a STORED Apple Distribution certificate + App Store provisioning
+# profiles (manual signing): cloud signing on ephemeral runners mints a fresh
+# certificate every run and exhausts Apple's per-account limit.
+#
+# Dormant by design: if the App Store Connect secrets are absent the job logs a
+# notice and exits 0, so this never red-X's a release before the account is
+# wired up.
+#
+# Required repository secrets:
+#   APP_STORE_CONNECT_KEY_ID / _ISSUER_ID / _API_KEY  - App Store Connect API key (upload)
+#   APP_STORE_TEAM_ID                                 - paid Apple Developer Team ID
+#   APPLE_DIST_CERT_P12                               - base64 of the Apple Distribution .p12
+#   APPLE_DIST_CERT_PASSWORD                          - the .p12 export password
+#   APP_STORE_PROFILE                                 - base64 of the iOS App Store .mobileprovision
+#   APP_STORE_TV_PROFILE                              - base64 of the tvOS App Store .mobileprovision
+#   SENTRY_DSN                                        - baked into the shipped apps (crash reporting)
+#   SENTRY_AUTH_TOKEN                                 - optional: dSYM upload for symbolicated crashes
+on:
+  push:
+    tags: ["v*.*.*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Marketing version, e.g. 1.0.1. Blank = derive from the tag."
+        required: false
+        default: ""
+
+defaults:
+  run:
+    working-directory: apple
+
+jobs:
+  testflight:
+    # macos-26 ships Xcode 26 / the iOS 26 SDK, which App Store Connect
+    # requires for uploads.
+    runs-on: macos-26
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - scheme: Flimm
+            bundle_id: dev.winktech.flimm
+            sdk: iOS
+            profile_secret: APP_STORE_PROFILE
+          - scheme: FlimmTV
+            bundle_id: dev.winktech.flimm.tv
+            sdk: tvOS
+            profile_secret: APP_STORE_TV_PROFILE
+    name: testflight (${{ matrix.sdk }})
+    steps:
+      - uses: actions/checkout@v7
+
+      # Secrets can't be referenced in `if:`, so surface presence as an output
+      # and gate every real step on it.
+      - name: Check for App Store Connect secrets
+        id: gate
+        env:
+          KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+        run: |
+          if [ -z "$KEY_ID" ]; then
+            echo "::notice::App Store Connect secrets not set — skipping TestFlight upload."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Tooling
+        if: steps.gate.outputs.ready == 'true'
+        run: |
+          brew install xcodegen
+          xcodebuild -version
+
+      - name: Generate project
+        if: steps.gate.outputs.ready == 'true'
+        run: |
+          # Placeholder file so the xcconfig reference resolves; the real
+          # values are passed as build settings in the archive step.
+          cp Config/Secrets.example.xcconfig Config/Secrets.xcconfig
+          xcodegen generate
+
+      - name: Write API key
+        if: steps.gate.outputs.ready == 'true'
+        env:
+          API_KEY: ${{ secrets.APP_STORE_CONNECT_API_KEY }}
+          KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+        run: |
+          mkdir -p ~/.appstoreconnect/private_keys
+          printf '%s' "$API_KEY" > ~/.appstoreconnect/private_keys/AuthKey_"$KEY_ID".p8
+
+      - name: Import signing certificate + profile
+        if: steps.gate.outputs.ready == 'true'
+        env:
+          CERT_P12: ${{ secrets.APPLE_DIST_CERT_P12 }}
+          CERT_PW: ${{ secrets.APPLE_DIST_CERT_PASSWORD }}
+          PROFILE_B64: ${{ secrets[matrix.profile_secret] }}
+        run: |
+          set -euo pipefail
+          KEYCHAIN="$RUNNER_TEMP/build.keychain-db"
+          KPW="$(openssl rand -base64 24)"
+          security create-keychain -p "$KPW" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KPW" "$KEYCHAIN"
+          # Prepend our keychain to the user search list so codesign finds the identity.
+          security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | sed 's/"//g')
+
+          echo "$CERT_P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" -k "$KEYCHAIN" -P "$CERT_PW" -A -T /usr/bin/codesign -T /usr/bin/security
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KPW" "$KEYCHAIN" >/dev/null
+          # Make our keychain the default so xcodebuild's signing search uses it.
+          security default-keychain -s "$KEYCHAIN"
+          echo "--- codesigning identities in keychain ---"
+          security find-identity -v -p codesigning "$KEYCHAIN"
+
+          echo "$PROFILE_B64" | base64 --decode > "$RUNNER_TEMP/pp.mobileprovision"
+          security cms -D -i "$RUNNER_TEMP/pp.mobileprovision" > "$RUNNER_TEMP/pp.plist"
+          UUID=$(/usr/libexec/PlistBuddy -c "Print :UUID" "$RUNNER_TEMP/pp.plist")
+          NAME=$(/usr/libexec/PlistBuddy -c "Print :Name" "$RUNNER_TEMP/pp.plist")
+          mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
+          cp "$RUNNER_TEMP/pp.mobileprovision" "$HOME/Library/MobileDevice/Provisioning Profiles/$UUID.mobileprovision"
+          echo "PROFILE_NAME=$NAME" >> "$GITHUB_ENV"
+          echo "Installed profile '$NAME' ($UUID)"
+
+      - name: Archive (manual signing)
+        if: steps.gate.outputs.ready == 'true'
+        env:
+          TEAM_ID: ${{ secrets.APP_STORE_TEAM_ID }}
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+          INPUT_VERSION: ${{ github.event.inputs.version }}
+          SCHEME: ${{ matrix.scheme }}
+          SDK: ${{ matrix.sdk }}
+        run: |
+          # Marketing version: dispatch input wins, else derive from the tag (vX.Y.Z -> X.Y.Z).
+          VERSION="$INPUT_VERSION"
+          [ -z "$VERSION" ] && VERSION="${GITHUB_REF_NAME#v}"
+          BUILD="${GITHUB_RUN_NUMBER}"      # monotonic, unique per upload
+          echo "Archiving $SCHEME $VERSION (build $BUILD) with profile '$PROFILE_NAME'"
+          # Manual-signing settings live in project.yml scoped to the app
+          # targets (CLI settings would hit SPM package targets, which refuse
+          # provisioning profiles). SENTRY_DSN on the command line overrides
+          # the placeholder xcconfig — unlike xcconfig files, CLI settings
+          # don't treat // as a comment.
+          xcodebuild archive \
+            -project Flimm.xcodeproj -scheme "$SCHEME" \
+            -configuration Release \
+            -destination "generic/platform=$SDK" \
+            -archivePath "build/$SCHEME.xcarchive" \
+            DEVELOPMENT_TEAM="$TEAM_ID" \
+            MARKETING_VERSION="$VERSION" \
+            CURRENT_PROJECT_VERSION="$BUILD" \
+            SENTRY_DSN="$SENTRY_DSN"
+
+      # Symbolicated crash reports need the dSYMs in Sentry. Best-effort and
+      # dormant without SENTRY_AUTH_TOKEN — the archive itself doesn't depend
+      # on it.
+      - name: Upload dSYMs to Sentry
+        if: steps.gate.outputs.ready == 'true'
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SCHEME: ${{ matrix.scheme }}
+        run: |
+          if [ -z "$SENTRY_AUTH_TOKEN" ]; then
+            echo "::notice::SENTRY_AUTH_TOKEN not set — skipping dSYM upload."
+            exit 0
+          fi
+          brew install getsentry/tools/sentry-cli
+          sentry-cli debug-files upload \
+            --org winktech --project flimm-ios \
+            "build/$SCHEME.xcarchive/dSYMs" || echo "::warning::Sentry dSYM upload failed"
+
+      - name: Export + upload to TestFlight
+        if: steps.gate.outputs.ready == 'true'
+        env:
+          TEAM_ID: ${{ secrets.APP_STORE_TEAM_ID }}
+          KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          SCHEME: ${{ matrix.scheme }}
+          BUNDLE_ID: ${{ matrix.bundle_id }}
+        run: |
+          cat > build/ExportOptions.plist <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key><string>app-store-connect</string>
+            <key>teamID</key><string>${TEAM_ID}</string>
+            <key>destination</key><string>upload</string>
+            <key>uploadSymbols</key><true/>
+            <key>signingStyle</key><string>manual</string>
+            <key>provisioningProfiles</key>
+            <dict>
+              <key>${BUNDLE_ID}</key><string>${PROFILE_NAME}</string>
+            </dict>
+          </dict>
+          </plist>
+          PLIST
+          xcodebuild -exportArchive \
+            -archivePath "build/$SCHEME.xcarchive" \
+            -exportOptionsPlist build/ExportOptions.plist \
+            -authenticationKeyPath ~/.appstoreconnect/private_keys/AuthKey_"$KEY_ID".p8 \
+            -authenticationKeyID "$KEY_ID" \
+            -authenticationKeyIssuerID "$ISSUER_ID"
+
+      # Push this release's changelog to TestFlight as the build's "What to
+      # Test" notes. Best-effort — a failure here only warns, the build is
+      # already uploaded.
+      - name: Set up Python
+        if: steps.gate.outputs.ready == 'true'
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+
+      - name: Push changelog to TestFlight (What to Test)
+        if: steps.gate.outputs.ready == 'true'
+        working-directory: .
+        env:
+          GH_TOKEN: ${{ github.token }}
+          KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          INPUT_VERSION: ${{ github.event.inputs.version }}
+          BUNDLE_ID: ${{ matrix.bundle_id }}
+        run: |
+          set -euo pipefail
+          pip install --quiet pyjwt cryptography
+
+          VERSION="$INPUT_VERSION"
+          [ -z "$VERSION" ] && VERSION="${GITHUB_REF_NAME#v}"
+          TAG="v$VERSION"
+          BUILD="${GITHUB_RUN_NUMBER}"   # must match the archive's CURRENT_PROJECT_VERSION
+
+          NOTES="$(gh release view "$TAG" --json body -q .body 2>/dev/null || true)"
+          [ -z "$NOTES" ] && NOTES="Bug fixes and improvements."
+          printf '%s' "$NOTES" > "$RUNNER_TEMP/whats_new.md"
+
+          python scripts/testflight_whats_new.py \
+            --bundle-id "$BUNDLE_ID" \
+            --version "$VERSION" --build "$BUILD" \
+            --notes-file "$RUNNER_TEMP/whats_new.md" \
+            --key-id "$KEY_ID" --issuer-id "$ISSUER_ID" \
+            --key-path ~/.appstoreconnect/private_keys/AuthKey_"$KEY_ID".p8

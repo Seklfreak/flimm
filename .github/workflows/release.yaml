@@ -44,7 +44,7 @@ jobs:
       - uses: Seklfreak/ai-release-action@v1
         with:
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
-          build-workflow: "build.yaml"
+          build-workflow: "build.yaml testflight.yaml"
           project-description: >-
             Flimm is a self-hosted client for a single TubeArchivist instance: a Go
             backend (chi, pgx/sqlc, golang-migrate, go-oidc) plus a React frontend shipped
@@ -53,5 +53,7 @@ jobs:
             media/thumbnails from it, and writes watched state, progress and custom
             playlists back to TubeArchivist. frontend/dist is //go:embed-ed into the
             binary, so frontend changes — including styling — ship to users, as do SQL
-            migrations, sqlc queries and the Dockerfile. Only docs, CI workflows and
-            scripts/ live outside the image.
+            migrations, sqlc queries and the Dockerfile. apple/ holds the native
+            iOS, iPadOS and tvOS apps, shipped to TestFlight on every version tag,
+            so changes there reach users too. Only docs, CI workflows and scripts/
+            live outside the shipped artifacts.
