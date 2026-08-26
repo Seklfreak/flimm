@@ -316,7 +316,8 @@ export const api = {
   markChannelSeen: (id: string) => req<void>(`/channels/${id}/mark-seen`, { method: "POST" }),
 
   video: (id: string) => req<Video>(`/videos/${id}`),
-  upNext: (id: string, ctx: PlayContext) => req<VideoSummary[]>(`/videos/${id}/up-next${qs(ctx)}`),
+  upNext: (id: string, ctx: PlayContext, page: number) =>
+    req<Page<VideoSummary>>(`/videos/${id}/up-next${qs({ ...ctx, page, page_size: PAGE_SIZE })}`),
   nav: (id: string, ctx: PlayContext) => req<NavResponse>(`/videos/${id}/nav${qs(ctx)}`),
   chapters: (id: string) => req<ChaptersResponse>(`/videos/${id}/chapters`),
   progress: (id: string, position: number) =>

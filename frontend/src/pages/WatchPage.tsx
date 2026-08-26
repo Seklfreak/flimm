@@ -2,9 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, EVERYTHING_ID, type VideoSummary } from "@/lib/api";
-import { invalidateWatchState, keys, useChapters, useFeeds, usePrefs, useSetWatched, useUpdatePrefs, useVideo } from "@/lib/queries";
+import { invalidateWatchState, keys, useChapters, useFeeds, usePrefs, useSetWatched, useUpdatePrefs, useUpNext, useVideo } from "@/lib/queries";
 import { fmtDuration, plural, relativeDay } from "@/lib/format";
-import { Avatar, CheckIcon, ErrorState, Spinner, Toggle } from "@/components/ui";
+import { Avatar, CheckIcon, ErrorState, InfiniteSentinel, Spinner, Toggle } from "@/components/ui";
 import { Thumb, watchHref } from "@/components/VideoCard";
 import { Player, SUBTITLE_OFF, langName, pickTrack, type PlayerHandle } from "@/player/Player";
 import { Chapters } from "@/player/Chapters";
@@ -46,7 +46,8 @@ export default function WatchPage() {
   const qc = useQueryClient();
   const navigate = useNavigate();
   const feeds = useFeeds();
-  const upNext = useQuery({ queryKey: keys.upNext(id, ctx), queryFn: () => api.upNext(id, ctx), staleTime: 60_000 });
+  const upNext = useUpNext(id, ctx);
+  const upNextItems = useMemo(() => (upNext.data?.pages ?? []).flatMap((p) => p.items), [upNext.data]);
   // Neighbours in the playlist/feed/channel the video was opened from. Only
   // requested when there is such a context; without one there is nothing to
   // step through and the player hides the buttons.
@@ -75,7 +76,7 @@ export default function WatchPage() {
     invalidateWatchState(qc, id);
   }, [qc, id]);
   const onSeekChapter = useCallback((t: number) => playerRef.current?.seek(t), []);
-  const next = upNext.data?.[0];
+  const next = upNextItems[0];
   const onEnded = useCallback(() => {
     if (prefs?.autoplay && next) navigate(watchHref(next, ctx));
   }, [prefs?.autoplay, next, navigate, ctx]);
@@ -184,10 +185,10 @@ export default function WatchPage() {
         </div>
         {upNext.isLoading ? (
           <Spinner />
-        ) : (upNext.data ?? []).length === 0 ? (
+        ) : upNextItems.length === 0 ? (
           <p className="meta">Nothing more in this context.</p>
         ) : (
-          (upNext.data ?? []).map((n: VideoSummary) => (
+          upNextItems.map((n: VideoSummary) => (
             <Link key={n.id} to={watchHref(n, ctx)} className="flex items-center gap-3 text-ink no-underline hover:text-ink">
               <div className="w-32 flex-none"><Thumb video={n} compact className="!rounded-[10px]" /></div>
               <span className="flex min-w-0 flex-col gap-[3px]">
@@ -199,6 +200,8 @@ export default function WatchPage() {
             </Link>
           ))
         )}
+        <InfiniteSentinel enabled={!!upNext.hasNextPage && !upNext.isFetchingNextPage} onVisible={() => void upNext.fetchNextPage()} />
+        {upNext.isFetchingNextPage && <div className="py-3"><Spinner /></div>}
       </aside>
     </div>
   );
