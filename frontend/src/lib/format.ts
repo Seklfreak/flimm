@@ -91,3 +91,9 @@ export function formatCount(n: number): string {
 export function plural(n: number, one: string, many = one + "s"): string {
   return `${formatCount(n)} ${n === 1 ? one : many}`;
 }
+
+// A playlist's remaining-unseen count for the sidebar badge; clamped at 0 so
+// a seen_count that (transiently) exceeds video_count never shows negative.
+export function remainingUnseen(videoCount: number, seenCount: number): number {
+  return Math.max(0, videoCount - seenCount);
+}

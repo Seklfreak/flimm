@@ -159,6 +159,7 @@ export interface PlaylistSummary {
   in_progress_count: number;
   progress: number;
   resume_video_id: string | null;
+  pinned: boolean;
 }
 
 export interface Playlist extends PlaylistSummary {
@@ -321,6 +322,9 @@ export const api = {
 
   playlists: (kind: "custom" | "channel" | undefined, page: number) =>
     req<Page<PlaylistSummary>>(`/playlists${qs({ kind, page, page_size: PAGE_SIZE })}`),
+  pinnedPlaylists: () => req<PlaylistSummary[]>("/playlists/pinned"),
+  setPlaylistPinned: (id: string, pinned: boolean) =>
+    req<void>(`/playlists/${id}/pinned`, json("PUT", { pinned })),
   playlist: (id: string) => req<Playlist>(`/playlists/${id}`),
   createPlaylist: (name: string) => req<PlaylistSummary>("/playlists", json("POST", { name })),
   renamePlaylist: (id: string, name: string) =>

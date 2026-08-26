@@ -11,6 +11,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 
+	"github.com/Seklfreak/archive-client/internal/db/sqlc"
 	"github.com/Seklfreak/archive-client/internal/ta"
 )
 
@@ -148,6 +149,78 @@ func (s *Server) playlistSummaries(ctx context.Context, uid uuid.UUID, lists []t
 	return out, err
 }
 
+// pinnedSet is the user's pinned playlist ids, for stamping onto summaries.
+func (s *Server) pinnedSet(ctx context.Context, uid uuid.UUID) (map[string]bool, error) {
+	rows, err := s.q.ListPinnedPlaylists(ctx, uid)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]bool, len(rows))
+	for _, r := range rows {
+		out[r.PlaylistID] = true
+	}
+	return out, nil
+}
+
+// listPinnedPlaylists backs the sidebar. Pins name TubeArchivist ids that TA
+// owns, so one that no longer resolves is skipped rather than surfaced as an
+// error — a playlist deleted in TA must not wedge the sidebar.
+func (s *Server) listPinnedPlaylists(w http.ResponseWriter, r *http.Request) {
+	uid := currentUserID(r.Context())
+	rows, err := s.q.ListPinnedPlaylists(r.Context(), uid)
+	if err != nil {
+		s.writeDBError(w, "list pinned playlists", err)
+		return
+	}
+	out := make([]PlaylistSummary, 0, len(rows))
+	for _, row := range rows {
+		p, err := s.ta.GetPlaylist(r.Context(), row.PlaylistID)
+		if errors.Is(err, ta.ErrNotFound) {
+			continue
+		}
+		if err != nil {
+			s.writeTAError(w, "get playlist", err)
+			return
+		}
+		sum, _, err := s.playlistSummary(r.Context(), uid, p)
+		if err != nil {
+			s.writeTAError(w, "playlist summary", err)
+			return
+		}
+		sum.Pinned = true
+		out = append(out, *sum)
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+func (s *Server) setPlaylistPinned(w http.ResponseWriter, r *http.Request) {
+	uid := currentUserID(r.Context())
+	id := chi.URLParam(r, "id")
+	var req struct {
+		Pinned *bool `json:"pinned"`
+	}
+	if err := decodeBody(r, &req); err != nil || req.Pinned == nil {
+		writeError(w, http.StatusBadRequest, "pinned is required")
+		return
+	}
+	if *req.Pinned {
+		// Reject a pin for a playlist TA doesn't have, so the sidebar can't
+		// accumulate entries that will never resolve.
+		if _, err := s.ta.GetPlaylist(r.Context(), id); err != nil {
+			s.writeTAError(w, "get playlist", err)
+			return
+		}
+		if err := s.q.PinPlaylist(r.Context(), sqlc.PinPlaylistParams{UserID: uid, PlaylistID: id}); err != nil {
+			s.writeDBError(w, "pin playlist", err)
+			return
+		}
+	} else if err := s.q.UnpinPlaylist(r.Context(), sqlc.UnpinPlaylistParams{UserID: uid, PlaylistID: id}); err != nil {
+		s.writeDBError(w, "unpin playlist", err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (s *Server) listPlaylists(w http.ResponseWriter, r *http.Request) {
 	uid := currentUserID(r.Context())
 	kind := ""
@@ -175,6 +248,14 @@ func (s *Server) listPlaylists(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		s.writeTAError(w, "playlist summaries", err)
 		return
+	}
+	pinned, err := s.pinnedSet(r.Context(), uid)
+	if err != nil {
+		s.writeDBError(w, "list pinned playlists", err)
+		return
+	}
+	for i := range items {
+		items[i].Pinned = pinned[items[i].ID]
 	}
 	writeJSON(w, http.StatusOK, Page[PlaylistSummary]{Items: items, Page: p.Page, PageSize: p.Size, Total: window.Total})
 }
@@ -213,6 +294,12 @@ func (s *Server) getPlaylist(w http.ResponseWriter, r *http.Request) {
 		s.writeTAError(w, "playlist summary", err)
 		return
 	}
+	pinned, err := s.pinnedSet(r.Context(), uid)
+	if err != nil {
+		s.writeDBError(w, "list pinned playlists", err)
+		return
+	}
+	sum.Pinned = pinned[sum.ID]
 	writeJSON(w, http.StatusOK, PlaylistDetail{PlaylistSummary: *sum, Items: items})
 }
 

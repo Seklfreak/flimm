@@ -1,9 +1,9 @@
-import { formatCount } from "../lib/format";
+import { formatCount, remainingUnseen } from "../lib/format";
 import { useEffect, useState } from "react";
 import { Link, NavLink, Outlet, useLocation, useNavigate, useParams } from "react-router";
-import { EVERYTHING_ID, type Feed } from "@/lib/api";
+import { EVERYTHING_ID, type Feed, type PlaylistSummary } from "@/lib/api";
 import { useConfig } from "@/lib/config";
-import { pinnedFeed, useFeeds } from "@/lib/queries";
+import { pinnedFeed, useFeeds, usePinnedPlaylists } from "@/lib/queries";
 import { plural } from "@/lib/format";
 import { SearchIcon, Sheet } from "./ui";
 
@@ -32,11 +32,14 @@ const NAV = [
 
 function Sidebar() {
   const feeds = useFeeds();
+  const pinnedPlaylists = usePinnedPlaylists();
   const config = useConfig();
   const { pathname } = useLocation();
   const params = useParams();
   const pinned = pinnedFeed(feeds.data);
   const activeFeedId = pathname.startsWith("/feeds/") ? params.id : pathname === "/" ? pinned?.id : undefined;
+  const activePlaylistId = pathname.startsWith("/playlists/") ? params.id : undefined;
+  const playlists = pinnedPlaylists.data ?? [];
 
   return (
     <aside className="sticky top-0 hidden h-dvh w-[264px] flex-none flex-col gap-[26px] overflow-y-auto border-r border-hair px-5 py-8 md:flex">
@@ -54,6 +57,16 @@ function Sidebar() {
           <FeedNavItem key={f.id} feed={f} active={f.id === activeFeedId} />
         ))}
       </div>
+      {playlists.length > 0 && (
+        <div className="flex flex-col gap-1">
+          <div className="sec px-2.5 pb-1">
+            <span>Playlists</span>
+          </div>
+          {playlists.map((p) => (
+            <PlaylistNavItem key={p.id} playlist={p} active={p.id === activePlaylistId} />
+          ))}
+        </div>
+      )}
       <nav className="flex flex-col gap-0.5">
         {NAV.map(({ to, label, icon: Icon }) => (
           <NavLink
@@ -80,6 +93,18 @@ function FeedNavItem({ feed, active }: { feed: Feed; active: boolean }) {
     >
       <span className="truncate">{feed.name}</span>
       <UnseenBadge n={feed.unseen_count} />
+    </Link>
+  );
+}
+
+function PlaylistNavItem({ playlist, active }: { playlist: PlaylistSummary; active: boolean }) {
+  return (
+    <Link
+      to={`/playlists/${playlist.id}`}
+      className={`flex items-center justify-between rounded-[10px] px-2.5 py-[9px] text-[14px] font-bold text-ink no-underline hover:text-ink ${active ? "bg-raised" : "hover:bg-raised/60"}`}
+    >
+      <span className="truncate">{playlist.name}</span>
+      <UnseenBadge n={remainingUnseen(playlist.video_count, playlist.seen_count)} />
     </Link>
   );
 }

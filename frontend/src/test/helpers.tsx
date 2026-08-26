@@ -3,7 +3,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router";
 import { render } from "@testing-library/react";
 import { vi } from "vitest";
-import type { Feed, VideoSummary } from "@/lib/api";
+import type { Feed, PlaylistSummary, VideoSummary } from "@/lib/api";
 
 export function renderWithProviders(ui: ReactNode, { route = "/" }: { route?: string } = {}) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -52,6 +52,24 @@ export function video(over: Partial<VideoSummary> = {}): VideoSummary {
     position: 561,
     progress: 0.38,
     last_played_at: new Date().toISOString(),
+    ...over,
+  };
+}
+
+export function playlist(over: Partial<PlaylistSummary> = {}): PlaylistSummary {
+  return {
+    id: "p1",
+    name: "Shader Deep Dives",
+    kind: "custom",
+    channel: null,
+    thumb_url: "/media/thumb/playlist/p1",
+    video_count: 14,
+    total_duration: 15120,
+    seen_count: 11,
+    in_progress_count: 1,
+    progress: 0.78,
+    resume_video_id: null,
+    pinned: false,
     ...over,
   };
 }

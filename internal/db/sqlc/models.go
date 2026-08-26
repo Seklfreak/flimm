@@ -29,6 +29,13 @@ type FeedChannel struct {
 	Position  int32     `json:"position"`
 }
 
+type PinnedPlaylist struct {
+	UserID     uuid.UUID          `json:"user_id"`
+	PlaylistID string             `json:"playlist_id"`
+	Position   int32              `json:"position"`
+	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+}
+
 type User struct {
 	ID         uuid.UUID          `json:"id"`
 	OidcSub    string             `json:"oidc_sub"`

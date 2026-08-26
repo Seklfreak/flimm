@@ -2,10 +2,10 @@ import { useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { api, type PlaylistSummary } from "@/lib/api";
-import { usePlaylists } from "@/lib/queries";
+import { usePlaylists, useSetPlaylistPinned } from "@/lib/queries";
 import { plural } from "@/lib/format";
 import { PageHeader } from "@/components/Layout";
-import { EmptyState, ErrorState, InfiniteSentinel, MediaImg, ProgressBar, Segmented, Spinner } from "@/components/ui";
+import { EmptyState, ErrorState, InfiniteSentinel, MediaImg, PinIcon, ProgressBar, Segmented, Spinner } from "@/components/ui";
 import { VideoGrid } from "@/components/VideoCard";
 
 type Filter = "all" | "custom" | "channel";
@@ -126,17 +126,35 @@ export function PlaylistStack({ playlist, compact = false }: { playlist: Playlis
 export function PlaylistCard({ playlist }: { playlist: PlaylistSummary }) {
   const seen =
     playlist.seen_count === 0 ? "" : playlist.seen_count >= playlist.video_count ? " · all seen" : ` · ${playlist.seen_count} seen`;
+  const setPinned = useSetPlaylistPinned();
   return (
-    <Link to={`/playlists/${playlist.id}`} className="flex flex-col gap-2.5 text-ink no-underline hover:text-ink">
-      <PlaylistStack playlist={playlist} />
-      <span className="flex flex-col gap-0.5">
-        <span className="text-[16px] font-extrabold leading-[1.25] tracking-[-0.01em] line-clamp-2">{playlist.name}</span>
-        <span className="meta">
-          {playlist.channel ? `${playlist.channel.name} · ` : ""}
-          {plural(playlist.video_count, "video")}
-          {seen}
+    <div className="relative flex flex-col gap-2.5">
+      <Link to={`/playlists/${playlist.id}`} className="flex flex-col gap-2.5 text-ink no-underline hover:text-ink">
+        <PlaylistStack playlist={playlist} />
+        <span className="flex flex-col gap-0.5">
+          <span className="text-[16px] font-extrabold leading-[1.25] tracking-[-0.01em] line-clamp-2">{playlist.name}</span>
+          <span className="meta">
+            {playlist.channel ? `${playlist.channel.name} · ` : ""}
+            {plural(playlist.video_count, "video")}
+            {seen}
+          </span>
         </span>
-      </span>
-    </Link>
+      </Link>
+      {/* Sits above the Link (not nested inside it) so pinning never triggers navigation. */}
+      <button
+        type="button"
+        className={`pill right-2.5 top-2.5 flex items-center justify-center !p-1.5 ${playlist.pinned ? "!bg-accent !text-white" : "hover:!text-white"}`}
+        aria-pressed={playlist.pinned}
+        aria-label={playlist.pinned ? "Unpin from sidebar" : "Pin to sidebar"}
+        title={playlist.pinned ? "Unpin from sidebar" : "Pin to sidebar"}
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          setPinned.mutate({ id: playlist.id, pinned: !playlist.pinned });
+        }}
+      >
+        <PinIcon size={13} />
+      </button>
+    </div>
   );
 }
