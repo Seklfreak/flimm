@@ -61,9 +61,11 @@ type VideoPlaylistRef struct {
 
 type VideoDetail struct {
 	VideoSummary
-	Description  string             `json:"description"`
-	Height       int                `json:"height"`
-	MediaURL     string             `json:"media_url"`
+	Description string `json:"description"`
+	Height      int    `json:"height"`
+	MediaURL    string `json:"media_url"`
+	// AudioURL is the derived audio-only rendition; see internal/media.
+	AudioURL     string             `json:"audio_url"`
 	YoutubeURL   string             `json:"youtube_url"`
 	Subtitles    []SubtitleTrack    `json:"subtitles"`
 	Sponsorblock []SponsorSegment   `json:"sponsorblock"`
@@ -166,8 +168,10 @@ type PlaylistSummary struct {
 	InProgressCount int                 `json:"in_progress_count"`
 	Progress        float64             `json:"progress"`
 	ResumeVideoID   *string             `json:"resume_video_id"`
-	// Pinned is Archive's own state — TubeArchivist has no concept of it.
-	Pinned bool `json:"pinned"`
+	// Pinned and AudioOnly are Archive's own per-user state — TubeArchivist
+	// has no concept of either.
+	Pinned    bool `json:"pinned"`
+	AudioOnly bool `json:"audio_only"`
 }
 
 type PlaylistItem struct {

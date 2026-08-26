@@ -54,6 +54,8 @@ type Client interface {
 
 	Search(ctx context.Context, query string) (*SearchResult, error)
 
+	// OpenMedia streams a media file from TA. The caller closes the reader.
+	OpenMedia(ctx context.Context, path string) (io.ReadCloser, error)
 	// FetchRange GETs a raw file from TubeArchivist (an nginx /media/… path)
 	// with a byte Range header and returns the body. start and end are
 	// inclusive; the read is capped at maxRangeBytes whatever the response
@@ -565,6 +567,29 @@ func orEmpty[T any](s []T) []T {
 
 // FetchRange reads a byte range of a media file. Errors carry the path only,
 // never the token.
+// OpenMedia streams a media file. It exists so derivations can pipe the source
+// through ffmpeg without the API token ever reaching a command line.
+func (c *HTTP) OpenMedia(ctx context.Context, path string) (io.ReadCloser, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.base+path, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Token "+c.token)
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrUnavailable, err)
+	}
+	switch {
+	case resp.StatusCode == http.StatusNotFound:
+		_ = resp.Body.Close()
+		return nil, ErrNotFound
+	case resp.StatusCode != http.StatusOK:
+		_ = resp.Body.Close()
+		return nil, fmt.Errorf("%w: GET %s: status %d", ErrUnavailable, path, resp.StatusCode)
+	}
+	return resp.Body, nil
+}
+
 func (c *HTTP) FetchRange(ctx context.Context, path string, start, end int64) ([]byte, error) {
 	if start < 0 || end < start {
 		return nil, fmt.Errorf("fetch range %s: invalid range %d-%d", path, start, end)

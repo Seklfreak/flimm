@@ -4,10 +4,12 @@ package config
 
 import (
 	"bufio"
+	"cmp"
 	"fmt"
 	"log/slog"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 )
@@ -36,6 +38,14 @@ type Config struct {
 	// no resume position. Completion always records, whatever the position.
 	MinPlaySeconds float64
 
+	// MediaCacheDir holds derived renditions (audio-only today). Every entry
+	// can be rebuilt from TubeArchivist, so ephemeral storage is fine.
+	MediaCacheDir string
+	// MediaCacheMaxBytes caps the cache before least-recently-used eviction.
+	MediaCacheMaxBytes int64
+	// FFmpegPath is the ffmpeg binary used for derivations.
+	FFmpegPath string
+
 	// PublicURL is the browser-facing origin: the cookie's Secure flag follows
 	// its scheme and it is the CORS allowed origin.
 	PublicURL string
@@ -54,20 +64,23 @@ func Load() (*Config, error) {
 	loadDotEnv("../.env")
 
 	cfg := &Config{
-		TAURL:            strings.TrimRight(os.Getenv("TA_URL"), "/"),
-		TAToken:          os.Getenv("TA_TOKEN"),
-		DatabaseURL:      os.Getenv("DATABASE_URL"),
-		Port:             getenvDefault("PORT", "8080"),
-		OIDCIssuer:       os.Getenv("OIDC_ISSUER"),
-		OIDCClientID:     os.Getenv("OIDC_CLIENT_ID"),
-		AuthDisabled:     os.Getenv("AUTH_DISABLED") == "true",
-		AdminEmails:      splitCSV(os.Getenv("ADMIN_EMAILS")),
-		MediaTokenSecret: os.Getenv("MEDIA_TOKEN_SECRET"),
-		MinPlaySeconds:   envFloat("MIN_PLAY_SECONDS", 15),
-		PublicURL:        strings.TrimRight(os.Getenv("PUBLIC_URL"), "/"),
-		CORSOrigins:      splitCSV(os.Getenv("CORS_ORIGINS")),
-		AppName:          getenvDefault("APP_NAME", "Archive"),
-		LogLevel:         parseLevel(os.Getenv("LOG_LEVEL")),
+		TAURL:              strings.TrimRight(os.Getenv("TA_URL"), "/"),
+		TAToken:            os.Getenv("TA_TOKEN"),
+		DatabaseURL:        os.Getenv("DATABASE_URL"),
+		Port:               getenvDefault("PORT", "8080"),
+		OIDCIssuer:         os.Getenv("OIDC_ISSUER"),
+		OIDCClientID:       os.Getenv("OIDC_CLIENT_ID"),
+		AuthDisabled:       os.Getenv("AUTH_DISABLED") == "true",
+		AdminEmails:        splitCSV(os.Getenv("ADMIN_EMAILS")),
+		MediaTokenSecret:   os.Getenv("MEDIA_TOKEN_SECRET"),
+		MinPlaySeconds:     envFloat("MIN_PLAY_SECONDS", 15),
+		MediaCacheDir:      cmp.Or(os.Getenv("MEDIA_CACHE_DIR"), filepath.Join(os.TempDir(), "archive-media")),
+		MediaCacheMaxBytes: int64(envFloat("MEDIA_CACHE_MAX_BYTES", 5<<30)),
+		FFmpegPath:         cmp.Or(os.Getenv("FFMPEG_PATH"), "ffmpeg"),
+		PublicURL:          strings.TrimRight(os.Getenv("PUBLIC_URL"), "/"),
+		CORSOrigins:        splitCSV(os.Getenv("CORS_ORIGINS")),
+		AppName:            getenvDefault("APP_NAME", "Archive"),
+		LogLevel:           parseLevel(os.Getenv("LOG_LEVEL")),
 	}
 
 	var missing []string

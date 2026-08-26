@@ -68,6 +68,7 @@ resume is the default action, and `t=` only exists to jump to a subtitle hit.
   "description": "…",
   "height": 1080,
   "media_url": "/media/video/yt-id.mp4",
+  "audio_url": "/media/audio/yt-id.webm",   // derived on first request; see Derived media
   "youtube_url": "https://www.youtube.com/watch?v=yt-id",
   "subtitles": [ { "lang": "en", "source": "user|auto", "url": "/media/subtitles/yt-id/en.vtt" } ],
   "sponsorblock": [ { "category": "sponsor", "start": 12.3, "end": 45.6 } ],
@@ -119,7 +120,8 @@ resume is the default action, and `t=` only exists to jump to a subtitle hit.
   "seen_count": 11, "in_progress_count": 1,
   "progress": 0.78,
   "resume_video_id": "yt-id" | null,   // first in-progress, else first unseen
-  "pinned": false                      // shown in the client's sidebar
+  "pinned": false,                     // shown in the client's sidebar
+  "audio_only": false                  // play this playlist as audio (music)
 }
 ```
 
@@ -269,6 +271,7 @@ Clients treat an empty list as "no chapter UI", never as an error.
 |---|---|---|
 | GET | `/playlists/pinned` | PlaylistSummary[] the user pinned to the sidebar, in `position` order; unpaged |
 | PUT | `/playlists/{id}/pinned` | `{ "pinned": true\|false }` → 204. Pinning appends to the end; unpinning closes the gap |
+| PUT | `/playlists/{id}/audio-only` | `{ "audio_only": true\|false }` → 204. Clients open this playlist's videos in audio mode |
 | GET | `/playlists` | query `kind=custom\|channel`, paged PlaylistSummary; custom first |
 | POST | `/playlists` | `{ "name" }` → TA `/playlist/custom/` (201) |
 | GET | `/playlists/{id}` | PlaylistSummary + `items: [{ "position", "video": VideoSummary }]` |
@@ -318,6 +321,7 @@ and `feed` filter the video results in the backend.
 | Path | Notes |
 |---|---|
 | `GET /media/video/{id}.mp4` | reverse-proxies TA `/media/<media_url>` with `Range`, `If-Range`, `Accept-Ranges`, `Content-Length`, `Content-Type` passthrough |
+| `GET /media/audio/{id}.webm` | audio-only stream, derived and cached on first request (see below); supports `Range` |
 | `GET /media/subtitles/{id}/{lang}.vtt` | TA subtitle track |
 | `GET /media/thumb/video/{id}` | TA `/cache/videos/…` |
 | `GET /media/thumb/channel/{id}` and `/media/thumb/channel/{id}/banner` | TA `/cache/channels/…` |
@@ -330,6 +334,30 @@ The proxy rewrites `Content-Type` from the file extension when TA returns
 nginx declares a `types { text/vtt vtt; }` block on `/media/`, which replaces
 the default MIME map for that location, so `.mp4` would otherwise arrive as
 `application/octet-stream` and `<video>` refuses to decode it.
+
+### Derived media
+
+TubeArchivist stores one file per video, muxed. Anything else a client needs —
+audio only today, an Apple-compatible rendition later — is *derived* from that
+file and cached on disk, keyed by `(video id, variant)`.
+
+- `GET /media/audio/{id}.webm` is the `audio` variant. The archived audio is
+  already Opus, so it is **remuxed, not re-encoded** (`-vn -c:a copy`): no
+  quality loss, negligible CPU, and roughly 20–30× less data than the source
+  (a 40-minute 1080p video is ~1.2 GB muxed and ~37 MB as audio).
+- The first request for a variant produces it; concurrent requests for the same
+  variant wait on that one job rather than each starting their own.
+- Once produced, the file is served from disk with full `Range` support, so
+  seeking and resume behave exactly like the video stream.
+- The cache is bounded by `MEDIA_CACHE_MAX_BYTES` and evicted least-recently-
+  used. It is a cache in the strict sense: deleting it costs only the CPU to
+  re-derive, so it can live on ephemeral storage.
+- Derivation reads the source from TubeArchivist over HTTP with the API token;
+  nothing is written back to TA.
+
+Clients choose the stream. `audio_only` on a playlist is the persisted
+intent; clients carry `audio=1` in the player URL so the choice survives
+next/previous, autoplay and a reload, exactly as the shuffle seed does.
 
 ## Backend ↔ TubeArchivist mapping
 
@@ -361,6 +389,9 @@ tested against a fake.
 | `MEDIA_TOKEN_SECRET` | yes | HMAC secret for the media cookie |
 | `PUBLIC_URL` | yes | for cookie/CORS |
 | `MIN_PLAY_SECONDS` | no | seconds of playback before a video is recorded; default 15 |
+| `MEDIA_CACHE_DIR` | no | where derived media is cached; default a temp dir |
+| `MEDIA_CACHE_MAX_BYTES` | no | cache size cap before LRU eviction; default 5 GiB |
+| `FFMPEG_PATH` | no | ffmpeg binary; default `ffmpeg` on `PATH` |
 | `APP_NAME` | no | default `Archive` |
 | `PORT` | no | default 8080 |
 | `SENTRY_DSN` | no | |

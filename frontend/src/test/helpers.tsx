@@ -3,7 +3,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router";
 import { render } from "@testing-library/react";
 import { vi } from "vitest";
-import type { Feed, PlaylistSummary, VideoSummary } from "@/lib/api";
+import type { Feed, PlaylistSummary, Video, VideoSummary } from "@/lib/api";
 
 export function renderWithProviders(ui: ReactNode, { route = "/" }: { route?: string } = {}) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -70,6 +70,34 @@ export function playlist(over: Partial<PlaylistSummary> = {}): PlaylistSummary {
     progress: 0.78,
     resume_video_id: null,
     pinned: false,
+    audio_only: false,
+    ...over,
+  };
+}
+
+export function videoDetail(over: Partial<Video> = {}): Video {
+  const { channel: summaryChannel, ...summary } = video();
+  return {
+    ...summary,
+    description: "A description.",
+    height: 1080,
+    media_url: "/media/video/vid1.mp4",
+    audio_url: "/media/audio/vid1.webm",
+    youtube_url: "https://www.youtube.com/watch?v=vid1",
+    subtitles: [],
+    sponsorblock: [],
+    stats: { views: 0, likes: 0 },
+    tags: [],
+    playlists: [],
+    channel: {
+      ...summaryChannel,
+      banner_url: "/media/thumb/channel/UC1/banner",
+      video_count: 212,
+      unseen_count: 3,
+      last_upload: new Date().toISOString(),
+      subscribed: true,
+      feeds: [],
+    },
     ...over,
   };
 }

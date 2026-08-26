@@ -218,6 +218,18 @@ export function useSetPlaylistPinned() {
   });
 }
 
+export function useSetPlaylistAudioOnly() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, audioOnly }: { id: string; audioOnly: boolean }) => api.setPlaylistAudioOnly(id, audioOnly),
+    onSuccess: (_d, v) => {
+      void qc.invalidateQueries({ queryKey: keys.pinnedPlaylists });
+      void qc.invalidateQueries({ queryKey: ["playlists"] });
+      void qc.invalidateQueries({ queryKey: keys.playlist(v.id) });
+    },
+  });
+}
+
 export function useHistory(filter: "all" | "in_progress" | "seen", q: string) {
   return useInfiniteQuery({
     queryKey: keys.history(filter, q),

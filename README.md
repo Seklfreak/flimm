@@ -89,6 +89,9 @@ is in [docs/api.md](docs/api.md).
   Google… Archive needs a public (PKCE) client with redirect URI
   `https://<host>/auth/callback`.
 - HTTPS in front of Archive (the media cookie is `Secure`).
+- **ffmpeg** for audio-only playback. It ships in the container image; a local
+  build needs it on `PATH` (or set `FFMPEG_PATH`). Without it everything else
+  works and only `/media/audio/*` fails.
 
 ## Configuration
 

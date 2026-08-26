@@ -1,7 +1,9 @@
 package ta
 
 import (
+	"bytes"
 	"context"
+	"io"
 	"sort"
 	"strings"
 	"sync"
@@ -30,6 +32,8 @@ type Fake struct {
 	// Media holds raw file bytes keyed by the path FetchRange is called with
 	// (the TA nginx path, e.g. "/media/UC1/v1.mp4").
 	Media map[string][]byte
+	// OpenMediaFn overrides OpenMedia.
+	OpenMediaFn func(path string) (io.ReadCloser, error)
 	// FetchRangeFn overrides FetchRange.
 	FetchRangeFn func(path string, start, end int64) ([]byte, error)
 	nextID       int
@@ -478,4 +482,20 @@ func (f *Fake) FetchRange(_ context.Context, path string, start, end int64) ([]b
 	}
 	to := min(end+1, int64(len(data)))
 	return append([]byte{}, data[start:to]...), nil
+}
+
+func (f *Fake) OpenMedia(_ context.Context, path string) (io.ReadCloser, error) {
+	if f.OpenMediaFn != nil {
+		return f.OpenMediaFn(path)
+	}
+	if f.Err != nil {
+		return nil, f.Err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	b, ok := f.Media[path]
+	if !ok {
+		return nil, ErrNotFound
+	}
+	return io.NopCloser(bytes.NewReader(b)), nil
 }

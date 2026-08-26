@@ -16,6 +16,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/Seklfreak/archive-client/internal/db/sqlc"
+	"github.com/Seklfreak/archive-client/internal/media"
 	"github.com/Seklfreak/archive-client/internal/ta"
 )
 
@@ -271,6 +272,7 @@ func (s *Server) getVideo(w http.ResponseWriter, r *http.Request) {
 		Description:  v.Description,
 		Height:       v.Height(),
 		MediaURL:     "/media/video/" + v.YoutubeID + ".mp4",
+		AudioURL:     "/media/audio/" + v.YoutubeID + media.AudioExt,
 		YoutubeURL:   "https://www.youtube.com/watch?v=" + v.YoutubeID,
 		Subtitles:    []SubtitleTrack{},
 		Sponsorblock: []SponsorSegment{},

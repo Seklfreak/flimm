@@ -30,10 +30,12 @@ type FakeQuerier struct {
 	ListFeedsFn                  func(context.Context, uuid.UUID) ([]sqlc.Feed, error)
 	ListHistoryFn                func(context.Context, sqlc.ListHistoryParams) ([]sqlc.WatchEvent, error)
 	ListInProgressFn             func(context.Context, sqlc.ListInProgressParams) ([]sqlc.WatchEvent, error)
-	ListPinnedPlaylistsFn        func(context.Context, uuid.UUID) ([]sqlc.PinnedPlaylist, error)
+	ListPinnedPlaylistsFn        func(context.Context, uuid.UUID) ([]sqlc.PlaylistSetting, error)
+	ListPlaylistSettingsFn       func(context.Context, uuid.UUID) ([]sqlc.PlaylistSetting, error)
 	ListWatchEventsForVideosFn   func(context.Context, sqlc.ListWatchEventsForVideosParams) ([]sqlc.WatchEvent, error)
-	PinPlaylistFn                func(context.Context, sqlc.PinPlaylistParams) error
-	UnpinPlaylistFn              func(context.Context, sqlc.UnpinPlaylistParams) error
+	PruneEmptyPlaylistSettingsFn func(context.Context, uuid.UUID) error
+	SetPlaylistAudioOnlyFn       func(context.Context, sqlc.SetPlaylistAudioOnlyParams) error
+	SetPlaylistPinnedFn          func(context.Context, sqlc.SetPlaylistPinnedParams) error
 	NextFeedChannelPositionFn    func(context.Context, uuid.UUID) (int32, error)
 	NextFeedPositionFn           func(context.Context, uuid.UUID) (int32, error)
 	ResetPositionFn              func(context.Context, sqlc.ResetPositionParams) error
@@ -154,14 +156,22 @@ func (f *FakeQuerier) UpsertUser(ctx context.Context, arg sqlc.UpsertUserParams)
 	return f.UpsertUserFn(ctx, arg)
 }
 
-func (f *FakeQuerier) ListPinnedPlaylists(ctx context.Context, userID uuid.UUID) ([]sqlc.PinnedPlaylist, error) {
+func (f *FakeQuerier) ListPinnedPlaylists(ctx context.Context, userID uuid.UUID) ([]sqlc.PlaylistSetting, error) {
 	return f.ListPinnedPlaylistsFn(ctx, userID)
 }
 
-func (f *FakeQuerier) PinPlaylist(ctx context.Context, arg sqlc.PinPlaylistParams) error {
-	return f.PinPlaylistFn(ctx, arg)
+func (f *FakeQuerier) ListPlaylistSettings(ctx context.Context, userID uuid.UUID) ([]sqlc.PlaylistSetting, error) {
+	return f.ListPlaylistSettingsFn(ctx, userID)
 }
 
-func (f *FakeQuerier) UnpinPlaylist(ctx context.Context, arg sqlc.UnpinPlaylistParams) error {
-	return f.UnpinPlaylistFn(ctx, arg)
+func (f *FakeQuerier) PruneEmptyPlaylistSettings(ctx context.Context, userID uuid.UUID) error {
+	return f.PruneEmptyPlaylistSettingsFn(ctx, userID)
+}
+
+func (f *FakeQuerier) SetPlaylistAudioOnly(ctx context.Context, arg sqlc.SetPlaylistAudioOnlyParams) error {
+	return f.SetPlaylistAudioOnlyFn(ctx, arg)
+}
+
+func (f *FakeQuerier) SetPlaylistPinned(ctx context.Context, arg sqlc.SetPlaylistPinnedParams) error {
+	return f.SetPlaylistPinnedFn(ctx, arg)
 }

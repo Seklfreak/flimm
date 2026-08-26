@@ -27,7 +27,8 @@ RUN find frontend/dist -name '*.map' -delete
 RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X main.version=${APP_VERSION}" -o /archive ./cmd/server
 
 FROM alpine:3.24
-RUN apk add --no-cache ca-certificates tzdata && adduser -D -u 1000 app
+# ffmpeg derives the audio-only rendition (a remux, not a re-encode).
+RUN apk add --no-cache ca-certificates tzdata ffmpeg && adduser -D -u 1000 app
 USER app
 COPY --from=backend /archive /archive
 EXPOSE 8080

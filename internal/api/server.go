@@ -20,6 +20,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/Seklfreak/archive-client/internal/db/sqlc"
+	"github.com/Seklfreak/archive-client/internal/media"
 	"github.com/Seklfreak/archive-client/internal/ta"
 )
 
@@ -46,6 +47,10 @@ type Options struct {
 	MediaSecret  string
 	// SecureCookies sets the Secure flag on the media cookie (https deploys).
 	SecureCookies bool
+	// MediaCache stores derived renditions; nil disables /media/audio.
+	MediaCache *media.Cache
+	// FFmpegPath is the ffmpeg binary used for derivations.
+	FFmpegPath string
 	// MinPlaySeconds is how long a video must be played before it is recorded;
 	// 0 uses the default.
 	MinPlaySeconds float64
@@ -75,6 +80,8 @@ type Server struct {
 	chapters *chaptersCache
 	// minPlaySeconds gates recording a watch event; see Options.
 	minPlaySeconds float64
+	mediaCache     *media.Cache
+	ffmpegPath     string
 }
 
 func NewServer(o Options) *Server {
@@ -107,6 +114,8 @@ func NewServer(o Options) *Server {
 		frontend:       o.Frontend,
 		chapters:       newChaptersCache(),
 		minPlaySeconds: cmp.Or(o.MinPlaySeconds, defaultMinPlaySeconds),
+		mediaCache:     o.MediaCache,
+		ffmpegPath:     cmp.Or(o.FFmpegPath, "ffmpeg"),
 	}
 	if o.MediaProxy != nil {
 		// Thumbnails are immutable per id; let the browser keep them a day.
@@ -194,6 +203,7 @@ func (s *Server) Router() http.Handler {
 
 			r.Get("/playlists", s.listPlaylists)
 			r.Get("/playlists/pinned", s.listPinnedPlaylists)
+			r.Put("/playlists/{id}/audio-only", s.setPlaylistAudioOnly)
 			r.Put("/playlists/{id}/pinned", s.setPlaylistPinned)
 			r.Post("/playlists", s.createPlaylist)
 			r.Get("/playlists/{id}", s.getPlaylist)
@@ -211,6 +221,7 @@ func (s *Server) Router() http.Handler {
 	r.Route("/media", func(r chi.Router) {
 		r.Use(s.mediaAuthMiddleware)
 		r.Get("/video/{id}.mp4", s.mediaVideo)
+		r.Get("/audio/{id}.webm", s.mediaAudio)
 		r.Get("/subtitles/{id}/{lang}.vtt", s.mediaSubtitles)
 		r.Get("/thumb/video/{id}", s.mediaVideoThumb)
 		r.Get("/thumb/channel/{id}", s.mediaChannelThumb)
