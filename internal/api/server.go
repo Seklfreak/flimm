@@ -21,6 +21,7 @@ import (
 
 	"github.com/Seklfreak/flimm/internal/db/sqlc"
 	"github.com/Seklfreak/flimm/internal/media"
+	"github.com/Seklfreak/flimm/internal/sponsorblock"
 	"github.com/Seklfreak/flimm/internal/ta"
 )
 
@@ -49,6 +50,9 @@ type Options struct {
 	SecureCookies bool
 	// MediaCache stores derived renditions; nil disables /media/audio/*.
 	MediaCache *media.Cache
+	// Sponsorblock fetches segments from a SponsorBlock server; nil falls
+	// back to the snapshot TubeArchivist indexed at download time.
+	Sponsorblock *sponsorblock.Client
 	// FFmpegPath is the ffmpeg binary used for derivations.
 	FFmpegPath string
 	// HWAccel is the hardware-transcode decision made at start-up; the zero
@@ -89,6 +93,8 @@ type Server struct {
 	frontend      fs.FS
 	// chapters caches derived chapter lists per video id.
 	chapters *chaptersCache
+	// sponsorblock is the segment source; nil uses TA's snapshot.
+	sponsorblock *sponsorblock.Client
 	// minPlaySeconds gates recording a watch event; see Options.
 	minPlaySeconds float64
 	mediaCache     *media.Cache
@@ -130,6 +136,7 @@ func NewServer(o Options) *Server {
 		corsOrigins:    o.CORSOrigins,
 		frontend:       o.Frontend,
 		chapters:       newChaptersCache(),
+		sponsorblock:   o.Sponsorblock,
 		minPlaySeconds: cmp.Or(o.MinPlaySeconds, defaultMinPlaySeconds),
 		mediaCache:     o.MediaCache,
 		ffmpegPath:     cmp.Or(o.FFmpegPath, "ffmpeg"),

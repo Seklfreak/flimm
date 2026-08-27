@@ -68,6 +68,7 @@ final class ModelDecodingTests: XCTestCase {
         XCTAssertEqual(video.channel.videoCount, 212)
         XCTAssertEqual(video.subtitles.first?.source, .user)
         XCTAssertEqual(video.sponsorblock.first?.category, "sponsor")
+        XCTAssertEqual(video.sponsorblock.map(\.actionType), [.skip, .mute, .poi, .other])
         XCTAssertEqual(video.playlists.first?.position, 9)
         XCTAssertEqual(video.summary.id, video.id)
 

@@ -4,6 +4,10 @@ public enum ChaptersSource: String, Codable, Sendable {
     /// Read from the container's Nero `chpl` box (or the QuickTime chapter
     /// track) — YouTube's own chapters, embedded by yt-dlp at download time.
     case embedded
+    /// Crowd-sourced chapter names submitted to SponsorBlock. Used when the
+    /// file carries none of its own; hand-written names beat the description
+    /// heuristic.
+    case sponsorblock
     /// Parsed from timestamp lines in the description.
     case description
     case none

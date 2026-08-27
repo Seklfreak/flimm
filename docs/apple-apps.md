@@ -123,7 +123,7 @@ What is there:
   - **Player** — `AVPlayerViewController` behind a
     `UIViewControllerRepresentable`, full-bleed with the native transport
     bar. The asset carries the bearer header; chapters become an
-    `AVNavigationMarkersGroup` on the item, SponsorBlock segments become
+    `AVNavigationMarkersGroup` on the item, SponsorBlock range segments become
     `interstitialTimeRanges` (and are skipped outright on the
     `skip_sponsors` preference), previous/next are mapped onto the remote's
     skip gestures via `skippingBehavior = .skipItem`, autoplay follows
@@ -298,6 +298,12 @@ exercise.
 - **Subtitles** come as WebVTT tracks on the video detail; English is the
   default when a track exists. SponsorBlock segments are on the detail too —
   the web client tints them on the scrubber and skips them when enabled.
+  Each segment carries an `action_type`: only `skip` is seeked past, `mute` is
+  muted for its length and unmuted afterwards to whatever the viewer had set,
+  and `poi`/`full` are informational (never skipped, never tinted). All of
+  that lives in `SponsorRules` and `SponsorMuteTracker` in FlimmKit — the
+  phone drives its mute through `PlayerEngine`, the TV sets `AVPlayer.isMuted`
+  directly, and neither decides anything of its own.
 - **Audio-only** for music playlists and the codec-gate fallback: use
   `audio_aac_url` instead of `media_url` — `audio_url` is Opus in WebM and
   will not play here, and is never a substitute even when `audio_aac_url` is

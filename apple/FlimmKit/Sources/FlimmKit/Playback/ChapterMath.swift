@@ -61,10 +61,13 @@ public struct SponsorRange: Sendable, Hashable {
     }
 }
 
-/// SponsorBlock: what to tint, what to skip, and what to call it.
+/// SponsorBlock: what to tint, what to skip, what to mute, and what to call
+/// it. Every player — iPhone, iPad and Apple TV — decides through this type,
+/// and the web client mirrors it in `chapterMath.ts`.
 public enum SponsorRules {
-    /// Only these are skipped automatically; intro/outro/music_offtopic and the
-    /// rest are tinted on the scrubber but left alone. Matches the web client.
+    /// Only these categories act automatically; intro/outro/music_offtopic and
+    /// the rest are tinted on the scrubber but left alone. Matches the web
+    /// client.
     public static let autoSkip: Set<String> = ["sponsor", "selfpromo", "interaction"]
 
     private static let labels: [String: String] = [
@@ -84,25 +87,85 @@ public enum SponsorRules {
         labels[category] ?? category.replacingOccurrences(of: "_", with: " ")
     }
 
-    /// The segment playback is inside, if it is one of the skippable ones. The
-    /// small margin stops a seek landing just before a boundary from looping.
+    /// The segment playback is inside, if it is one to seek past. The small
+    /// margin stops a seek landing just before a boundary from looping.
     public static func segmentToSkip(at time: Double, in segments: [SponsorSegment]) -> SponsorSegment? {
+        acting(.skip, at: time, in: segments, margin: 0.5)
+    }
+
+    /// The segment playback is inside, if it is one to mute. The contributor
+    /// marked it "mute" rather than "skip" because the video still matters
+    /// there — only the audio does not — so it runs to its very end.
+    public static func segmentToMute(at time: Double, in segments: [SponsorSegment]) -> SponsorSegment? {
+        acting(.mute, at: time, in: segments, margin: 0)
+    }
+
+    private static func acting(
+        _ action: SponsorAction,
+        at time: Double,
+        in segments: [SponsorSegment],
+        margin: Double
+    ) -> SponsorSegment? {
         segments.first { segment in
-            autoSkip.contains(segment.category)
+            segment.actionType == action
+                && autoSkip.contains(segment.category)
                 && segment.end > segment.start
                 && time >= segment.start
-                && time < segment.end - 0.5
+                && time < segment.end - margin
         }
+    }
+
+    /// Whether a segment marks a stretch of the timeline at all. A point of
+    /// interest is a single instant and a whole-video label is not a range, so
+    /// neither is drawn — on the scrubber here or as a tvOS interstitial.
+    public static func isTimelineRange(_ segment: SponsorSegment) -> Bool {
+        segment.actionType != .poi && segment.actionType != .full && segment.end > segment.start
     }
 
     /// Left/width fractions for each segment, clamped to the bar.
     public static func ranges(_ segments: [SponsorSegment], duration: Double) -> [SponsorRange] {
         guard duration > 0 else { return [] }
         return segments.compactMap { segment in
+            guard isTimelineRange(segment) else { return nil }
             let left = min(max(segment.start / duration, 0), 1)
             let right = min(max(segment.end / duration, 0), 1)
             guard right > left else { return nil }
             return SponsorRange(category: segment.category, start: left, width: right - left)
         }
+    }
+}
+
+/// Tracks a SponsorBlock `mute` segment across playback ticks.
+///
+/// It remembers whether *we* muted and what the viewer had set before, so the
+/// end of a segment restores their setting rather than forcing audio on. A
+/// viewer who unmutes inside a segment keeps their choice: the segment is
+/// already ours, so nothing re-mutes it. Both players drive their own mute
+/// through this — the phone through `PlayerEngine`, the TV through `AVPlayer`
+/// directly — and the web client mirrors it in `useSponsorSkip.ts`.
+public struct SponsorMuteTracker: Sendable {
+    private var muting = false
+    private var viewerMuted = false
+
+    public init() {}
+
+    /// What the player's mute should become at `time`, or `nil` to leave it
+    /// alone. Pass the player's current mute state as `isMuted`.
+    public mutating func mute(
+        at time: Double,
+        in segments: [SponsorSegment],
+        enabled: Bool,
+        isMuted: Bool
+    ) -> Bool? {
+        let inSegment = enabled && SponsorRules.segmentToMute(at: time, in: segments) != nil
+        if inSegment {
+            guard !muting else { return nil }
+            viewerMuted = isMuted
+            muting = true
+            return true
+        }
+        guard muting else { return nil }
+        muting = false
+        return viewerMuted
     }
 }

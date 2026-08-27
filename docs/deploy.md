@@ -65,6 +65,20 @@ data:
 
 See the [configuration table](../README.md#configuration) for every variable.
 
+### Outbound network (SponsorBlock)
+
+Besides TubeArchivist and the OIDC issuer, the server makes one other outbound
+call: SponsorBlock segments and crowd-sourced chapter names are fetched from
+`https://sponsor.ajay.app` (`SPONSORBLOCK_URL`). It is a lookup by a four-hex
+hash prefix of the video id, so the service is never told which video is
+playing, and answers are cached for hours.
+
+An install with no egress should set `SPONSORBLOCK_URL: ""`, which turns the
+lookup off and leaves the snapshot TubeArchivist indexed at download time as
+the source. Leaving it on without egress is not fatal — a failed lookup falls
+back to that same snapshot and is not retried for ten minutes — but it costs a
+timeout on the first video detail of each such window.
+
 ## Deployment + Service
 
 ```yaml

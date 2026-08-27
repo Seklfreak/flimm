@@ -13,6 +13,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/Seklfreak/flimm/internal/sponsorblock"
 )
 
 // Config holds all runtime configuration, loaded from the environment.
@@ -69,6 +71,14 @@ type Config struct {
 	// media.DefaultVAAPIDevice (/dev/dri/renderD128).
 	MediaVAAPIDevice string
 
+	// SponsorblockURL is the SponsorBlock server segments are fetched from.
+	// Empty disables the lookup, leaving the snapshot TubeArchivist indexed at
+	// download time as the only source (an offline deploy wants this).
+	SponsorblockURL string
+	// SponsorblockCategories restricts what is asked for; empty asks for
+	// everything the service offers and lets each client decide.
+	SponsorblockCategories []string
+
 	// PublicURL is the browser-facing origin: the cookie's Secure flag follows
 	// its scheme and it is the CORS allowed origin.
 	PublicURL string
@@ -105,6 +115,8 @@ func Load() (*Config, error) {
 		FFmpegPath:             cmp.Or(os.Getenv("FFMPEG_PATH"), "ffmpeg"),
 		MediaHWAccel:           getenvDefault("MEDIA_HWACCEL", "auto"),
 		MediaVAAPIDevice:       os.Getenv("MEDIA_VAAPI_DEVICE"),
+		SponsorblockURL:        strings.TrimRight(getenvDefault("SPONSORBLOCK_URL", sponsorblock.DefaultBaseURL), "/"),
+		SponsorblockCategories: splitCSV(os.Getenv("SPONSORBLOCK_CATEGORIES")),
 		PublicURL:              strings.TrimRight(os.Getenv("PUBLIC_URL"), "/"),
 		CORSOrigins:            splitCSV(os.Getenv("CORS_ORIGINS")),
 		AppName:                getenvDefault("APP_NAME", "Flimm"),
@@ -143,6 +155,11 @@ func Load() (*Config, error) {
 	}
 	if _, err := url.Parse(cfg.PublicURL); err != nil {
 		return nil, fmt.Errorf("invalid PUBLIC_URL: %w", err)
+	}
+	if cfg.SponsorblockURL != "" {
+		if _, err := url.Parse(cfg.SponsorblockURL); err != nil {
+			return nil, fmt.Errorf("invalid SPONSORBLOCK_URL: %w", err)
+		}
 	}
 	return cfg, nil
 }

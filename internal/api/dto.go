@@ -41,10 +41,17 @@ type SubtitleTrack struct {
 	URL    string `json:"url"`
 }
 
+// SponsorSegment is one crowd-sourced SponsorBlock range. ActionType says
+// what a player may do with it: only `skip` may be skipped automatically,
+// `mute` is muted for its length, `poi` is a single point of interest (the
+// highlight, where Start == End) and `full` labels the whole video rather
+// than a range of it. It is `skip` for the segments TubeArchivist indexed at
+// download time, which carry no action of their own.
 type SponsorSegment struct {
-	Category string  `json:"category"`
-	Start    float64 `json:"start"`
-	End      float64 `json:"end"`
+	Category   string  `json:"category"`
+	ActionType string  `json:"action_type"`
+	Start      float64 `json:"start"`
+	End        float64 `json:"end"`
 }
 
 type VideoStats struct {

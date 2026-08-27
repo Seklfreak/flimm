@@ -257,6 +257,11 @@ func (s *Server) getVideo(w http.ResponseWriter, r *http.Request) {
 		s.writeTAError(w, "get video", err)
 		return
 	}
+	// The SponsorBlock lookup is a network round trip of its own; run it
+	// alongside the watch state and the channel summary rather than after
+	// them. It never fails the request — it falls back to TA's snapshot.
+	sponsorCh := make(chan []SponsorSegment, 1)
+	go func() { sponsorCh <- s.sponsorSegments(r.Context(), v) }()
 	items, err := s.overlay(r.Context(), uid, []ta.Video{*v})
 	if err != nil {
 		s.writeDBError(w, "load watch state", err)
@@ -280,7 +285,7 @@ func (s *Server) getVideo(w http.ResponseWriter, r *http.Request) {
 		YoutubeURL:   "https://www.youtube.com/watch?v=" + v.YoutubeID,
 		Streams:      []StreamInfo{},
 		Subtitles:    []SubtitleTrack{},
-		Sponsorblock: []SponsorSegment{},
+		Sponsorblock: <-sponsorCh,
 		Stats:        VideoStats{Views: v.Stats.ViewCount, Likes: v.Stats.LikeCount},
 		Tags:         v.Tags,
 		Playlists:    []VideoPlaylistRef{},
@@ -303,9 +308,6 @@ func (s *Server) getVideo(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		detail.Subtitles = append(detail.Subtitles, SubtitleTrack{Lang: st.Lang, Source: st.Source, URL: "/media/subtitles/" + v.YoutubeID + "/" + st.Lang + ".vtt"})
-	}
-	for _, seg := range v.Sponsorblock.Segments {
-		detail.Sponsorblock = append(detail.Sponsorblock, SponsorSegment{Category: seg.Category, Start: seg.Segment[0], End: seg.Segment[1]})
 	}
 	// Playlist membership: name/position/count need the playlist documents.
 	refs := make([]VideoPlaylistRef, len(v.Playlist))

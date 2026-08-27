@@ -33,9 +33,11 @@ enum TVPlayerMarkers {
 
     /// Every SponsorBlock category is striped, not just the skippable ones —
     /// the same split the web client makes between "show it" and "skip it".
+    /// What is *not* striped is what does not mark a stretch of the timeline:
+    /// a point of interest and a whole-video label, per `SponsorRules`.
     static func interstitials(for segments: [SponsorSegment]) -> [AVInterstitialTimeRange] {
         segments.compactMap { segment in
-            guard segment.end > segment.start else { return nil }
+            guard SponsorRules.isTimelineRange(segment) else { return nil }
             return AVInterstitialTimeRange(timeRange: CMTimeRange(
                 start: CMTime(seconds: segment.start, preferredTimescale: 600),
                 end: CMTime(seconds: segment.end, preferredTimescale: 600)

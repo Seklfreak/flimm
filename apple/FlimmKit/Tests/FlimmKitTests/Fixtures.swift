@@ -94,7 +94,10 @@ enum Fixtures {
       "streams": [ { "type": "video", "codec": "avc1", "width": 1920, "height": 1080, "bitrate": 4500000 },
                    { "type": "audio", "codec": "mp4a", "width": 0, "height": 0, "bitrate": 130000 } ],
       "subtitles": [ { "lang": "en", "source": "user", "url": "/media/subtitles/yt-id/en.vtt" } ],
-      "sponsorblock": [ { "category": "sponsor", "start": 12.3, "end": 45.6 } ],
+      "sponsorblock": [ { "category": "sponsor", "action_type": "skip", "start": 12.3, "end": 45.6 },
+                        { "category": "selfpromo", "action_type": "mute", "start": 60, "end": 70 },
+                        { "category": "poi_highlight", "action_type": "poi", "start": 100, "end": 100 },
+                        { "category": "sponsor", "action_type": "something_new", "start": 200, "end": 210 } ],
       "stats": { "views": 0, "likes": 0 },
       "tags": [],
       "playlists": [ { "id": "PL-1", "name": "A Playlist", "position": 9, "count": 14 } ]

@@ -17,9 +17,10 @@ import (
 )
 
 const (
-	sourceEmbedded    = "embedded"
-	sourceDescription = "description"
-	sourceNone        = "none"
+	sourceEmbedded     = "embedded"
+	sourceSponsorblock = "sponsorblock"
+	sourceDescription  = "description"
+	sourceNone         = "none"
 
 	// chaptersHeadBytes is the first range read of a media file. These files
 	// are faststart and moov runs to a few MB at most, so one read is enough
@@ -39,7 +40,8 @@ const (
 )
 
 // getChapters answers GET /videos/{id}/chapters: markers embedded in the
-// media file, else parsed out of the description, else none.
+// media file, else the crowd-sourced ones from SponsorBlock, else parsed out
+// of the description, else none.
 func (s *Server) getChapters(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	if out, ok := s.chapters.get(id); ok {
@@ -54,6 +56,12 @@ func (s *Server) getChapters(w http.ResponseWriter, r *http.Request) {
 	duration := v.Player.Duration
 	source := sourceEmbedded
 	found := s.embeddedChapters(r.Context(), v)
+	if len(found) == 0 {
+		// Hand-submitted chapter names beat the description heuristic, which
+		// only has timestamp lines and a monotonicity check to go on.
+		source = sourceSponsorblock
+		found = s.sponsorblockChapters(r.Context(), v)
+	}
 	if len(found) == 0 {
 		source = sourceDescription
 		found = descriptionChapters(v.Description, duration)

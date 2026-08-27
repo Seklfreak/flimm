@@ -123,6 +123,14 @@ final class PlayerEngine {
         isMuted = player.isMuted
     }
 
+    /// Mute driven by something other than the viewer — a SponsorBlock `mute`
+    /// segment. Separate from ``toggleMute()`` so what the segment restores
+    /// afterwards is the viewer's own setting.
+    func setMuted(_ muted: Bool) {
+        player.isMuted = muted
+        isMuted = muted
+    }
+
     func setRate(_ rate: Double) {
         desiredRate = rate
         if isPlaying { player.rate = Float(rate) }

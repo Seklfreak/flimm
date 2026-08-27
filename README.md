@@ -30,6 +30,13 @@ One container image: a Go backend with the React frontend embedded.
   subtitle hit jumps straight to that timestamp.
 - **Player** — archived and auto-generated subtitle tracks, SponsorBlock
   segment skipping, playback speed, autoplay with context-aware *Up next*.
+- **SponsorBlock, fetched live** — the backend asks the SponsorBlock service
+  itself rather than reading TubeArchivist's download-time snapshot, so
+  segments stay current, `mute` segments mute instead of skipping, and
+  crowd-sourced chapter names fill in for videos whose file carries none. The
+  lookup sends a hash prefix of the video id, never the id, and
+  `SPONSORBLOCK_URL=` turns it off. See
+  [docs/api.md](docs/api.md#sponsorblock).
 - **Plays what your devices can't** — the archive is full of AV1 and VP9 that
   Apple hardware cannot decode and that not every browser does either, so Flimm
   derives a compatible **HLS** rendition on demand and streams it segment by
@@ -154,6 +161,8 @@ All configuration is via environment variables.
 | `FFMPEG_PATH` | no | ffmpeg binary; default `ffmpeg` on `PATH` |
 | `MEDIA_HWACCEL` | no | hardware transcoding: `auto` (default — Intel VAAPI when a render node is there and openable, CPU otherwise), `vaapi`, or `off`. A failed hardware attempt falls back to the CPU per video. See [docs/deploy.md](docs/deploy.md#hardware-acceleration-intel-vaapi) |
 | `MEDIA_VAAPI_DEVICE` | no | DRM render node for VAAPI; default `/dev/dri/renderD128` |
+| `SPONSORBLOCK_URL` | no | SponsorBlock server segments are fetched from; default `https://sponsor.ajay.app`. Set it **empty** to disable the lookup and use TubeArchivist's download-time snapshot instead (an offline deploy) |
+| `SPONSORBLOCK_CATEGORIES` | no | comma-separated list restricting what is asked for; by default everything the service offers is fetched and each client decides what to do with it |
 | `SENTRY_DSN` | no | backend error reporting |
 | `VITE_SENTRY_DSN` | no | frontend error reporting; a **build arg**, baked into the bundle at image build time (not a runtime env var) |
 | `LOG_LEVEL` | no | `debug`, `info` (default), `warn`, `error` |

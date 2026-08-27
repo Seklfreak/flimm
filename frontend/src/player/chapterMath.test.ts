@@ -4,6 +4,9 @@ import {
   currentChapterIndex,
   nextChapterStart,
   prevChapterStart,
+  segmentToMute,
+  segmentToSkip,
+  sponsorAction,
   sponsorCategoryLabel,
   sponsorRangePercents,
 } from "./chapterMath";
@@ -82,6 +85,46 @@ describe("sponsorRangePercents", () => {
   });
   it("returns nothing with no duration", () => {
     expect(sponsorRangePercents([{ category: "sponsor", start: 0, end: 10 }], 0)).toEqual([]);
+  });
+});
+
+describe("sponsor actions", () => {
+  const segs = [
+    { category: "sponsor", action_type: "skip" as const, start: 20, end: 40 },
+    { category: "selfpromo", action_type: "mute" as const, start: 60, end: 80 },
+    { category: "poi_highlight", action_type: "poi" as const, start: 100, end: 100 },
+    { category: "outro", action_type: "skip" as const, start: 120, end: 140 },
+  ];
+
+  it("treats a segment without an action type as a skip", () => {
+    expect(sponsorAction({ category: "sponsor", start: 0, end: 1 })).toBe("skip");
+    expect(sponsorAction(segs[1])).toBe("mute");
+  });
+
+  it("skips only skip segments in an auto-skip category", () => {
+    expect(segmentToSkip(segs, 25)?.category).toBe("sponsor");
+    expect(segmentToSkip(segs, 70)).toBeUndefined(); // a mute segment is not skipped
+    expect(segmentToSkip(segs, 130)).toBeUndefined(); // outro is tinted, never skipped
+    expect(segmentToSkip(segs, 39.9)).toBeUndefined(); // inside the end margin
+  });
+
+  it("mutes only mute segments, to their very end", () => {
+    expect(segmentToMute(segs, 60)?.category).toBe("selfpromo");
+    expect(segmentToMute(segs, 79.9)?.category).toBe("selfpromo");
+    expect(segmentToMute(segs, 80)).toBeUndefined();
+    expect(segmentToMute(segs, 25)).toBeUndefined(); // a skip segment is not muted
+  });
+
+  it("does not tint points of interest or whole-video labels", () => {
+    const ranges = sponsorRangePercents(
+      [
+        { category: "sponsor", action_type: "skip", start: 0, end: 100 },
+        { category: "poi_highlight", action_type: "poi", start: 50, end: 50 },
+        { category: "sponsor", action_type: "full", start: 0, end: 200 },
+      ],
+      200,
+    );
+    expect(ranges).toEqual([{ category: "sponsor", leftPct: 0, widthPct: 50 }]);
   });
 });
 

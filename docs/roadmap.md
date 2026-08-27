@@ -2,6 +2,28 @@
 
 ## Done
 
+- **SponsorBlock fetched first-party** (2026-08-27) — segments no longer come
+  from the snapshot TubeArchivist indexed at download time. `internal/sponsorblock`
+  asks the service itself (`SPONSORBLOCK_URL`, default `sponsor.ajay.app`) and
+  the video detail is served from that, falling back to TA's copy only when
+  there is no service configured or the lookup failed; an answer of "no
+  segments" is authoritative, so a segment that was removed or downvoted away
+  does not come back. The lookup never names the video: it sends the first four
+  hex characters of `sha256(video_id)`, takes back every video sharing that
+  prefix and filters locally, caching answers for six hours and a failure for
+  ten minutes so an offline deploy costs one timeout, not one per request. It
+  runs concurrently with the watch-state and channel queries, and segments are
+  clamped to *this* cut of the video.
+  Because all categories and action types are now asked for, `sponsorblock`
+  entries carry **`action_type`** and every client learned it in the same
+  change: only `skip` is seeked past, `mute` mutes for the segment's length and
+  restores the viewer's own mute setting afterwards (web, iPhone/iPad and
+  Apple TV), and `poi`/`full` are never skipped and never tinted. The rule
+  lives in one place per platform — `chapterMath.ts` and FlimmKit's
+  `SponsorRules`/`SponsorMuteTracker`. `GET /videos/{id}/chapters` gained a
+  third source, **`sponsorblock`**: crowd-sourced chapter names, used when the
+  file embeds none, ahead of the description heuristic. See
+  [api.md](api.md#sponsorblock) and [deploy.md](deploy.md#outbound-network-sponsorblock).
 - **Instant resume via `#EXT-X-START`** (2026-08-27) — `?from=<seconds>` on the
   playlist/master URL now also moves the *player's* start position to the resume
   point: the media playlist gains an `#EXT-X-START:TIME-OFFSET=<seconds>,
@@ -153,8 +175,39 @@
 
 ## Ideas
 
-- **SponsorBlock UI** — per-category skip settings and a manual skip button.
-  Segments already render on the timeline.
+- **SponsorBlock UI** — per-category skip settings, a manual skip button, and
+  a *Jump to the highlight* button for the `poi` segment the backend now
+  fetches (no client acts on it yet). Segments already render on the timeline.
+- **DeArrow** — crowd-sourced de-clickbaited titles and thumbnails, from the
+  same project and the same hash-prefix API (`/api/branding/{prefix}`). The
+  thumbnail half fits Flimm better than it fits a browser extension: DeArrow
+  returns a *timestamp*, not an image, and Flimm holds the video file, so the
+  server can cut that frame with ffmpeg through the derived-media cache instead
+  of calling a third-party thumbnail service — no image fetch, works offline,
+  and the same "the server decides so clients cannot drift" rule as the
+  rendition ladder. Titles would be a preference in `PATCH /me/prefs` (original
+  vs. improved), not a per-client toggle.
+- **Scrub preview thumbnails** — a sprite sheet and a WebVTT track derived once
+  per video into the media cache. Web and the phone/iPad draw it above the
+  scrubber; tvOS gets it for free, because `AVPlayerViewController` renders
+  trick-play images natively.
+- **Loudness normalisation** — one EBU R128 (`loudnorm`) analysis pass per
+  video, the gain stored and applied by the player, so channels stop being at
+  wildly different volumes. Matters most for the audio-only music path.
+- **Silence and black-frame detection** — an intro/outro heuristic for the long
+  tail of videos SponsorBlock has never seen, derived locally.
+- **Transcripts (Whisper)** — generate subtitles for videos the archive has
+  none for, and index them for search *inside* a video. The heaviest item here
+  by a wide margin, and the only one that unlocks a new kind of search.
+- **Return YouTube Dislike** — dislike counts, which TA does not index (it
+  carries `view_count` and `like_count` only). Ranked last deliberately: its
+  API takes a bare video id with no hash prefix, so every video detail view
+  would leak watch history to a third party. It would have to be off by
+  default and called out in [deploy.md](deploy.md).
+- **"Most replayed" heatmap** — yt-dlp exposes YouTube's heatmap, which would
+  tint the scrubber beside the SponsorBlock segments. It needs a live YouTube
+  request per video, though, so the honest place to capture it is at download
+  time on the TubeArchivist side, not a per-view fetch from Flimm.
 - **Comments** — render TubeArchivist's archived comments under the video.
 - **Download queue management** — view and manage TubeArchivist's download
   queue and subscriptions from Flimm (add URLs, retry, ignore).

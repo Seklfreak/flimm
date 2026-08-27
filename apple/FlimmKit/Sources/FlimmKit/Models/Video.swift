@@ -117,15 +117,52 @@ public struct SubtitleTrack: Codable, Sendable, Hashable {
     }
 }
 
+/// What a player may do with a ``SponsorSegment``.
+///
+/// `other` is not a server value: it is what an unrecognised action decodes
+/// to, and it is deliberately inert — a segment whose action this build does
+/// not understand is shown but never acted on.
+public enum SponsorAction: String, Codable, Sendable, CaseIterable {
+    /// Seek past it.
+    case skip
+    /// Keep playing, without the audio: the picture still matters there.
+    case mute
+    /// A single point of interest ("the highlight"), where start == end.
+    case poi
+    /// Labels the whole video rather than a range of it.
+    case full
+    /// A crowd-sourced chapter. These never reach ``Video/sponsorblock`` —
+    /// they come back from `GET /videos/{id}/chapters` instead.
+    case chapter
+    case other
+
+    public init(from decoder: any Decoder) throws {
+        let raw = try decoder.singleValueContainer().decode(String.self)
+        self = SponsorAction(rawValue: raw) ?? .other
+    }
+}
+
 public struct SponsorSegment: Codable, Sendable, Hashable {
     public let category: String
+    /// `.skip` on a backend that predates action types, which only ever sent
+    /// skippable segments.
+    public let actionType: SponsorAction
     public let start: Double
     public let end: Double
 
-    public init(category: String, start: Double, end: Double) {
+    public init(category: String, actionType: SponsorAction = .skip, start: Double, end: Double) {
         self.category = category
+        self.actionType = actionType
         self.start = start
         self.end = end
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        category = try c.decode(.category, or: "")
+        actionType = try c.decode(.actionType, or: SponsorAction.skip)
+        start = try c.decode(.start, or: 0)
+        end = try c.decode(.end, or: 0)
     }
 }
 

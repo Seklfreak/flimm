@@ -65,6 +65,9 @@ final class WatchModel {
     @ObservationIgnored private var startAtOverride: Double?
     @ObservationIgnored private var artwork: UIImage?
     @ObservationIgnored private var lastNowPlayingUpdate: Double = -10
+    /// Mutes and unmutes for SponsorBlock `mute` segments, keeping the
+    /// viewer's own mute setting intact.
+    @ObservationIgnored private var sponsorMute = SponsorMuteTracker()
     /// When the current run of attempts at the compatible rendition began. It
     /// rolls forward while the rendition actually plays, so a mid-playback
     /// stumble gets its own window rather than inheriting a spent one.
@@ -539,10 +542,7 @@ final class WatchModel {
         if usingCompatibleRendition, engine.isReady { compatibleSince = Date() }
         activeCue = WebVTT.cue(at: time, in: cues)?.text
         activeChapter = ChapterMath.index(of: time, in: chapters)
-        if prefs.skipSponsors, let segment = SponsorRules.segmentToSkip(at: time, in: video?.sponsorblock ?? []) {
-            lastSkippedSponsor = SponsorRules.label(segment.category)
-            engine.seek(to: segment.end)
-        }
+        applySponsorSegments(at: time)
         pushNowPlaying(force: false)
     }
 
@@ -559,5 +559,23 @@ final class WatchModel {
             rate: engine.isPlaying ? prefs.playbackSpeed : 0,
             artwork: artwork
         ))
+    }
+}
+
+private extension WatchModel {
+    /// SponsorBlock for one tick: seek past a `skip` segment, mute a `mute`
+    /// one, and hand the viewer their own mute setting back at its end. What
+    /// acts on what is ``SponsorRules``' decision, shared with the TV.
+    func applySponsorSegments(at time: Double) {
+        let segments = video?.sponsorblock ?? []
+        if prefs.skipSponsors, let segment = SponsorRules.segmentToSkip(at: time, in: segments) {
+            lastSkippedSponsor = SponsorRules.label(segment.category)
+            engine.seek(to: segment.end)
+        }
+        if let muted = sponsorMute.mute(
+            at: time, in: segments, enabled: prefs.skipSponsors, isMuted: engine.isMuted
+        ) {
+            engine.setMuted(muted)
+        }
     }
 }

@@ -71,6 +71,9 @@ final class TVWatchModel {
     @ObservationIgnored private var timeObserver: Any?
     @ObservationIgnored private var endObserver: (any NSObjectProtocol)?
     @ObservationIgnored private var lastNowPlayingUpdate: Double = -10
+    /// Mutes and unmutes for SponsorBlock `mute` segments, keeping the
+    /// viewer's own mute setting intact.
+    @ObservationIgnored private var sponsorMute = SponsorMuteTracker()
     /// Where to start, until the item reports `readyToPlay` and the seek can
     /// actually be issued. One seek, once — the compatible rendition is a
     /// complete VOD playlist from its first request, so seeking anywhere in it
@@ -491,8 +494,14 @@ final class TVWatchModel {
         // forward while the rendition is actually playing.
         if usingCompatibleRendition, isReady { compatibleSince = Date() }
         activeCue = WebVTT.cue(at: seconds, in: cues)?.text
-        if prefs.skipSponsors, let segment = SponsorRules.segmentToSkip(at: seconds, in: video?.sponsorblock ?? []) {
+        let segments = video?.sponsorblock ?? []
+        if prefs.skipSponsors, let segment = SponsorRules.segmentToSkip(at: seconds, in: segments) {
             player.seek(to: CMTime(seconds: segment.end, preferredTimescale: 600))
+        }
+        if let muted = sponsorMute.mute(
+            at: seconds, in: segments, enabled: prefs.skipSponsors, isMuted: player.isMuted
+        ) {
+            player.isMuted = muted
         }
         pushNowPlaying(force: false)
     }

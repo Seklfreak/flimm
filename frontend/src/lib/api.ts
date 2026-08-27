@@ -34,13 +34,24 @@ export interface SubtitleTrack {
   url: string;
 }
 
+/**
+ * What a player may do with a segment. Only `skip` may be skipped
+ * automatically; `mute` is muted for its length, `poi` is a single point of
+ * interest (the highlight, where `start === end`) and `full` labels the whole
+ * video rather than a range of it. `chapter` segments never reach this list —
+ * they come back from `GET /videos/{id}/chapters`.
+ */
+export type SponsorActionType = "skip" | "mute" | "poi" | "full" | "chapter";
+
 export interface SponsorSegment {
   category: string;
+  /** Absent on a server that predates action types, which only sent skips. */
+  action_type?: SponsorActionType;
   start: number;
   end: number;
 }
 
-export type ChaptersSource = "embedded" | "description" | "none";
+export type ChaptersSource = "embedded" | "sponsorblock" | "description" | "none";
 
 /**
  * The list the player steps through. `shuffle` is an opaque seed: the server

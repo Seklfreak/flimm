@@ -22,6 +22,7 @@ import (
 	"github.com/Seklfreak/flimm/internal/db"
 	"github.com/Seklfreak/flimm/internal/media"
 	"github.com/Seklfreak/flimm/internal/obs"
+	"github.com/Seklfreak/flimm/internal/sponsorblock"
 	"github.com/Seklfreak/flimm/internal/ta"
 )
 
@@ -122,6 +123,22 @@ func main() {
 	log.Info("media hardware acceleration",
 		"mode", string(hwMode), "vaapi", hwaccel.VAAPI, "device", hwaccel.Device, "reason", hwReason)
 
+	// Segments are fetched by a hash prefix of the video id, so enabling this
+	// by default costs the deployment no privacy; an offline install turns it
+	// off with an empty SPONSORBLOCK_URL and keeps TA's snapshot.
+	var sbClient *sponsorblock.Client
+	if cfg.SponsorblockURL != "" {
+		sbClient = sponsorblock.New(sponsorblock.Options{
+			BaseURL:    cfg.SponsorblockURL,
+			Categories: cfg.SponsorblockCategories,
+			UserAgent:  "flimm/" + version,
+			Log:        log,
+		})
+		log.Info("sponsorblock", "url", cfg.SponsorblockURL, "categories", cfg.SponsorblockCategories)
+	} else {
+		log.Info("sponsorblock disabled; using the TubeArchivist snapshot")
+	}
+
 	srv := api.NewServer(api.Options{
 		Pool:              pool,
 		TA:                client,
@@ -135,6 +152,7 @@ func main() {
 		MediaSecret:       cfg.MediaTokenSecret,
 		MinPlaySeconds:    cfg.MinPlaySeconds,
 		MediaCache:        mediaCache,
+		Sponsorblock:      sbClient,
 		FFmpegPath:        cfg.FFmpegPath,
 		HWAccel:           hwaccel,
 		SegmentWait:       cfg.MediaSegmentWait,

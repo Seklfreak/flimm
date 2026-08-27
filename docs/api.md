@@ -81,7 +81,7 @@ resume is the default action, and `t=` only exists to jump to a subtitle hit.
   "streams": [ { "type": "video", "codec": "avc1", "width": 1920, "height": 1080, "bitrate": 4500000 },
                { "type": "audio", "codec": "mp4a", "width": 0, "height": 0, "bitrate": 130000 } ],
   "subtitles": [ { "lang": "en", "source": "user|auto", "url": "/media/subtitles/yt-id/en.vtt" } ],
-  "sponsorblock": [ { "category": "sponsor", "start": 12.3, "end": 45.6 } ],
+  "sponsorblock": [ { "category": "sponsor", "action_type": "skip", "start": 12.3, "end": 45.6 } ],
   "stats": { "views": 0, "likes": 0 },
   "tags": [],
   "playlists": [ { "id": "PL…|custom-id", "name": "…", "position": 9, "count": 14 } ],
@@ -94,6 +94,48 @@ whether `media_url` is directly playable by AVFoundation: H.264 (`avc1`) video
 with AAC (`mp4a`) audio always is; VP9 (`vp09`)/AV1 (`av01`) video or Opus
 audio support is device-dependent. When it is not playable, `hls_url` is the
 answer — see [Compatible video renditions (HLS)](#compatible-video-renditions-hls).
+
+### SponsorBlock
+
+`sponsorblock` is fetched **from the SponsorBlock service by the backend**, not
+read out of TubeArchivist. TA stores a snapshot taken at download time with
+whatever categories it was configured for; segments keep being submitted,
+corrected and downvoted long afterwards, so Flimm asks the service and only
+falls back to that snapshot when it has to (no `SPONSORBLOCK_URL`, or a lookup
+that failed — an offline deploy, an outage, a timeout). An answer of "this
+video has no segments" is authoritative and wins over the snapshot: a segment
+that was removed must not come back.
+
+The lookup never tells the service which video is playing. It sends the first
+four hex characters of `sha256(video_id)`, gets every video sharing that prefix
+back and picks ours out server-side. Answers are cached for hours, and a
+failing service is remembered for ten minutes so an offline deploy costs one
+timeout rather than one per request.
+
+Segments are clamped to *this* copy of the video: one submitted against a
+different cut that starts past the end is dropped, one that overruns it ends at
+the duration.
+
+`action_type` says what a client may do with a segment — a client that ignores
+it would skip things nobody asked it to skip:
+
+| `action_type` | means |
+|---|---|
+| `skip` | seek past it (the only one that may be skipped automatically) |
+| `mute` | keep playing, muted, for its length — the picture still matters there |
+| `poi` | a single point of interest ("the highlight"), where `start == end` |
+| `full` | labels the whole video rather than a range of it |
+
+It is `skip` on the snapshot path (TA stores no action) and absent only on a
+server that predates the field, which is the same thing. `chapter` segments
+never appear here — they come back from
+[`/videos/{id}/chapters`](#chapters) instead.
+
+Which *categories* act automatically is a client decision, identical in every
+client: `sponsor`, `selfpromo` and `interaction` are skipped or muted, and
+every other category (`intro`, `outro`, `preview`, `music_offtopic`, `filler`,
+`exclusive_access`…) is tinted on the timeline and left alone. A `poi` or
+`full` segment is never tinted: neither marks a stretch of the timeline.
 
 `hls_url` is **always present**, whether or not the rendition exists yet;
 `hls_state` says which:
@@ -312,7 +354,7 @@ playback *from* the music playlist.
 
 ```json
 {
-  "source": "embedded|description|none",
+  "source": "embedded|sponsorblock|description|none",
   "chapters": [ { "start": 0, "end": 132.5, "title": "Intro" } ]
 }
 ```
@@ -324,10 +366,15 @@ authoritative source:
    download time. The backend range-fetches the `moov` box (files are
    faststart, so it sits at the front) and reads the Nero `chpl` box, falling
    back to the QuickTime chapter text track referenced by `tref`/`chap`.
-2. **`description`** — timestamp lines in the description (`0:00 Intro`,
-   `1:02:03 - Something`). Used only when nothing is embedded, and only when at
-   least two timestamps parse and they increase monotonically.
-3. **`none`** — `chapters` is `[]`.
+2. **`sponsorblock`** — chapter names submitted to SponsorBlock (its `chapter`
+   action type), through the same hash-prefix lookup as the segments. Used when
+   the file carries none of its own: hand-written names beat the description
+   heuristic.
+3. **`description`** — timestamp lines in the description (`0:00 Intro`,
+   `1:02:03 - Something`). Used only when nothing is embedded and nobody has
+   submitted chapters, and only when at least two timestamps parse and they
+   increase monotonically.
+4. **`none`** — `chapters` is `[]`.
 
 `end` is the next chapter's `start`, and the last chapter ends at the video
 duration. Times are seconds (float). Titles are trimmed and never empty.
@@ -654,6 +701,8 @@ tested against a fake.
 | `FFMPEG_PATH` | no | ffmpeg binary; default `ffmpeg` on `PATH` |
 | `MEDIA_HWACCEL` | no | `auto` (default), `vaapi` or `off` — hardware transcoding for the HLS rendition; falls back to the CPU per video |
 | `MEDIA_VAAPI_DEVICE` | no | DRM render node for VAAPI; default `/dev/dri/renderD128` |
+| `SPONSORBLOCK_URL` | no | SponsorBlock server segments are fetched from; default `https://sponsor.ajay.app`. **Empty disables the lookup**, leaving TubeArchivist's download-time snapshot as the only source — what an offline deploy wants |
+| `SPONSORBLOCK_CATEGORIES` | no | comma list restricting what is asked for; default asks for everything the service offers and lets each client decide |
 | `APP_NAME` | no | default `Flimm` |
 | `PORT` | no | default 8080 |
 | `SENTRY_DSN` | no | |

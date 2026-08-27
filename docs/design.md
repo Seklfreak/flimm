@@ -46,7 +46,14 @@ feeds without leaving the page.
   stock TA UI stays consistent.
 - The subtitle picker is the CC button in the controls: Off, archived tracks,
   and auto-generated tracks marked *auto*, plus size. SponsorBlock segments
-  can be skipped automatically (a preference).
+  can be skipped automatically (a preference) — and a segment its contributor
+  marked *mute* rather than *skip* is muted for its length instead, because
+  the picture still matters there. Segments come from the SponsorBlock service
+  through the backend, not from TubeArchivist's download-time snapshot, so
+  they stay current; the same lookup supplies chapter names for videos whose
+  file carries none. Which categories act is one rule shared by every client:
+  sponsor, self-promo and interaction reminders act, everything else is only
+  tinted on the timeline.
 - **Quality is a per-device choice**, next to speed and subtitles: *Auto*,
   then the qualities this video offers. The archive holds whatever was
   downloaded — often AV1 or VP9, which some devices and browsers decode and

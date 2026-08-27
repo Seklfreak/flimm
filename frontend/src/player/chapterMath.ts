@@ -1,4 +1,4 @@
-import type { Chapter, SponsorSegment } from "@/lib/api";
+import type { Chapter, SponsorActionType, SponsorSegment } from "@/lib/api";
 
 // ---- Chapter lookup ---------------------------------------------------
 
@@ -55,16 +55,53 @@ export interface SponsorRange {
 }
 
 // Percent-of-duration left/width for each SponsorBlock segment, clamped to
-// the bar and dropping zero/negative-length ranges.
+// the bar and dropping zero/negative-length ranges. Points of interest and
+// whole-video labels are not ranges, so they are not tinted.
 export function sponsorRangePercents(segments: SponsorSegment[], duration: number): SponsorRange[] {
   if (duration <= 0) return [];
   return segments
+    .filter((s) => sponsorAction(s) !== "poi" && sponsorAction(s) !== "full")
     .map((s) => {
       const left = clampPct((s.start / duration) * 100);
       const right = clampPct((s.end / duration) * 100);
       return { category: s.category, leftPct: left, widthPct: Math.max(0, right - left) };
     })
     .filter((r) => r.widthPct > 0);
+}
+
+// ---- Actions --------------------------------------------------------------
+
+// A server that predates action types only ever sent skippable segments.
+export function sponsorAction(segment: SponsorSegment): SponsorActionType {
+  return segment.action_type ?? "skip";
+}
+
+// Only these categories are skipped/muted automatically; intro, outro,
+// music_offtopic and the rest are tinted on the scrubber but left alone.
+// Matches the Apple clients (FlimmKit's SponsorRules).
+export const AUTO_SKIP_CATEGORIES = new Set(["sponsor", "selfpromo", "interaction"]);
+
+function acts(segment: SponsorSegment, action: SponsorActionType, time: number, margin: number): boolean {
+  return (
+    sponsorAction(segment) === action &&
+    AUTO_SKIP_CATEGORIES.has(segment.category) &&
+    segment.end > segment.start &&
+    time >= segment.start &&
+    time < segment.end - margin
+  );
+}
+
+// The segment playback is inside, if it is one that should be skipped. The
+// small margin stops a seek landing just before the end from looping.
+export function segmentToSkip(segments: SponsorSegment[], time: number): SponsorSegment | undefined {
+  return segments.find((s) => acts(s, "skip", time, 0.5));
+}
+
+// The segment playback is inside, if it is one that should be muted. The
+// contributor marked it "mute" rather than "skip" because the video still
+// matters there — only the audio does not.
+export function segmentToMute(segments: SponsorSegment[], time: number): SponsorSegment | undefined {
+  return segments.find((s) => acts(s, "mute", time, 0));
 }
 
 // ---- Category labels ------------------------------------------------------

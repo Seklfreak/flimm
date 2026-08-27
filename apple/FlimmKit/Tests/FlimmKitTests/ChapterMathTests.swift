@@ -54,6 +54,30 @@ final class ChapterMathTests: XCTestCase {
     }
 }
 
+final class SponsorMuteTrackerTests: XCTestCase {
+    private let segments = [SponsorSegment(category: "sponsor", actionType: .mute, start: 10, end: 20)]
+
+    func testMutesForTheSegmentAndRestoresAfterIt() {
+        var tracker = SponsorMuteTracker()
+        XCTAssertNil(tracker.mute(at: 5, in: segments, enabled: true, isMuted: false))
+        XCTAssertEqual(tracker.mute(at: 12, in: segments, enabled: true, isMuted: false), true)
+        // Already ours: nothing to change while it runs.
+        XCTAssertNil(tracker.mute(at: 15, in: segments, enabled: true, isMuted: true))
+        XCTAssertEqual(tracker.mute(at: 25, in: segments, enabled: true, isMuted: true), false)
+    }
+
+    func testAViewerWhoWasAlreadyMutedStaysMuted() {
+        var tracker = SponsorMuteTracker()
+        XCTAssertEqual(tracker.mute(at: 12, in: segments, enabled: true, isMuted: true), true)
+        XCTAssertEqual(tracker.mute(at: 25, in: segments, enabled: true, isMuted: true), true)
+    }
+
+    func testTheSegmentIsIgnoredWhenTheSkipPreferenceIsOff() {
+        var tracker = SponsorMuteTracker()
+        XCTAssertNil(tracker.mute(at: 12, in: segments, enabled: false, isMuted: false))
+    }
+}
+
 final class SponsorRulesTests: XCTestCase {
     private let segments = [
         SponsorSegment(category: "sponsor", start: 10, end: 30),
@@ -93,6 +117,43 @@ final class SponsorRulesTests: XCTestCase {
         let overrun = [SponsorSegment(category: "sponsor", start: 150, end: 5_000)]
         let ranges = SponsorRules.ranges(overrun, duration: 200)
         XCTAssertEqual(ranges[0].start + ranges[0].width, 1, accuracy: 0.0001)
+    }
+
+    func testAMissingActionTypeIsASkip() throws {
+        let json = Data(#"{ "category": "sponsor", "start": 1, "end": 2 }"#.utf8)
+        let segment = try FlimmCoding.decoder.decode(SponsorSegment.self, from: json)
+        XCTAssertEqual(segment.actionType, .skip)
+    }
+
+    func testOnlySkipSegmentsAreSkipped() {
+        let mixed = [
+            SponsorSegment(category: "sponsor", actionType: .mute, start: 10, end: 30),
+            SponsorSegment(category: "selfpromo", actionType: .other, start: 40, end: 50)
+        ]
+        // A mute segment keeps playing, and an action this build does not
+        // understand is inert rather than guessed at.
+        XCTAssertNil(SponsorRules.segmentToSkip(at: 15, in: mixed))
+        XCTAssertNil(SponsorRules.segmentToSkip(at: 45, in: mixed))
+    }
+
+    func testMuteSegmentsRunToTheirVeryEnd() {
+        let mute = [SponsorSegment(category: "sponsor", actionType: .mute, start: 10, end: 30)]
+        XCTAssertEqual(SponsorRules.segmentToMute(at: 10, in: mute)?.category, "sponsor")
+        XCTAssertNotNil(SponsorRules.segmentToMute(at: 29.9, in: mute))
+        XCTAssertNil(SponsorRules.segmentToMute(at: 30, in: mute))
+        // A skip segment is not muted on the way past.
+        XCTAssertNil(SponsorRules.segmentToMute(at: 15, in: segments))
+    }
+
+    func testPointsOfInterestAndWholeVideoLabelsAreNotTinted() {
+        let extras = [
+            SponsorSegment(category: "poi_highlight", actionType: .poi, start: 50, end: 50),
+            SponsorSegment(category: "sponsor", actionType: .full, start: 0, end: 200),
+            SponsorSegment(category: "sponsor", actionType: .skip, start: 0, end: 100)
+        ]
+        let ranges = SponsorRules.ranges(extras, duration: 200)
+        XCTAssertEqual(ranges.count, 1)
+        XCTAssertEqual(ranges[0].width, 0.5, accuracy: 0.0001)
     }
 
     func testLabelsFallBackToAReadableCategory() {
