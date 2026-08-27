@@ -162,9 +162,9 @@ renditions of one video over an evening.
 
   | height | codec | disk per hour |
   |---|---|---|
-  | 2160 | HEVC | ~6–8 GB |
+  | 2160 | HEVC | ~1.5–2 GB |
   | 1440 | HEVC | ~3–4 GB |
-  | 1080 | H.264 | ~2–3 GB |
+  | 1080 | H.264 | ~1.5 GB |
   | 720 | H.264 | ~1–1.5 GB |
   | 480 | H.264 | ~0.5–0.8 GB |
 

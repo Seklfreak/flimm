@@ -576,7 +576,7 @@ tested against a fake.
 | `MEDIA_TOKEN_SECRET` | yes | HMAC secret for the media cookie |
 | `PUBLIC_URL` | yes | for cookie/CORS |
 | `MIN_PLAY_SECONDS` | no | seconds of playback before a video is recorded; default 15 |
-| `MEDIA_CACHE_DIR` | no | where derived media is cached; default a temp dir. Must be writable; an HLS rendition of a 1080p hour is ~2–3 GB |
+| `MEDIA_CACHE_DIR` | no | where derived media is cached; default a temp dir. Must be writable; an HLS rendition of a 1080p hour is ~1.5 GB |
 | `MEDIA_CACHE_MAX_BYTES` | no | cache size cap before LRU eviction; default 5 GiB |
 | `MEDIA_TRANSCODE_JOBS` | no | concurrent HLS transcodes; default 1, extra requests queue |
 | `FFMPEG_PATH` | no | ffmpeg binary; default `ffmpeg` on `PATH` |
