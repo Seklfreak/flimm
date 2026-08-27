@@ -9,7 +9,9 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/coreos/go-oidc/v3/oidc"
@@ -57,7 +59,12 @@ func main() {
 		os.Exit(1)
 	}
 
-	ctx := context.Background()
+	// Cancelled on SIGINT/SIGTERM: the shutdown below stops accepting requests
+	// and then kills any running transcode, so a rolling deploy leaves no
+	// orphaned ffmpeg and no half-written cache entry.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
 	pool, err := db.Connect(ctx, cfg.DatabaseURL)
 	if err != nil {
 		log.Error("db connect", "err", err)
@@ -98,10 +105,11 @@ func main() {
 		os.Exit(1)
 	}
 
-	mediaCache, err := media.NewCache(cfg.MediaCacheDir, cfg.MediaCacheMaxBytes, log)
+	mediaCache, err := media.NewCache(cfg.MediaCacheDir, cfg.MediaCacheMaxBytes, cfg.MediaTranscodeJobs, log)
 	if err != nil {
 		// Derived media is one feature; the rest of the app still works, so
-		// log and carry on with /media/audio disabled rather than exiting.
+		// log and carry on with /media/audio and /media/hls disabled rather
+		// than exiting.
 		log.Error("media cache disabled", "dir", cfg.MediaCacheDir, "err", err)
 		mediaCache = nil
 	}
@@ -133,8 +141,27 @@ func main() {
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 	log.Info("listening", "port", cfg.Port)
-	if err := httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-		log.Error("server", "err", err)
-		os.Exit(1)
+	serveErr := make(chan error, 1)
+	go func() { serveErr <- httpServer.ListenAndServe() }()
+
+	select {
+	case err := <-serveErr:
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Error("server", "err", err)
+			os.Exit(1)
+		}
+	case <-ctx.Done():
+		log.Info("shutting down")
+		// Stop accepting first, give in-flight requests a moment, then cancel
+		// the derivations — a transcode killed while a player is mid-segment
+		// is fine (it restarts), an orphaned ffmpeg is not.
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		if err := httpServer.Shutdown(shutdownCtx); err != nil {
+			log.Error("shutdown", "err", err)
+		}
+	}
+	if mediaCache != nil {
+		mediaCache.Close()
 	}
 }

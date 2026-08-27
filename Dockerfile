@@ -27,7 +27,10 @@ RUN find frontend/dist -name '*.map' -delete
 RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X main.version=${APP_VERSION}" -o /archive ./cmd/server
 
 FROM alpine:3.24
-# ffmpeg derives the audio-only rendition (a remux, not a re-encode).
+# ffmpeg derives every alternative rendition: the audio-only ones (a remux) and
+# the compatible H.264/AAC HLS one (a real transcode). Alpine's ffmpeg carries
+# what that needs — libx264 to encode, libdav1d and libvpx to decode the AV1
+# and VP9 the archive holds, and the hls muxer.
 RUN apk add --no-cache ca-certificates tzdata ffmpeg && adduser -D -u 1000 app
 USER app
 COPY --from=backend /archive /archive

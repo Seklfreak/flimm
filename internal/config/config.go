@@ -42,7 +42,13 @@ type Config struct {
 	// can be rebuilt from TubeArchivist, so ephemeral storage is fine.
 	MediaCacheDir string
 	// MediaCacheMaxBytes caps the cache before least-recently-used eviction.
+	// An HLS rendition of a 1080p hour is ~2–3 GB, so this is the knob that
+	// decides how many transcodes stay warm.
 	MediaCacheMaxBytes int64
+	// MediaTranscodeJobs caps concurrent HLS transcodes. They are CPU-bound,
+	// so the default is one: extra requests queue rather than each making the
+	// others slower.
+	MediaTranscodeJobs int
 	// FFmpegPath is the ffmpeg binary used for derivations.
 	FFmpegPath string
 
@@ -76,6 +82,7 @@ func Load() (*Config, error) {
 		MinPlaySeconds:     envFloat("MIN_PLAY_SECONDS", 15),
 		MediaCacheDir:      cmp.Or(os.Getenv("MEDIA_CACHE_DIR"), filepath.Join(os.TempDir(), "flimm-media")),
 		MediaCacheMaxBytes: int64(envFloat("MEDIA_CACHE_MAX_BYTES", 5<<30)),
+		MediaTranscodeJobs: int(envFloat("MEDIA_TRANSCODE_JOBS", 1)),
 		FFmpegPath:         cmp.Or(os.Getenv("FFMPEG_PATH"), "ffmpeg"),
 		PublicURL:          strings.TrimRight(os.Getenv("PUBLIC_URL"), "/"),
 		CORSOrigins:        splitCSV(os.Getenv("CORS_ORIGINS")),

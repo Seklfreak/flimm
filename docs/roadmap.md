@@ -2,6 +2,16 @@
 
 ## Done
 
+- **Compatible video rendition** (2026-08-26) — `GET /media/hls/{id}/index.m3u8`
+  serves the video transcoded to H.264/AAC as HLS with fMP4 segments, for the
+  AV1 and VP9 in the archive that Apple hardware cannot decode. It is
+  progressive: the transcode starts on the first request and the playlist is
+  served as soon as the first segment exists, so playback starts in seconds
+  rather than after the whole encode. A source that is already H.264 ≤1080p is
+  copied, not re-encoded. Video detail carries `hls_url` and `hls_state`, and
+  `POST /videos/{id}/hls` prefetches. `MEDIA_TRANSCODE_JOBS` caps concurrency.
+  See [api.md](api.md#compatible-video-rendition-hls) and
+  [deploy.md](deploy.md#transcoding-cpu-and-the-media-cache).
 - **AAC audio variant** (2026-08-26) — `GET /media/audio/{id}.m4a` serves the
   same audio as AAC in MP4 beside the WebM/Opus one, so native Apple clients
   (which cannot decode Opus in WebM) have something to play for music

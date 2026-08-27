@@ -80,7 +80,13 @@ type VideoDetail struct {
 	// AudioAACURL is the same audio as AAC in MP4, for players that cannot
 	// decode Opus in WebM (AVFoundation); a re-encode unless the source is
 	// already AAC.
-	AudioAACURL  string             `json:"audio_aac_url"`
+	AudioAACURL string `json:"audio_aac_url"`
+	// HLSURL is the compatible video rendition: H.264/AAC as HLS, derived on
+	// first request. Always present — HLSState says whether it is ready.
+	HLSURL string `json:"hls_url"`
+	// HLSState is pending|running|done|failed for that rendition. Pending
+	// means nobody has asked for it yet.
+	HLSState     string             `json:"hls_state"`
 	YoutubeURL   string             `json:"youtube_url"`
 	Streams      []StreamInfo       `json:"streams"`
 	Subtitles    []SubtitleTrack    `json:"subtitles"`

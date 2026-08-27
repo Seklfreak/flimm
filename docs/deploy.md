@@ -55,6 +55,10 @@ data:
   APP_NAME: "Flimm"
   PORT: "8080"
   LOG_LEVEL: "info"
+  # Derived media (audio renditions and the compatible HLS video rendition).
+  MEDIA_CACHE_DIR: "/cache"
+  MEDIA_CACHE_MAX_BYTES: "21474836480"   # 20 GiB
+  MEDIA_TRANSCODE_JOBS: "1"
 ```
 
 See the [configuration table](../README.md#configuration) for every variable.
@@ -88,13 +92,26 @@ spec:
           livenessProbe:
             httpGet: { path: /api/v1/healthz, port: http }
             periodSeconds: 30
+          volumeMounts:
+            - name: media-cache
+              mountPath: /cache
           resources:
-            requests: { cpu: 50m, memory: 64Mi }
-            limits: { memory: 256Mi }
+            # ffmpeg is the reason for the CPU request: see "Transcoding" below.
+            requests: { cpu: 500m, memory: 256Mi }
+            limits: { cpu: "4", memory: 1Gi }
           securityContext:
             runAsNonRoot: true
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
+      volumes:
+        # Derived renditions are a cache in the strict sense — every entry can
+        # be rebuilt from TubeArchivist — so emptyDir is right: losing it on a
+        # restart costs CPU and nothing else. It does have to exist, though:
+        # the root filesystem is read-only, so without a writable
+        # MEDIA_CACHE_DIR nothing can be derived at all.
+        - name: media-cache
+          emptyDir:
+            sizeLimit: 24Gi
 ---
 apiVersion: v1
 kind: Service
@@ -109,7 +126,33 @@ spec:
 ```
 
 Migrations run on boot, so a single replica is the safe default; more replicas
-work once the schema is in place (migrations are idempotent and locked).
+work once the schema is in place (migrations are idempotent and locked) — but
+note that the derived-media cache is per pod, so each replica transcodes its
+own copy.
+
+### Transcoding (CPU and the media cache)
+
+The compatible video rendition (`/media/hls/…`, see
+[api.md](api.md#compatible-video-rendition-hls)) is a **real transcode**:
+software AV1 or VP9 decode feeding an x264 encode, both CPU-bound and neither
+using a GPU. On a modern server core that runs at roughly realtime, so a
+40-minute video occupies a core for tens of minutes — the viewer starts
+watching within seconds, but the job carries on behind them.
+
+- **Give the container several cores.** With a 1-core limit a transcode is
+  slower than playback and the player stalls waiting for segments. Four cores
+  is a comfortable starting point; ffmpeg is started with `-threads 0` and
+  uses what it is given.
+- **`MEDIA_TRANSCODE_JOBS` (default 1)** caps concurrent transcodes. Raise it
+  only if there are cores to spare: two transcodes sharing the same cores make
+  both viewers wait longer than running them one after the other.
+- **Size the cache for it.** An HLS rendition of a 1080p hour is ~2–3 GB, so
+  the 5 GiB default `MEDIA_CACHE_MAX_BYTES` holds only a couple. Give
+  `MEDIA_CACHE_DIR` a volume with room and set the cap a little under the
+  volume size; entries are evicted least-recently-used.
+- **Audio-only renditions are cheap** by comparison (a remux, or an audio
+  re-encode) and need none of this. A deployment whose clients never hit the
+  codec wall can leave the defaults alone.
 
 ## Ingress
 
