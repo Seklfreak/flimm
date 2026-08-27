@@ -9,33 +9,124 @@ import (
 	"path/filepath"
 	"reflect"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 )
 
-// The copy-vs-encode decision is what makes this variant affordable on an
-// archive that is already H.264, and what stops it shipping a 4K x264 encode
-// nobody asked for.
+// The copy-vs-encode decision is what makes a rendition affordable on an
+// archive that is already in the right codec, and what stops it shipping a 4K
+// x264 encode nobody asked for.
 func TestHLSVideoCodecChoice(t *testing.T) {
 	for _, tc := range []struct {
-		name string
-		src  HLSSource
-		want string
+		name   string
+		src    HLSSource
+		height int
+		want   string
 	}{
-		{"h264 720p is copied", HLSSource{VideoCodec: "avc1", Height: 720}, "copy"},
-		{"h264 with a profile suffix", HLSSource{VideoCodec: "avc1.640028", Height: 1080}, "copy"},
-		{"ffprobe spelling", HLSSource{VideoCodec: "h264", Height: 1080}, "copy"},
-		{"exactly the cap", HLSSource{VideoCodec: "avc1", Height: 1080}, "copy"},
-		{"above the cap is scaled, so encoded", HLSSource{VideoCodec: "avc1", Height: 2160}, "libx264"},
-		{"unknown height is not trusted", HLSSource{VideoCodec: "avc1"}, "libx264"},
-		{"av1", HLSSource{VideoCodec: "av01.0.08M.08", Height: 1080}, "libx264"},
-		{"vp9", HLSSource{VideoCodec: "vp09", Height: 720}, "libx264"},
-		{"no metadata at all", HLSSource{}, "libx264"},
+		{"h264 720p at 720", HLSSource{VideoCodec: "avc1", Height: 720}, 720, "copy"},
+		{"h264 with a profile suffix", HLSSource{VideoCodec: "avc1.640028", Height: 1080}, 1080, "copy"},
+		{"ffprobe spelling", HLSSource{VideoCodec: "h264", Height: 1080}, 1080, "copy"},
+		{"a taller source is scaled, so encoded", HLSSource{VideoCodec: "avc1", Height: 1080}, 720, "libx264"},
+		{"a shorter source is not the taller rung", HLSSource{VideoCodec: "avc1", Height: 720}, 1080, "libx264"},
+		{"unknown height is not trusted", HLSSource{VideoCodec: "avc1"}, 1080, "libx264"},
+		{"av1", HLSSource{VideoCodec: "av01.0.08M.08", Height: 1080}, 1080, "libx264"},
+		{"vp9", HLSSource{VideoCodec: "vp09", Height: 720}, 720, "libx264"},
+		{"no metadata at all", HLSSource{}, 1080, "libx264"},
+		// Above 1080 the rendition is HEVC, so H.264 is no longer a copy and
+		// HEVC is.
+		{"hevc 2160 at 2160", HLSSource{VideoCodec: "hvc1", Height: 2160}, 2160, "copy"},
+		{"hevc sample entry with a suffix", HLSSource{VideoCodec: "hvc1.1.6.L120.90", Height: 1440}, 1440, "copy"},
+		{"ffprobe spelling for hevc", HLSSource{VideoCodec: "hevc", Height: 2160}, 2160, "copy"},
+		{"hev1 is hevc too", HLSSource{VideoCodec: "hev1", Height: 1440}, 1440, "copy"},
+		{"h264 at a hevc height is re-encoded", HLSSource{VideoCodec: "avc1", Height: 2160}, 2160, "libx265"},
+		{"hevc at an h264 height is re-encoded", HLSSource{VideoCodec: "hvc1", Height: 1080}, 1080, "libx264"},
+		{"av1 4k", HLSSource{VideoCodec: "av01.0.12M.08", Height: 2160}, 2160, "libx265"},
 	} {
-		if got := hlsVideoCodec(tc.src); got != tc.want {
-			t.Errorf("%s: hlsVideoCodec(%+v) = %q, want %q", tc.name, tc.src, got, tc.want)
+		if got := hlsVideoCodec(tc.src, tc.height); got != tc.want {
+			t.Errorf("%s: hlsVideoCodec(%+v, %d) = %q, want %q", tc.name, tc.src, tc.height, got, tc.want)
 		}
+	}
+}
+
+// What a video offers is what its source can fill: a 4K rung on a 1080p source
+// is an upscale — a bigger file with no more detail — and a client would have
+// no way to know it was not getting what it asked for.
+func TestHLSOfferedHeights(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		source int
+		want   []int
+	}{
+		{"4k offers everything", 2160, []int{2160, 1440, 1080, 720, 480}},
+		{"1440p stops there", 1440, []int{1440, 1080, 720, 480}},
+		{"1080p", 1080, []int{1080, 720, 480}},
+		{"720p", 720, []int{720, 480}},
+		{"480p", 480, []int{480}},
+		{"an odd height offers the rungs below it", 1200, []int{1080, 720, 480}},
+		{"unknown height offers the default and below", 0, []int{1080, 720, 480}},
+		{"a source shorter than the lowest rung still gets one", 360, []int{480}},
+	} {
+		if got := HLSOfferedHeights(tc.source); !reflect.DeepEqual(got, tc.want) {
+			t.Errorf("%s: HLSOfferedHeights(%d) = %v, want %v", tc.name, tc.source, got, tc.want)
+		}
+	}
+}
+
+// hls_url points at the default rendition, which for a small source is the
+// tallest it has.
+func TestHLSDefaultOffered(t *testing.T) {
+	for source, want := range map[int]int{2160: 1080, 1080: 1080, 720: 720, 480: 480, 360: 480, 0: 1080} {
+		if got := HLSDefaultOffered(source); got != want {
+			t.Errorf("HLSDefaultOffered(%d) = %d, want %d", source, got, want)
+		}
+	}
+}
+
+// The codec per height is part of the API (`hls_variants[].codec`) and decides
+// which encoder every rung of the ladder uses.
+func TestHLSCodecForHeight(t *testing.T) {
+	for height, want := range map[int]string{2160: HLSCodecHEVC, 1440: HLSCodecHEVC, 1080: HLSCodecH264, 720: HLSCodecH264, 480: HLSCodecH264} {
+		if got := HLSCodecForHeight(height); got != want {
+			t.Errorf("HLSCodecForHeight(%d) = %q, want %q", height, got, want)
+		}
+		wantEncoder := "libx264"
+		if want == HLSCodecHEVC {
+			wantEncoder = "libx265"
+		}
+		if got := hlsSoftwareEncoder(height); got != wantEncoder {
+			t.Errorf("hlsSoftwareEncoder(%d) = %q, want %q", height, got, wantEncoder)
+		}
+	}
+	for _, h := range HLSHeights() {
+		if !ValidHLSHeight(h) {
+			t.Errorf("ValidHLSHeight(%d) = false for a listed height", h)
+		}
+	}
+	for _, h := range []int{0, -1, 1081, 4320, 360} {
+		if ValidHLSHeight(h) {
+			t.Errorf("ValidHLSHeight(%d) = true, want false", h)
+		}
+	}
+}
+
+// Every height is its own cache entry, or one quality would evict, wait on, or
+// be served in place of another.
+func TestHLSNameIsPerHeight(t *testing.T) {
+	seen := map[string]bool{}
+	for _, h := range HLSHeights() {
+		name := HLSName("v1", h)
+		if seen[name] {
+			t.Fatalf("two heights share the entry %q", name)
+		}
+		seen[name] = true
+		if !strings.HasPrefix(name, HLSVariant+"-") || !strings.HasSuffix(name, "-v1") {
+			t.Errorf("HLSName(v1, %d) = %q", h, name)
+		}
+	}
+	if HLSName("v1", 1080) == HLSName("v2", 1080) {
+		t.Error("two videos share an entry")
 	}
 }
 
@@ -60,7 +151,7 @@ func TestHLSArgs(t *testing.T) {
 		"-hls_segment_filename", "seg%05d.m4s",
 		"-y", "index.m3u8",
 	}
-	if got := hlsArgs("libx264", "aac"); !reflect.DeepEqual(got, want) {
+	if got := hlsArgs("libx264", "aac", 1080); !reflect.DeepEqual(got, want) {
 		t.Errorf("encode args =\n%v\nwant\n%v", got, want)
 	}
 }
@@ -68,7 +159,7 @@ func TestHLSArgs(t *testing.T) {
 // A copy must carry none of the encoder settings: they would either be
 // rejected or silently ignored, and either way they are a lie about what ran.
 func TestHLSArgsCopyCarriesNoEncoderSettings(t *testing.T) {
-	got := hlsArgs("copy", "copy")
+	got := hlsArgs("copy", "copy", 1080)
 	for _, unwanted := range []string{"-vf", "-crf", "-preset", "-profile:v", "-b:a", "-ac", "-g"} {
 		if slices.Contains(got, unwanted) {
 			t.Errorf("copy args carry %s: %v", unwanted, got)
@@ -88,7 +179,7 @@ func TestHLSArgsCopyCarriesNoEncoderSettings(t *testing.T) {
 // Mixing one copied and one encoded track is the common case (H.264 video with
 // Opus audio), so it must not leak the other track's settings.
 func TestHLSArgsMixedCopyAndEncode(t *testing.T) {
-	got := hlsArgs("copy", "aac")
+	got := hlsArgs("copy", "aac", 1080)
 	if i := slices.Index(got, "-c:v"); got[i+1] != "copy" {
 		t.Errorf("video should be copied: %v", got)
 	}
@@ -201,7 +292,7 @@ func TestHLSCopiesCompatibleSource(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	derive := HLS(stub, HLSSource{VideoCodec: "avc1", Height: 720, AudioCodec: "mp4a"}, HWAccel{}, nil, emptySource)
+	derive := HLS(stub, HLSSource{VideoCodec: "avc1", Height: 720, AudioCodec: "mp4a"}, 720, HWAccel{}, nil, emptySource)
 	if err := derive(t.Context(), out); err != nil {
 		t.Fatalf("derive: %v", err)
 	}
@@ -226,7 +317,7 @@ func TestHLSFallsBackWhenCopyFails(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	derive := HLS(stub, HLSSource{VideoCodec: "avc1", Height: 720, AudioCodec: "mp4a"}, HWAccel{}, nil, emptySource)
+	derive := HLS(stub, HLSSource{VideoCodec: "avc1", Height: 720, AudioCodec: "mp4a"}, 720, HWAccel{}, nil, emptySource)
 	if err := derive(t.Context(), out); err != nil {
 		t.Fatalf("a failed copy should fall back to encoding, got: %v", err)
 	}
@@ -246,7 +337,7 @@ func TestHLSSkipsCopyForIncompatibleSource(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	derive := HLS(stub, HLSSource{VideoCodec: "av01", Height: 1080, AudioCodec: "opus"}, HWAccel{}, nil, emptySource)
+	derive := HLS(stub, HLSSource{VideoCodec: "av01", Height: 1080, AudioCodec: "opus"}, 1080, HWAccel{}, nil, emptySource)
 	if err := derive(t.Context(), out); err != nil {
 		t.Fatalf("derive: %v", err)
 	}
@@ -265,7 +356,7 @@ func TestHLSClosesThePlaylist(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	derive := HLS(stub, HLSSource{VideoCodec: "av01", AudioCodec: "opus"}, HWAccel{}, nil, emptySource)
+	derive := HLS(stub, HLSSource{VideoCodec: "av01", AudioCodec: "opus"}, 1080, HWAccel{}, nil, emptySource)
 	if err := derive(t.Context(), out); err != nil {
 		t.Fatalf("derive: %v", err)
 	}
@@ -310,7 +401,7 @@ func TestHLSTranscodesToPlayableRendition(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Claim AV1 so the encode path runs, which is the case that matters.
-	derive := HLS("ffmpeg", HLSSource{VideoCodec: "av01", Height: 240, AudioCodec: "opus"}, HWAccel{}, nil,
+	derive := HLS("ffmpeg", HLSSource{VideoCodec: "av01", Height: 240, AudioCodec: "opus"}, 480, HWAccel{}, nil,
 		func(context.Context) (io.ReadCloser, error) {
 			return os.Open(src) //nolint:gosec // test fixture path
 		})
@@ -415,13 +506,13 @@ func TestHLSVAAPIArgs(t *testing.T) {
 		"-hls_segment_filename", "seg%05d.m4s",
 		"-y", "index.m3u8",
 	}
-	if got := hlsVAAPIArgs(DefaultVAAPIDevice, "aac"); !reflect.DeepEqual(got, want) {
+	if got := hlsVAAPIArgs(DefaultVAAPIDevice, "aac", 1080); !reflect.DeepEqual(got, want) {
 		t.Errorf("vaapi args =\n%v\nwant\n%v", got, want)
 	}
 }
 
 func TestHLSVAAPIArgsShape(t *testing.T) {
-	got := hlsVAAPIArgs("/dev/dri/renderD129", "aac")
+	got := hlsVAAPIArgs("/dev/dri/renderD129", "aac", 1080)
 
 	// -hwaccel* configure the *input*; after -i they would be ignored and the
 	// decode would silently run on the CPU, which is the failure mode this
@@ -460,17 +551,22 @@ func TestHLSVAAPIArgsShape(t *testing.T) {
 func TestHLSAttemptLadder(t *testing.T) {
 	hw := HWAccel{VAAPI: true, Device: DefaultVAAPIDevice}
 	for _, tc := range []struct {
-		name string
-		src  HLSSource
-		hw   HWAccel
-		want []string
+		name   string
+		src    HLSSource
+		height int
+		hw     HWAccel
+		want   []string
 	}{
-		{"gpu off: encode in software", HLSSource{VideoCodec: "av01", AudioCodec: "opus"}, HWAccel{}, []string{"libx264"}},
-		{"gpu on: try it, then software", HLSSource{VideoCodec: "av01", AudioCodec: "opus"}, hw, []string{"vaapi", "libx264"}},
-		{"a copyable source is still copied first", HLSSource{VideoCodec: "avc1", Height: 720, AudioCodec: "mp4a"}, hw, []string{"copy", "vaapi", "libx264"}},
-		{"copied video, encoded audio", HLSSource{VideoCodec: "avc1", Height: 720, AudioCodec: "opus"}, hw, []string{"copy", "vaapi", "libx264"}},
+		{"gpu off: encode in software", HLSSource{VideoCodec: "av01", AudioCodec: "opus"}, 1080, HWAccel{}, []string{"libx264"}},
+		{"gpu on: try it, then software", HLSSource{VideoCodec: "av01", AudioCodec: "opus"}, 1080, hw, []string{"vaapi", "libx264"}},
+		{"a copyable source is still copied first", HLSSource{VideoCodec: "avc1", Height: 720, AudioCodec: "mp4a"}, 720, hw, []string{"copy", "vaapi", "libx264"}},
+		{"copied video, encoded audio", HLSSource{VideoCodec: "avc1", Height: 720, AudioCodec: "opus"}, 720, hw, []string{"copy", "vaapi", "libx264"}},
+		{"the h264 source of a taller rung is not copied", HLSSource{VideoCodec: "avc1", Height: 2160, AudioCodec: "opus"}, 2160, hw, []string{"vaapi", "libx265"}},
+		{"a hevc rung ends in libx265", HLSSource{VideoCodec: "av01", AudioCodec: "opus", Height: 2160}, 1440, HWAccel{}, []string{"libx265"}},
+		{"a hevc source at its own height is copied", HLSSource{VideoCodec: "hvc1", Height: 2160, AudioCodec: "mp4a"}, 2160, hw, []string{"copy", "vaapi", "libx265"}},
+		{"aac audio alone is enough for a copy attempt", HLSSource{VideoCodec: "av01", Height: 2160, AudioCodec: "mp4a"}, 2160, HWAccel{}, []string{"copy", "libx265"}},
 	} {
-		attempts := hlsAttempts(tc.src, tc.hw)
+		attempts := hlsAttempts(tc.src, tc.height, tc.hw)
 		var got []string
 		for _, a := range attempts {
 			got = append(got, a.name)
@@ -525,7 +621,7 @@ func TestHLSFallsBackFromVAAPIToSoftware(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	derive := HLS(stub, HLSSource{VideoCodec: "av01", Height: 2160, AudioCodec: "opus"},
+	derive := HLS(stub, HLSSource{VideoCodec: "av01", Height: 2160, AudioCodec: "opus"}, 1080,
 		HWAccel{VAAPI: true, Device: DefaultVAAPIDevice}, nil, emptySource)
 	if err := derive(t.Context(), out); err != nil {
 		t.Fatalf("a failed hardware attempt must fall back, not fail: %v", err)
@@ -559,8 +655,8 @@ func TestHLSVAAPIFallbackEndsUpDone(t *testing.T) {
 	}
 	defer c.Close()
 
-	name := HLSName("yt-id")
-	derive := HLS(stub, HLSSource{VideoCodec: "av01", Height: 2160, AudioCodec: "opus"},
+	name := HLSName("yt-id", 1080)
+	derive := HLS(stub, HLSSource{VideoCodec: "av01", Height: 2160, AudioCodec: "opus"}, 1080,
 		HWAccel{VAAPI: true, Device: DefaultVAAPIDevice}, nil, emptySource)
 	if st := c.StartDir(name, derive); st != StateRunning {
 		t.Fatalf("StartDir = %q, want running", st)
@@ -602,7 +698,7 @@ func TestHLSSoftwareFailureIsTheRealFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	derive := HLS(stub, HLSSource{VideoCodec: "av01", Height: 1080, AudioCodec: "opus"},
+	derive := HLS(stub, HLSSource{VideoCodec: "av01", Height: 1080, AudioCodec: "opus"}, 1080,
 		HWAccel{VAAPI: true, Device: DefaultVAAPIDevice}, nil, emptySource)
 	err := derive(t.Context(), out)
 	if err == nil {
@@ -620,5 +716,206 @@ func TestHLSSoftwareFailureIsTheRealFailure(t *testing.T) {
 	}
 	if got := readCalls(t, callLog); got != "vaapi\nlibx264" {
 		t.Errorf("ffmpeg calls = %q, want both attempts", got)
+	}
+}
+
+// argValue returns the value ffmpeg would take for a flag, or "" if the flag
+// is absent.
+func argValue(args []string, flag string) string {
+	i := slices.Index(args, flag)
+	if i < 0 || i+1 >= len(args) {
+		return ""
+	}
+	return args[i+1]
+}
+
+// Every height on every rung, because the command line is the whole variant:
+// a wrong encoder, a missing hvc1 tag or a scale filter pinned to 1080 is a
+// rendition that either does not play on Apple hardware or is not the quality
+// the client picked, and no unit short of this notices.
+func TestHLSArgsPerHeightAndRung(t *testing.T) {
+	for _, tc := range []struct {
+		height  int
+		encoder string
+		vaapi   string
+		crf, qp string
+		profile string
+		hevc    bool
+	}{
+		{height: 2160, encoder: "libx265", vaapi: "hevc_vaapi", crf: "26", qp: "25", profile: "main", hevc: true},
+		{height: 1440, encoder: "libx265", vaapi: "hevc_vaapi", crf: "26", qp: "25", profile: "main", hevc: true},
+		{height: 1080, encoder: "libx264", vaapi: "h264_vaapi", crf: "23", qp: "23", profile: "high"},
+		{height: 720, encoder: "libx264", vaapi: "h264_vaapi", crf: "23", qp: "23", profile: "high"},
+		{height: 480, encoder: "libx264", vaapi: "h264_vaapi", crf: "23", qp: "23", profile: "high"},
+	} {
+		scale := "scale=-2:'min(" + strconv.Itoa(tc.height) + ",ih)'"
+		vaapiScale := "scale_vaapi=w=-2:h='min(" + strconv.Itoa(tc.height) + ",ih)':format=nv12"
+
+		// Software rung.
+		sw := hlsArgs(hlsSoftwareEncoder(tc.height), "aac", tc.height)
+		if got := argValue(sw, "-c:v"); got != tc.encoder {
+			t.Errorf("%dp software encoder = %q, want %q", tc.height, got, tc.encoder)
+		}
+		if got := argValue(sw, "-vf"); got != scale {
+			t.Errorf("%dp software scale = %q, want %q", tc.height, got, scale)
+		}
+		if got := argValue(sw, "-crf"); got != tc.crf {
+			t.Errorf("%dp crf = %q, want %q", tc.height, got, tc.crf)
+		}
+		if got := argValue(sw, "-profile:v"); got != tc.profile {
+			t.Errorf("%dp software profile = %q, want %q", tc.height, got, tc.profile)
+		}
+		if got := argValue(sw, "-preset"); got != "veryfast" {
+			t.Errorf("%dp preset = %q", tc.height, got)
+		}
+		if got := argValue(sw, "-pix_fmt"); got != "yuv420p" {
+			t.Errorf("%dp pix_fmt = %q, want yuv420p (8-bit, what Apple decodes)", tc.height, got)
+		}
+
+		// Hardware rung: the same rendition, built the way VAAPI needs it.
+		hwArgs := hlsVAAPIArgs(DefaultVAAPIDevice, "aac", tc.height)
+		if got := argValue(hwArgs, "-c:v"); got != tc.vaapi {
+			t.Errorf("%dp vaapi encoder = %q, want %q", tc.height, got, tc.vaapi)
+		}
+		if got := argValue(hwArgs, "-vf"); got != vaapiScale {
+			t.Errorf("%dp vaapi scale = %q, want %q", tc.height, got, vaapiScale)
+		}
+		if got := argValue(hwArgs, "-qp"); got != tc.qp {
+			t.Errorf("%dp vaapi qp = %q, want %q", tc.height, got, tc.qp)
+		}
+		if got := argValue(hwArgs, "-profile:v"); got != tc.profile {
+			t.Errorf("%dp vaapi profile = %q, want %q", tc.height, got, tc.profile)
+		}
+		for _, unwanted := range []string{"-preset", "-crf", "-pix_fmt", "-sc_threshold"} {
+			if slices.Contains(hwArgs, unwanted) {
+				t.Errorf("%dp vaapi args carry the software knob %s", tc.height, unwanted)
+			}
+		}
+
+		// Copy rung: no encoder settings on either path, whatever the height.
+		cp := hlsArgs("copy", "copy", tc.height)
+		if got := argValue(cp, "-c:v"); got != "copy" {
+			t.Errorf("%dp copy = %q", tc.height, got)
+		}
+		if slices.Contains(cp, "-vf") || slices.Contains(cp, "-crf") {
+			t.Errorf("%dp copy args carry encoder settings: %v", tc.height, cp)
+		}
+
+		// hvc1 rather than hev1 on every HEVC rung, copied or encoded:
+		// AVFoundation refuses hev1 in fMP4, which is a rendition that plays
+		// nowhere it was made for.
+		for name, args := range map[string][]string{"software": sw, "vaapi": hwArgs, "copy": cp} {
+			tag := argValue(args, "-tag:v")
+			if tc.hevc && tag != "hvc1" {
+				t.Errorf("%dp %s args tag = %q, want hvc1", tc.height, name, tag)
+			}
+			if !tc.hevc && tag != "" {
+				t.Errorf("%dp %s args carry -tag:v %q; H.264 needs none", tc.height, name, tag)
+			}
+		}
+
+		// The GOP and the muxer are the same everywhere, or the segmenter
+		// cannot cut where it wants to.
+		for name, args := range map[string][]string{"software": sw, "vaapi": hwArgs, "copy": cp} {
+			if got := argValue(args, "-hls_segment_type"); got != "fmp4" {
+				t.Errorf("%dp %s segment type = %q", tc.height, name, got)
+			}
+			if args[len(args)-1] != HLSPlaylistName {
+				t.Errorf("%dp %s args do not end in the playlist", tc.height, name)
+			}
+		}
+		for name, args := range map[string][]string{"software": sw, "vaapi": hwArgs} {
+			if got := argValue(args, "-g"); got != hlsGOP {
+				t.Errorf("%dp %s gop = %q, want %s", tc.height, name, got, hlsGOP)
+			}
+		}
+	}
+}
+
+// The HEVC rungs through the real ffmpeg. The tag is the part that cannot be
+// argued about: an HEVC track written as `hev1` plays on nothing Apple makes,
+// and only a muxed file says which one came out.
+func TestHLSTranscodesHEVCRendition(t *testing.T) {
+	requireFFmpeg(t)
+	if !hasEncoder(t, "libx265") {
+		t.Skip("this ffmpeg has no libx265; skipping the HEVC derivation test")
+	}
+	dir := t.TempDir()
+	src := filepath.Join(dir, "src.mp4")
+	//nolint:gosec // G204: fixture paths from t.TempDir(), no request data
+	fixture := exec.Command("ffmpeg", "-hide_banner", "-loglevel", "error",
+		"-f", "lavfi", "-i", "testsrc=duration=4:size=320x240:rate=24",
+		"-f", "lavfi", "-i", "sine=duration=4",
+		"-c:v", "libx264", "-c:a", "aac", "-movflags", "+faststart", "-y", src)
+	var stderr bytes.Buffer
+	fixture.Stderr = &stderr
+	if err := fixture.Run(); err != nil {
+		t.Skipf("cannot build fixture: %v: %s", err, stderr.String())
+	}
+
+	out := filepath.Join(dir, "out")
+	if err := os.Mkdir(out, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	// A 1440 rendition of a small source: the scaler clamps to the source, so
+	// this stays cheap while still taking the HEVC rung.
+	derive := HLS("ffmpeg", HLSSource{VideoCodec: "avc1", Height: 240, AudioCodec: "aac"}, 1440, HWAccel{}, nil,
+		func(context.Context) (io.ReadCloser, error) {
+			return os.Open(src) //nolint:gosec // test fixture path
+		})
+	if err := derive(t.Context(), out); err != nil {
+		t.Fatalf("derive: %v", err)
+	}
+	if !HLSPlaylistReady(out) {
+		t.Fatal("no usable playlist")
+	}
+	segments, err := filepath.Glob(filepath.Join(out, "seg*.m4s"))
+	if err != nil || len(segments) == 0 {
+		t.Fatalf("no segments produced: %v", err)
+	}
+	assertHEVCTagged(t, segments[0], filepath.Join(out, HLSInitName))
+}
+
+// hasEncoder reports whether this ffmpeg can encode with the named encoder,
+// so a machine without libx265 skips rather than fails.
+func hasEncoder(t *testing.T, name string) bool {
+	t.Helper()
+	out, err := exec.Command("ffmpeg", "-hide_banner", "-encoders").Output()
+	return err == nil && bytes.Contains(out, []byte(" "+name+" "))
+}
+
+// assertHEVCTagged checks the rendition is HEVC carrying the hvc1 sample entry.
+func assertHEVCTagged(t *testing.T, segment, init string) {
+	t.Helper()
+	probe, err := exec.LookPath("ffprobe")
+	if err != nil {
+		return
+	}
+	joined := filepath.Join(t.TempDir(), "joined.mp4")
+	a, err := os.ReadFile(init) //nolint:gosec // test fixture path
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(segment) //nolint:gosec // test fixture path
+	if err != nil {
+		t.Fatal(err)
+	}
+	//nolint:gosec // G703: joined is t.TempDir() plus a literal name
+	if err := os.WriteFile(joined, append(a, b...), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	//nolint:gosec // G204: probe path from LookPath, file from t.TempDir()
+	out, err := exec.Command(probe, "-hide_banner", "-loglevel", "error",
+		"-select_streams", "v:0", "-show_entries", "stream=codec_name,codec_tag_string",
+		"-of", "csv=p=0", joined).Output()
+	if err != nil {
+		t.Fatalf("ffprobe: %v", err)
+	}
+	got := strings.ToLower(string(bytes.TrimSpace(out)))
+	if !strings.Contains(got, "hevc") {
+		t.Errorf("rendition is not hevc: %q", got)
+	}
+	if !strings.Contains(got, "hvc1") {
+		t.Errorf("rendition is not tagged hvc1 (AVFoundation will refuse it): %q", got)
 	}
 }

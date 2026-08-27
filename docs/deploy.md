@@ -134,26 +134,45 @@ own copy.
 
 ### Transcoding (CPU and the media cache)
 
-The compatible video rendition (`/media/hls/…`, see
-[api.md](api.md#compatible-video-rendition-hls)) is a **real transcode**:
-software AV1 or VP9 decode feeding an x264 encode, both CPU-bound. On a modern
-server core that runs at roughly realtime, so a 40-minute video occupies a core
-for tens of minutes — the viewer starts watching within seconds, but the job
-carries on behind them. On a node with an Intel iGPU most of this goes away;
-see [Hardware acceleration](#hardware-acceleration-intel-vaapi) below. The
-numbers here are the CPU ones.
+The compatible video renditions (`/media/hls/…`, see
+[api.md](api.md#compatible-video-renditions-hls)) are a **real transcode**:
+software AV1 or VP9 decode feeding an x264 (or, above 1080p, an x265) encode,
+both CPU-bound. On a modern server core that runs at roughly realtime, so a
+40-minute video occupies a core for tens of minutes — the viewer starts
+watching within seconds, but the job carries on behind them. On a node with an
+Intel iGPU most of this goes away; see
+[Hardware acceleration](#hardware-acceleration-intel-vaapi) below. The numbers
+here are the CPU ones.
+
+A video offers up to five heights (2160, 1440, 1080, 720, 480 — every one its
+source can fill) and the client picks. Each is its own job and its own cache
+entry, produced only when something asks for it, so nothing is transcoded up
+front — but a client that offers a quality switcher can produce several
+renditions of one video over an evening.
 
 - **Give the container several cores.** With a 1-core limit a transcode is
   slower than playback and the player stalls waiting for segments. Four cores
   is a comfortable starting point; ffmpeg is started with `-threads 0` and
   uses what it is given.
-- **`MEDIA_TRANSCODE_JOBS` (default 1)** caps concurrent transcodes. Raise it
-  only if there are cores to spare: two transcodes sharing the same cores make
-  both viewers wait longer than running them one after the other.
-- **Size the cache for it.** An HLS rendition of a 1080p hour is ~2–3 GB, so
-  the 5 GiB default `MEDIA_CACHE_MAX_BYTES` holds only a couple. Give
-  `MEDIA_CACHE_DIR` a volume with room and set the cap a little under the
-  volume size; entries are evicted least-recently-used.
+- **`MEDIA_TRANSCODE_JOBS` (default 1)** caps concurrent transcodes across
+  every video *and every height*. Raise it only if there are cores to spare:
+  two transcodes sharing the same cores make both viewers wait longer than
+  running them one after the other.
+- **Size the cache for it.** Roughly, per hour of video:
+
+  | height | codec | disk per hour |
+  |---|---|---|
+  | 2160 | HEVC | ~6–8 GB |
+  | 1440 | HEVC | ~3–4 GB |
+  | 1080 | H.264 | ~2–3 GB |
+  | 720 | H.264 | ~1–1.5 GB |
+  | 480 | H.264 | ~0.5–0.8 GB |
+
+  So the 5 GiB default `MEDIA_CACHE_MAX_BYTES` holds a couple of 1080p hours,
+  or a single 4K one. Give `MEDIA_CACHE_DIR` a volume with room — 50 GiB or
+  more if 4K is going to be watched — and set the cap a little under the volume
+  size; entries are evicted least-recently-used, and a rendition being watched
+  is never evicted out from under its player.
 - **Audio-only renditions are cheap** by comparison (a remux, or an audio
   re-encode) and need none of this. A deployment whose clients never hit the
   codec wall can leave the defaults alone.
@@ -161,11 +180,18 @@ numbers here are the CPU ones.
 ### Hardware acceleration (Intel VAAPI)
 
 If the node has an Intel iGPU — anything from Broadwell on; a recent desktop or
-NUC chip decodes AV1, VP9, HEVC and H.264 and encodes H.264 in fixed-function
-silicon — the transcode can run on it instead of the CPU. Expect the difference
-to be large: **a 4K AV1 hour finishes in a handful of minutes rather than the
-tens of minutes an x264 encode takes**, and the cores stay free for everything
-else. The rendition is the same H.264 High@4.1 ≤1080p either way.
+NUC chip decodes AV1, VP9, HEVC and H.264 and encodes both H.264 and HEVC in
+fixed-function silicon — the transcode can run on it instead of the CPU. Expect
+the difference to be large: **a 4K AV1 hour finishes in a handful of minutes
+rather than the tens of minutes an x264 encode takes**, and the cores stay free
+for everything else. On an Alder Lake iGPU a 1080p H.264 rendition runs at
+roughly 13–19× realtime. The renditions are the same either way: H.264
+High@4.1 up to 1080p, HEVC Main above it.
+
+The tall renditions in particular want a GPU. HEVC encoding on the CPU
+(`libx265`) is several times more expensive than x264 at the same speed preset,
+so a 4K rendition on a CPU-only host is an hours-long job — offer 4K there only
+if viewers are willing to wait, or keep clients on 1080p.
 
 | Var | Default | Notes |
 |---|---|---|

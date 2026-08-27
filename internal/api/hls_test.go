@@ -8,6 +8,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -23,11 +25,18 @@ import (
 const completeMarker = ".complete"
 
 // hlsFixture builds a server whose cache already holds a finished rendition
-// for v1, so the routes can be tested without ffmpeg.
+// for v1 at the default height, so the routes can be tested without ffmpeg.
 func hlsFixture(t *testing.T, segment []byte) (http.Handler, string) {
 	t.Helper()
 	dir := t.TempDir()
-	entry := filepath.Join(dir, media.HLSName("v1"))
+	writeHLSEntry(t, dir, "v1", media.HLSDefaultHeight, segment)
+	return hlsServer(t, dir, "ffmpeg"), dir
+}
+
+// writeHLSEntry lays down a finished rendition of one video at one height.
+func writeHLSEntry(t *testing.T, dir, id string, height int, segment []byte) {
+	t.Helper()
+	entry := filepath.Join(dir, media.HLSName(id, height))
 	if err := os.MkdirAll(entry, 0o750); err != nil {
 		t.Fatal(err)
 	}
@@ -43,7 +52,6 @@ func hlsFixture(t *testing.T, segment []byte) (http.Handler, string) {
 			t.Fatal(err)
 		}
 	}
-	return hlsServer(t, dir, "ffmpeg"), dir
 }
 
 func hlsServer(t *testing.T, dir, ffmpegPath string) http.Handler {
@@ -236,7 +244,7 @@ func TestPostVideoHLSStartsWithoutWaiting(t *testing.T) {
 func TestVideoDetailCarriesHLSURLAndState(t *testing.T) {
 	h, _ := hlsFixture(t, []byte("segment"))
 	detail := decode[VideoDetail](t, do(t, h, http.MethodGet, "/api/v1/videos/v1", ""))
-	if detail.HLSURL != "/media/hls/v1/index.m3u8" {
+	if detail.HLSURL != "/media/hls/v1/1080/index.m3u8" {
 		t.Errorf("hls_url = %q", detail.HLSURL)
 	}
 	if detail.HLSState != string(media.StateDone) {
@@ -249,7 +257,7 @@ func TestVideoDetailCarriesHLSURLAndState(t *testing.T) {
 	fake.Videos["v2"] = &ta.Video{YoutubeID: "v2", Title: "Video v2", MediaURL: "/youtube/UC1/v2.mp4"}
 	plain := newTestServer(fake, newEventStore().querier()).Router()
 	d2 := decode[VideoDetail](t, do(t, plain, http.MethodGet, "/api/v1/videos/v2", ""))
-	if d2.HLSURL != "/media/hls/v2/index.m3u8" || d2.HLSState != string(media.StatePending) {
+	if d2.HLSURL != "/media/hls/v2/1080/index.m3u8" || d2.HLSState != string(media.StatePending) {
 		t.Errorf("without a cache: hls_url = %q, hls_state = %q", d2.HLSURL, d2.HLSState)
 	}
 }
@@ -314,7 +322,9 @@ func TestHLSEndToEndWithRealFFmpeg(t *testing.T) {
 		MediaCache:  cache,
 	}).Router()
 
-	rec := getMedia(t, h, "/media/hls/v1/index.m3u8", "")
+	// A 240p source offers only the lowest rung, so that is the rendition its
+	// detail points at and the one a client asks for.
+	rec := getMedia(t, h, "/media/hls/v1/480/index.m3u8", "")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("playlist status = %d: %s", rec.Code, rec.Body.String())
 	}
@@ -324,7 +334,7 @@ func TestHLSEndToEndWithRealFFmpeg(t *testing.T) {
 	}
 
 	// Init and every segment the playlist names must be servable by the route.
-	if init := getMedia(t, h, "/media/hls/v1/init.mp4", ""); init.Code != http.StatusOK || init.Body.Len() == 0 {
+	if init := getMedia(t, h, "/media/hls/v1/480/init.mp4", ""); init.Code != http.StatusOK || init.Body.Len() == 0 {
 		t.Errorf("init segment = %d, %d bytes", init.Code, init.Body.Len())
 	}
 	segments := 0
@@ -334,7 +344,7 @@ func TestHLSEndToEndWithRealFFmpeg(t *testing.T) {
 			continue
 		}
 		segments++
-		seg := getMedia(t, h, "/media/hls/v1/"+name, "")
+		seg := getMedia(t, h, "/media/hls/v1/480/"+name, "")
 		if seg.Code != http.StatusOK || seg.Body.Len() == 0 {
 			t.Errorf("segment %s = %d, %d bytes", name, seg.Code, seg.Body.Len())
 		}
@@ -346,7 +356,7 @@ func TestHLSEndToEndWithRealFFmpeg(t *testing.T) {
 	// The transcode finishes behind the request; the detail then says so.
 	deadline := time.Now().Add(60 * time.Second)
 	for time.Now().Before(deadline) {
-		if cache.DirState(media.HLSName("v1")) == media.StateDone {
+		if cache.DirState(media.HLSName("v1", 480)) == media.StateDone {
 			break
 		}
 		time.Sleep(20 * time.Millisecond)
@@ -356,11 +366,266 @@ func TestHLSEndToEndWithRealFFmpeg(t *testing.T) {
 		t.Fatalf("hls_state = %q, want %q", detail.HLSState, media.StateDone)
 	}
 	// A finished rendition is closed, or a player never reaches the end.
-	final := getMedia(t, h, "/media/hls/v1/index.m3u8", "")
+	final := getMedia(t, h, "/media/hls/v1/480/index.m3u8", "")
 	if !strings.Contains(final.Body.String(), "#EXT-X-ENDLIST") {
 		t.Errorf("finished playlist is not closed: %q", final.Body.String())
 	}
 	if cc := final.Header().Get("Cache-Control"); cc != "private, max-age=3600" {
 		t.Errorf("finished playlist Cache-Control = %q", cc)
+	}
+}
+
+// Each height is served from its own entry, under its own path.
+func TestHLSVariantRoutesServeEachHeight(t *testing.T) {
+	dir := t.TempDir()
+	for _, h := range []int{1080, 720, 480} {
+		writeHLSEntry(t, dir, "v1", h, []byte("segment-"+strconv.Itoa(h)))
+	}
+	srv := hlsServer(t, dir, "ffmpeg")
+
+	for _, height := range []int{1080, 720, 480} {
+		base := "/media/hls/v1/" + strconv.Itoa(height) + "/"
+		rec := getMedia(t, srv, base+"index.m3u8", "")
+		if rec.Code != http.StatusOK {
+			t.Fatalf("%dp playlist = %d: %s", height, rec.Code, rec.Body.String())
+		}
+		if ct := rec.Header().Get("Content-Type"); ct != media.HLSPlaylistType {
+			t.Errorf("%dp playlist Content-Type = %q", height, ct)
+		}
+		if init := getMedia(t, srv, base+"init.mp4", ""); init.Code != http.StatusOK {
+			t.Errorf("%dp init = %d", height, init.Code)
+		}
+		seg := getMedia(t, srv, base+"seg00000.m4s", "")
+		if seg.Code != http.StatusOK {
+			t.Fatalf("%dp segment = %d", height, seg.Code)
+		}
+		// The right entry, not merely an entry: each height's segment carries
+		// its own bytes.
+		if got := seg.Body.String(); got != "segment-"+strconv.Itoa(height) {
+			t.Errorf("%dp segment body = %q", height, got)
+		}
+	}
+}
+
+// The path without a height that older clients use must keep working, and must not
+// become a sixth rendition: it is the 1080 entry under another name.
+func TestHLSLegacyRouteServesTheDefaultVariant(t *testing.T) {
+	dir := t.TempDir()
+	writeHLSEntry(t, dir, "v1", media.HLSDefaultHeight, []byte("the-1080-segment"))
+	srv := hlsServer(t, dir, "ffmpeg")
+
+	for _, file := range []string{"index.m3u8", "init.mp4", "seg00000.m4s"} {
+		alias := getMedia(t, srv, "/media/hls/v1/"+file, "")
+		explicit := getMedia(t, srv, "/media/hls/v1/1080/"+file, "")
+		if alias.Code != http.StatusOK || explicit.Code != http.StatusOK {
+			t.Fatalf("%s: alias = %d, explicit = %d", file, alias.Code, explicit.Code)
+		}
+		if alias.Body.String() != explicit.Body.String() {
+			t.Errorf("%s: the alias serves different bytes from /1080/", file)
+		}
+	}
+	// No entry of its own was created for the alias.
+	if _, err := os.Stat(filepath.Join(dir, "hls-v1")); err == nil {
+		t.Error("the alias created a duplicate cache entry")
+	}
+}
+
+// A source below the default still answers the alias — an old client has no
+// other URL to fall back to — while the heights it does not offer are 404 on
+// the explicit routes.
+func TestHLSLegacyRouteWorksForASmallSource(t *testing.T) {
+	old := hlsPlaylistWait
+	hlsPlaylistWait = 100 * time.Millisecond
+	t.Cleanup(func() { hlsPlaylistWait = old })
+
+	dir := t.TempDir()
+	srv := hlsServer(t, dir, writeHangingFFmpeg(t))
+	// v1 is 1080p in the fixture; ask through the alias and the job starts.
+	if rec := getMedia(t, srv, "/media/hls/v1/index.m3u8", ""); rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("alias = %d, want 503 while the transcode runs", rec.Code)
+	}
+	waitForEntry(t, dir, media.HLSName("v1", media.HLSDefaultHeight))
+}
+
+// A height that is not one of the five, or one this source cannot fill, never
+// reaches the filesystem and never starts a transcode.
+func TestHLSRejectsBadHeights(t *testing.T) {
+	dir := t.TempDir()
+	srv := hlsServer(t, dir, writeHangingFFmpeg(t))
+	for _, path := range []string{
+		"/media/hls/v1/999/index.m3u8",
+		"/media/hls/v1/1081/index.m3u8",
+		"/media/hls/v1/0/index.m3u8",
+		"/media/hls/v1/-720/index.m3u8",
+		"/media/hls/v1/abc/index.m3u8",
+		"/media/hls/v1/1080p/seg00000.m4s",
+		// One of the five, but taller than the 1080p source: offering it would
+		// be an upscale, so it is not offered and not served.
+		"/media/hls/v1/2160/index.m3u8",
+		"/media/hls/v1/1440/index.m3u8",
+	} {
+		if rec := getMedia(t, srv, path, ""); rec.Code != http.StatusNotFound {
+			t.Errorf("%s = %d, want 404", path, rec.Code)
+		}
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range entries {
+		t.Errorf("a rejected height started a transcode: %s", e.Name())
+	}
+}
+
+// waitForEntry waits for a cache entry to appear. StartDir returns before the
+// job has created anything — that is the point of it — so the filesystem lags
+// the response by a moment.
+func waitForEntry(t *testing.T, dir, name string) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if _, err := os.Stat(filepath.Join(dir, name)); err == nil {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Errorf("cache entry %s was never created", name)
+}
+
+// Prefetch picks a height too, and refuses one the video does not offer rather
+// than quietly starting a different transcode from the one asked for.
+//
+// Each case gets its own server: one transcode slot means a second job would
+// queue behind the first hanging one and touch nothing on disk.
+func TestPostVideoHLSHeight(t *testing.T) {
+	dir := t.TempDir()
+	rec := do(t, hlsServer(t, dir, writeHangingFFmpeg(t)), http.MethodPost, "/api/v1/videos/v1/hls?height=720", "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("height=720 = %d: %s", rec.Code, rec.Body.String())
+	}
+	if got := decode[map[string]string](t, rec)["state"]; got != string(media.StateRunning) {
+		t.Errorf("state = %q, want running", got)
+	}
+	waitForEntry(t, dir, media.HLSName("v1", 720))
+
+	// No height at all starts the default one, the same the detail's hls_url
+	// points at.
+	defaultDir := t.TempDir()
+	if rec := do(t, hlsServer(t, defaultDir, writeHangingFFmpeg(t)), http.MethodPost, "/api/v1/videos/v1/hls", ""); rec.Code != http.StatusOK {
+		t.Fatalf("no height = %d: %s", rec.Code, rec.Body.String())
+	}
+	waitForEntry(t, defaultDir, media.HLSName("v1", media.HLSDefaultHeight))
+
+	// A height this 1080p source cannot fill, or no height at all, is a 400 —
+	// the client is working from a stale hls_variants.
+	rejectDir := t.TempDir()
+	reject := hlsServer(t, rejectDir, writeHangingFFmpeg(t))
+	for _, q := range []string{"?height=2160", "?height=1440", "?height=999", "?height=abc", "?height=1080p", "?height=-720"} {
+		if rec := do(t, reject, http.MethodPost, "/api/v1/videos/v1/hls"+q, ""); rec.Code != http.StatusBadRequest {
+			t.Errorf("%s = %d, want 400", q, rec.Code)
+		}
+	}
+	entries, err := os.ReadDir(rejectDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range entries {
+		t.Errorf("a rejected height started a transcode: %s", e.Name())
+	}
+}
+
+// The detail's ladder is the contract clients pick from: tallest first, only
+// what the source can fill, each with its own URL, codec and state.
+func TestVideoDetailCarriesHLSVariants(t *testing.T) {
+	dir := t.TempDir()
+	writeHLSEntry(t, dir, "v1", 720, []byte("segment"))
+	srv := hlsServer(t, dir, "ffmpeg")
+
+	detail := decode[VideoDetail](t, do(t, srv, http.MethodGet, "/api/v1/videos/v1", ""))
+	want := []HLSVariantInfo{
+		{Height: 1080, URL: "/media/hls/v1/1080/index.m3u8", State: string(media.StatePending), Codec: "h264"},
+		{Height: 720, URL: "/media/hls/v1/720/index.m3u8", State: string(media.StateDone), Codec: "h264"},
+		{Height: 480, URL: "/media/hls/v1/480/index.m3u8", State: string(media.StatePending), Codec: "h264"},
+	}
+	if !reflect.DeepEqual(detail.HLSVariants, want) {
+		t.Errorf("hls_variants =\n%+v\nwant\n%+v", detail.HLSVariants, want)
+	}
+	// hls_url stays, pointing at the default height.
+	if detail.HLSURL != "/media/hls/v1/1080/index.m3u8" || detail.HLSState != string(media.StatePending) {
+		t.Errorf("hls_url = %q, hls_state = %q", detail.HLSURL, detail.HLSState)
+	}
+}
+
+// A 4K source offers the tall rungs, and they are HEVC — which is the whole
+// reason `codec` is in the payload: a client that cannot decode it picks 1080
+// or below.
+func TestVideoDetailHLSVariantsForA4KSource(t *testing.T) {
+	fake := ta.NewFake()
+	fake.Videos["v4k"] = &ta.Video{
+		YoutubeID: "v4k", Title: "4K", MediaURL: "/youtube/UC1/v4k.mp4",
+		Streams: []ta.Stream{{Type: "video", Codec: "av01", Height: 2160}, {Type: "audio", Codec: "opus"}},
+	}
+	// A 480p source, to check the ladder stops at what it can fill.
+	fake.Videos["vsmall"] = &ta.Video{
+		YoutubeID: "vsmall", Title: "small", MediaURL: "/youtube/UC1/vsmall.mp4",
+		Streams: []ta.Stream{{Type: "video", Codec: "vp09", Height: 480}, {Type: "audio", Codec: "opus"}},
+	}
+	srv := newTestServer(fake, newEventStore().querier()).Router()
+
+	detail := decode[VideoDetail](t, do(t, srv, http.MethodGet, "/api/v1/videos/v4k", ""))
+	var heights []int
+	codecs := map[int]string{}
+	for _, v := range detail.HLSVariants {
+		heights = append(heights, v.Height)
+		codecs[v.Height] = v.Codec
+	}
+	if !reflect.DeepEqual(heights, []int{2160, 1440, 1080, 720, 480}) {
+		t.Errorf("4K heights = %v", heights)
+	}
+	for height, want := range map[int]string{2160: "hevc", 1440: "hevc", 1080: "h264", 720: "h264", 480: "h264"} {
+		if codecs[height] != want {
+			t.Errorf("%dp codec = %q, want %q", height, codecs[height], want)
+		}
+	}
+	// Even on a 4K source the default rendition is 1080p H.264: nothing starts
+	// a 4K transcode unless a client asks for one.
+	if detail.HLSURL != "/media/hls/v4k/1080/index.m3u8" {
+		t.Errorf("hls_url = %q", detail.HLSURL)
+	}
+
+	small := decode[VideoDetail](t, do(t, srv, http.MethodGet, "/api/v1/videos/vsmall", ""))
+	if len(small.HLSVariants) != 1 || small.HLSVariants[0].Height != 480 {
+		t.Errorf("480p source variants = %+v", small.HLSVariants)
+	}
+	if small.HLSURL != "/media/hls/vsmall/480/index.m3u8" {
+		t.Errorf("hls_url for a 480p source = %q", small.HLSURL)
+	}
+}
+
+// The JSON keys are the contract; a Go struct rename must not quietly move
+// them.
+func TestVideoDetailHLSVariantsJSONShape(t *testing.T) {
+	h, _ := hlsFixture(t, []byte("segment"))
+	body := decode[map[string]any](t, do(t, h, http.MethodGet, "/api/v1/videos/v1", ""))
+	raw, ok := body["hls_variants"].([]any)
+	if !ok || len(raw) != 3 {
+		t.Fatalf("hls_variants = %#v", body["hls_variants"])
+	}
+	first, ok := raw[0].(map[string]any)
+	if !ok {
+		t.Fatalf("hls_variants[0] = %#v", raw[0])
+	}
+	for _, key := range []string{"height", "url", "state", "codec"} {
+		if _, ok := first[key]; !ok {
+			t.Errorf("hls_variants[0] has no %q: %#v", key, first)
+		}
+	}
+	if first["height"] != float64(1080) || first["codec"] != "h264" {
+		t.Errorf("hls_variants[0] = %#v", first)
+	}
+	for _, key := range []string{"hls_url", "hls_state"} {
+		if _, ok := body[key]; !ok {
+			t.Errorf("the detail lost %q", key)
+		}
 	}
 }

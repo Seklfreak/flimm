@@ -230,8 +230,11 @@ func (s *Server) Router() http.Handler {
 		r.Get("/audio/{id}.webm", s.mediaAudio)
 		r.Get("/audio/{id}.m4a", s.mediaAudioAAC)
 		// One route for the playlist and every segment: AVPlayer re-sends the
-		// media credentials on each one, so they must share the auth gate.
-		r.Get("/hls/{id}/{file}", s.mediaHLS)
+		// media credentials on each one, so they must share the auth gate. The
+		// path without a height is the alias older clients use; it serves the
+		// default height's entry rather than an entry of its own.
+		r.Get("/hls/{id}/{file}", s.mediaHLSDefault)
+		r.Get("/hls/{id}/{height}/{file}", s.mediaHLS)
 		r.Get("/subtitles/{id}/{lang}.vtt", s.mediaSubtitles)
 		r.Get("/thumb/video/{id}", s.mediaVideoThumb)
 		r.Get("/thumb/channel/{id}", s.mediaChannelThumb)
