@@ -20,10 +20,24 @@ final class PlayerEngine {
     private(set) var isPiPActive = false
     private(set) var isPiPPossible = false
     private(set) var isMuted = false
-    /// Set when the item itself failed — a bad URL, a 401, an unsupported file.
+    /// True once the current item reports `readyToPlay` — the moment a
+    /// "preparing…" state has something real to hand over to.
+    private(set) var isReady = false
+    /// The position the caller asked to start at, while the item has not been
+    /// able to honour it yet. A growing HLS playlist can only be seeked inside
+    /// what the transcode has produced, so a resume further in than that has
+    /// to wait — and until it lands, *this*, not the clock, is where the
+    /// viewer is meant to be.
+    var unreachedStart: Double? { pendingSeek }
+    /// Set when the item itself failed — a bad URL, a 401, an unsupported
+    /// file, or a compatible rendition the server has not produced yet.
     private(set) var failure: String?
 
     @ObservationIgnored var onEnded: (@MainActor () -> Void)?
+    /// Fired with the same message as ``failure``, so an owner can retry
+    /// rather than surface it — which is what the HLS rendition needs while
+    /// the transcode is still catching up.
+    @ObservationIgnored var onFailed: (@MainActor (String) -> Void)?
     /// Fired roughly five times a second while playing — where sponsor
     /// skipping, subtitle cues and the Now Playing info hang off.
     @ObservationIgnored var onTick: (@MainActor (Double) -> Void)?
@@ -31,12 +45,14 @@ final class PlayerEngine {
     @ObservationIgnored private var timeObserver: Any?
     @ObservationIgnored private var endObserver: (any NSObjectProtocol)?
     @ObservationIgnored private var failObserver: (any NSObjectProtocol)?
+    @ObservationIgnored private var statusObservation: NSKeyValueObservation?
     @ObservationIgnored private var controlObservation: NSKeyValueObservation?
     @ObservationIgnored private var pipObservation: NSKeyValueObservation?
     @ObservationIgnored private var pip: AVPictureInPictureController?
     @ObservationIgnored private let pipObserver = PiPObserver()
     @ObservationIgnored private var pendingSeek: Double?
     @ObservationIgnored private var desiredRate: Double = 1
+    @ObservationIgnored private var trustsItemDuration = true
 
     init() {
         player.automaticallyWaitsToMinimizeStalling = true
@@ -50,17 +66,33 @@ final class PlayerEngine {
     // MARK: - Loading
 
     /// ``APIClient/assetHTTPHeaderFieldsKey`` is how the bearer token reaches
-    /// `/media`, including on every byte-range request seeking makes.
-    func load(url: URL, headers: [String: String], startAt: Double, rate: Double, duration knownDuration: Double) {
+    /// `/media`, including on every byte-range request seeking makes and on
+    /// every segment of an HLS rendition.
+    ///
+    /// `trustsItemDuration` is `false` for the compatible rendition: it is a
+    /// growing `EXT-X-PLAYLIST-TYPE:EVENT` playlist, so the item's duration is
+    /// "how much has been transcoded so far", not the video's length, and
+    /// adopting it would shrink the scrubber to a few seconds.
+    func load(
+        url: URL,
+        headers: [String: String],
+        startAt: Double,
+        rate: Double,
+        duration knownDuration: Double,
+        trustsItemDuration: Bool = true
+    ) {
         failure = nil
+        isReady = false
         desiredRate = rate
         duration = knownDuration
         currentTime = startAt
         pendingSeek = startAt > 0 ? startAt : nil
+        self.trustsItemDuration = trustsItemDuration
 
         let asset = AVURLAsset(url: url, options: [APIClient.assetHTTPHeaderFieldsKey: headers])
         let item = AVPlayerItem(asset: asset)
         removeItemObservers()
+        observeStatus(of: item)
         observeFailure(of: item)
         observeEnd(of: item)
         player.replaceCurrentItem(with: item)
@@ -72,6 +104,7 @@ final class PlayerEngine {
         player.pause()
         player.replaceCurrentItem(with: nil)
         isPlaying = false
+        isReady = false
     }
 
     // MARK: - Transport
@@ -108,6 +141,8 @@ final class PlayerEngine {
             pendingSeek = target
             return
         }
+        // An explicit seek replaces a resume that has not landed yet.
+        pendingSeek = nil
         player.seek(to: CMTime(seconds: target, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
     }
 
@@ -169,17 +204,40 @@ final class PlayerEngine {
         guard seconds.isFinite else { return }
         if let item = player.currentItem, item.status == .readyToPlay {
             if let pending = pendingSeek {
-                pendingSeek = nil
-                player.seek(to: CMTime(seconds: pending, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
-                return
+                // Seeking outside what the item has is clamped, not honoured,
+                // so on a growing HLS playlist the resume is re-tried each
+                // tick until the transcode has produced that far.
+                if PlayerEngine.canSeek(to: pending, in: item) {
+                    pendingSeek = nil
+                    player.seek(to: CMTime(seconds: pending, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
+                    return
+                }
+                // Playing on has reached it by itself; nothing left to honour.
+                if seconds >= pending { pendingSeek = nil }
             }
             // The archived duration is authoritative, but a live-ish item can
-            // report a better one.
+            // report a better one — except a growing HLS playlist, which
+            // reports only what has been transcoded so far.
             let itemDuration = item.duration.seconds
-            if itemDuration.isFinite, itemDuration > 0 { duration = itemDuration }
+            if trustsItemDuration, itemDuration.isFinite, itemDuration > 0 { duration = itemDuration }
+        } else if pendingSeek != nil {
+            // The item has not reported ready, so its clock says 0 rather than
+            // anything true. Letting that through would overwrite the position
+            // playback is about to start from — which is how a resume is lost
+            // when the item fails and is reopened.
+            return
         }
         currentTime = seconds
         onTick?(seconds)
+    }
+
+    /// Whether the item can actually be seeked to `target` right now. An empty
+    /// `seekableTimeRanges` means the item has not said — a progressive file
+    /// before its first range is published — so the seek is tried anyway.
+    private static func canSeek(to target: Double, in item: AVPlayerItem) -> Bool {
+        let ranges = item.seekableTimeRanges.map(\.timeRangeValue).filter { $0.duration.seconds.isFinite }
+        guard !ranges.isEmpty else { return true }
+        return ranges.contains { target >= $0.start.seconds - 0.5 && target <= $0.end.seconds + 0.5 }
     }
 
     private func observeControlStatus() {
@@ -188,6 +246,30 @@ final class PlayerEngine {
             Task { @MainActor in
                 self?.isBuffering = status == .waitingToPlayAtSpecifiedRate
                 if status == .playing { self?.isPlaying = true }
+            }
+        }
+    }
+
+    /// `readyToPlay` is what ends a "preparing…" state, and `.failed` is the
+    /// only signal a playlist the server has not finished yet produces — it
+    /// never reaches `failedToPlayToEndTime`, because it never started.
+    private func observeStatus(of item: AVPlayerItem) {
+        statusObservation = item.observe(\.status, options: [.initial, .new]) { [weak self] item, _ in
+            let status = item.status
+            let message = (item.error as NSError?)?.localizedDescription ?? "Playback failed."
+            Task { @MainActor in
+                guard let self else { return }
+                switch status {
+                case .readyToPlay:
+                    self.isReady = true
+                case .failed:
+                    self.isReady = false
+                    self.failure = message
+                    self.isPlaying = false
+                    self.onFailed?(message)
+                default:
+                    self.isReady = false
+                }
             }
         }
     }
@@ -216,6 +298,7 @@ final class PlayerEngine {
             MainActor.assumeIsolated {
                 self?.failure = message
                 self?.isPlaying = false
+                self?.onFailed?(message)
             }
         }
     }
@@ -225,5 +308,7 @@ final class PlayerEngine {
         if let failObserver { NotificationCenter.default.removeObserver(failObserver) }
         endObserver = nil
         failObserver = nil
+        statusObservation?.invalidate()
+        statusObservation = nil
     }
 }

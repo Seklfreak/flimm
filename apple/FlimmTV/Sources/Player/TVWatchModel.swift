@@ -26,7 +26,18 @@ final class TVWatchModel {
     private(set) var cues: [SubtitleCue] = []
     private(set) var activeCue: String?
     private(set) var loadError: String?
+    /// Set only when the video has nowhere to go: a codec this device cannot
+    /// decode on a server that predates `hls_url`. ``CodecGate`` decides.
     private(set) var codecIssue: CodecGate.Issue?
+    /// True while the compatible H.264/AAC rendition is playing instead of the
+    /// archived file.
+    private(set) var usingCompatibleRendition = false
+    /// The server-reported state of that rendition, refreshed on every attempt.
+    private(set) var compatibleState: HLSState?
+    /// Set when the rendition never became playable inside the retry window.
+    private(set) var compatibleGaveUp = false
+    /// True once the current item reports `readyToPlay`.
+    private(set) var isReady = false
     /// Audio-only was asked for but the server has no `audio_aac_url` for this
     /// video — an older backend. `audio_url` (Opus in WebM) is never tried;
     /// AVFoundation cannot decode it.
@@ -51,12 +62,38 @@ final class TVWatchModel {
     @ObservationIgnored private var endObserver: (any NSObjectProtocol)?
     @ObservationIgnored private var lastNowPlayingUpdate: Double = -10
     @ObservationIgnored private var pendingSeek: Double?
+    @ObservationIgnored private var statusObservation: NSKeyValueObservation?
+    /// When the current run of attempts at the compatible rendition began. It
+    /// rolls forward while the rendition actually plays, so a mid-playback
+    /// stumble gets its own window rather than inheriting a spent one.
+    @ObservationIgnored private var compatibleSince: Date?
+    @ObservationIgnored private var compatibleRetry: Task<Void, Never>?
+
+    /// How long to keep retrying a rendition the server has not produced yet.
+    /// The playlist gives up waiting after 45 s and answers `503` with
+    /// `Retry-After: 5`, so this is several of those in a row.
+    private static let compatibleRetryWindow: TimeInterval = 120
+    private static let compatibleRetryDelay: Duration = .seconds(5)
 
     var prefs: Prefs { app.prefs }
     var hasContext: Bool { context.source != nil }
     var canGoNext: Bool { nav?.next != nil || !upNext.isEmpty }
     var canGoPrevious: Bool { nav?.previous != nil }
     var currentTime: Double { player.currentTime().seconds.isFinite ? player.currentTime().seconds : 0 }
+    /// What the heartbeat reports.
+    ///
+    /// While a resume has not landed — the compatible rendition's playlist has
+    /// not grown that far yet — the player is temporarily earlier in the video
+    /// than the viewer is. Reporting the clock there would overwrite a good
+    /// server-held position with a worse one, so the position being sought is
+    /// what goes back: the same value the server already holds, which the
+    /// reporter then stops repeating.
+    var reportedPosition: Double { pendingSeek ?? currentTime }
+    /// "Preparing a compatible version…": the rendition is what will play, the
+    /// player has nothing yet, and the server has not said it is on disk.
+    var isPreparingCompatible: Bool {
+        usingCompatibleRendition && !isReady && compatibleState != .done && !compatibleGaveUp
+    }
 
     init(request: TVPlayRequest, app: AppModel) {
         self.app = app
@@ -78,11 +115,13 @@ final class TVWatchModel {
         resumedFrom = nil
         activeCue = nil
         interstitials = []
+        compatibleSince = nil
+        compatibleGaveUp = false
+        compatibleState = nil
         do {
             let detail = try await client.video(videoId)
             video = detail
             isWatched = detail.watched
-            codecIssue = CodecGate.issue(for: detail, audioOnly: audioOnly)
             await startPlayback(detail)
             isLoading = false
             await loadSidecars(detail)
@@ -92,20 +131,47 @@ final class TVWatchModel {
         }
     }
 
+    /// Picks the stream and opens it.
+    ///
+    /// Three paths, in the order they cost the server: the archived file when
+    /// this device can decode it, the derived AAC audio when audio-only was
+    /// asked for, and the compatible H.264/AAC rendition when neither — a real
+    /// transcode, which is why ``CodecGate`` is the only thing allowed to
+    /// choose it. `AVPlayerViewController` plays HLS natively, so nothing else
+    /// about the screen changes.
     private func startPlayback(_ detail: Video) async {
-        guard codecIssue == nil else { return }
+        compatibleRetry?.cancel()
+        compatibleRetry = nil
         audioUnavailable = false
-        let path: String?
+        codecIssue = nil
+        usingCompatibleRendition = false
+        isReady = false
+
+        let path: String
         if audioOnly {
-            path = detail.nativeAudioURL
-            if path == nil {
+            guard let nativeAudioURL = detail.nativeAudioURL else {
                 audioUnavailable = true
                 return
             }
+            path = nativeAudioURL
         } else {
-            path = detail.mediaUrl
+            switch CodecGate.decision(for: detail) {
+            case .native:
+                path = detail.mediaUrl
+            case .hls(let compatible):
+                path = compatible
+                usingCompatibleRendition = true
+                compatibleSince = compatibleSince ?? Date()
+                // Start the job before AVFoundation opens the playlist, so the
+                // transcode's head start is the server's rather than ours. The
+                // call is idempotent and reports where the rendition stands.
+                compatibleState = (try? await client.startHLS(videoId)) ?? detail.hlsState
+            case .audioOnly(let issue), .unplayable(let issue):
+                codecIssue = issue
+                return
+            }
         }
-        guard let path, !path.isEmpty, let url = client.mediaURL(path) else {
+        guard !path.isEmpty, let url = client.mediaURL(path) else {
             loadError = "This video has no playable media URL."
             return
         }
@@ -119,14 +185,41 @@ final class TVWatchModel {
         TVNowPlaying.configureAudioSession()
         // `assetHTTPHeaderFieldsKey` is how the bearer token reaches /media,
         // including on the byte-range requests seeking makes.
+        // AVFoundation re-sends these on every request the asset makes,
+        // byte-range and HLS segment alike.
         let asset = AVURLAsset(url: url, options: [APIClient.assetHTTPHeaderFieldsKey: headers])
         let item = AVPlayerItem(asset: asset)
+        observeStatus(of: item)
         observeEnd(of: item)
         player.replaceCurrentItem(with: item)
         pendingSeek = resume > 0 ? resume : nil
         player.playImmediately(atRate: Float(prefs.playbackSpeed))
         itemGeneration += 1
         await beginReporting()
+    }
+
+    /// A rendition the transcode has not reached yet fails the item outright:
+    /// the playlist answers `503` with `Retry-After: 5` until the first
+    /// segment exists, and `AVPlayer` has no notion of "come back later". That
+    /// is still preparing, not an error, so it is retried on the server's own
+    /// cadence until the window runs out.
+    private func handleItemFailure() {
+        guard usingCompatibleRendition, !compatibleGaveUp, let detail = video else { return }
+        guard let since = compatibleSince, Date().timeIntervalSince(since) < Self.compatibleRetryWindow else {
+            compatibleGaveUp = true
+            loadError = "Couldn't prepare a compatible version of this video."
+            return
+        }
+        compatibleRetry?.cancel()
+        compatibleRetry = Task { [weak self] in
+            try? await Task.sleep(for: Self.compatibleRetryDelay)
+            guard !Task.isCancelled, let self else { return }
+            // Pick up where the failed attempt was pointed, not at the
+            // server-held position, which a seek may have moved past. A failed
+            // item's clock reads 0, so the seek it never got to is the truth.
+            self.startAtOverride = self.pendingSeek ?? self.currentTime
+            await self.startPlayback(detail)
+        }
     }
 
     private func loadSidecars(_ detail: Video) async {
@@ -175,6 +268,8 @@ final class TVWatchModel {
 
     func seek(to seconds: Double) {
         let target = max(0, seconds)
+        // An explicit seek replaces a resume that has not landed yet.
+        pendingSeek = nil
         player.seek(to: CMTime(seconds: target, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
         resumedFrom = nil
         Task { await reporter.flush() }
@@ -219,7 +314,8 @@ final class TVWatchModel {
         context = PlaybackContext(source: context.source, shuffleSeed: context.shuffleSeed, audioOnly: audioOnly)
         guard let video else { return }
         startAtOverride = currentTime
-        codecIssue = CodecGate.issue(for: video, audioOnly: audioOnly)
+        compatibleSince = nil
+        compatibleGaveUp = false
         await startPlayback(video)
     }
 
@@ -266,11 +362,15 @@ final class TVWatchModel {
     // MARK: - Lifecycle
 
     func tearDown() async {
+        compatibleRetry?.cancel()
+        compatibleRetry = nil
         await reporter.stop()
         if let timeObserver { player.removeTimeObserver(timeObserver) }
         timeObserver = nil
         if let endObserver { NotificationCenter.default.removeObserver(endObserver) }
         endObserver = nil
+        statusObservation?.invalidate()
+        statusObservation = nil
         player.pause()
         player.replaceCurrentItem(with: nil)
         TVNowPlaying.clear()
@@ -286,13 +386,22 @@ final class TVWatchModel {
         }
         await reporter.start(videoId: videoId, context: context) { [weak self] in
             guard let model = self else { return 0 }
-            return await model.currentTime
+            return await model.reportedPosition
         }
     }
 
     private func applyProgress(_ result: ProgressResult) {
         guard result.watched, !isWatched else { return }
         isWatched = true
+    }
+
+    /// Whether the item can actually be seeked to `target` right now. An empty
+    /// `seekableTimeRanges` means the item has not said — a progressive file
+    /// before its first range is published — so the seek is tried anyway.
+    private static func canSeek(to target: Double, in item: AVPlayerItem) -> Bool {
+        let ranges = item.seekableTimeRanges.map(\.timeRangeValue).filter { $0.duration.seconds.isFinite }
+        guard !ranges.isEmpty else { return true }
+        return ranges.contains { target >= $0.start.seconds - 0.5 && target <= $0.end.seconds + 0.5 }
     }
 
     private func observeTime() {
@@ -304,18 +413,51 @@ final class TVWatchModel {
 
     private func tick(_ seconds: Double) {
         guard seconds.isFinite else { return }
+        // The retry window measures "how long without playback", so it rolls
+        // forward while the rendition is actually playing.
+        if usingCompatibleRendition, isReady { compatibleSince = Date() }
         // A seek issued before the item was ready is silently dropped, so the
-        // resume position is re-applied once it reports `readyToPlay`.
-        if let pending = pendingSeek, player.currentItem?.status == .readyToPlay {
-            pendingSeek = nil
-            player.seek(to: CMTime(seconds: pending, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
-            return
+        // resume position is re-applied once it reports `readyToPlay` — and,
+        // on a growing HLS playlist, re-tried until the transcode has produced
+        // that far, since seeking past what exists is clamped, not honoured.
+        if let pending = pendingSeek, let item = player.currentItem, item.status == .readyToPlay {
+            if TVWatchModel.canSeek(to: pending, in: item) {
+                pendingSeek = nil
+                player.seek(to: CMTime(seconds: pending, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
+                return
+            }
+            // Playing on has reached it by itself; nothing left to honour.
+            if seconds >= pending { pendingSeek = nil }
         }
         activeCue = WebVTT.cue(at: seconds, in: cues)?.text
         if prefs.skipSponsors, let segment = SponsorRules.segmentToSkip(at: seconds, in: video?.sponsorblock ?? []) {
             player.seek(to: CMTime(seconds: segment.end, preferredTimescale: 600))
         }
         pushNowPlaying(force: false)
+    }
+
+    /// `readyToPlay` is what ends a "preparing…" state, and `.failed` is the
+    /// only signal a playlist the server has not finished yet produces — such
+    /// an item never reaches `failedToPlayToEndTime`, because it never
+    /// started. (A `503` surfaces as `NSURLErrorDomain -1008` wrapping
+    /// `CoreMediaErrorDomain -16849`.)
+    private func observeStatus(of item: AVPlayerItem) {
+        statusObservation?.invalidate()
+        statusObservation = item.observe(\.status, options: [.initial, .new]) { [weak self] item, _ in
+            let status = item.status
+            Task { @MainActor in
+                guard let self else { return }
+                switch status {
+                case .readyToPlay:
+                    self.isReady = true
+                case .failed:
+                    self.isReady = false
+                    self.handleItemFailure()
+                default:
+                    self.isReady = false
+                }
+            }
+        }
     }
 
     private func observeEnd(of item: AVPlayerItem) {

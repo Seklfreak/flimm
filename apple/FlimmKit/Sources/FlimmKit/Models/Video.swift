@@ -173,6 +173,32 @@ public struct MediaStream: Codable, Sendable, Hashable {
     }
 }
 
+/// Where the compatible H.264/AAC rendition (`hls_url`) stands, from
+/// `hls_state` on the video detail.
+///
+/// `unknown` is not a server state: it is what an unrecognised one decodes to,
+/// so a value added to the contract later cannot fail the whole video detail.
+public enum HLSState: String, Codable, Sendable, CaseIterable {
+    /// Nobody has asked for it; the first request starts a transcode.
+    case pending
+    /// Being transcoded, or queued behind another transcode.
+    case running
+    /// On disk; playback starts immediately.
+    case done
+    /// The last attempt failed; the next request tries again.
+    case failed
+    case unknown
+
+    public init(from decoder: any Decoder) throws {
+        let raw = try decoder.singleValueContainer().decode(String.self)
+        self = HLSState(rawValue: raw) ?? .unknown
+    }
+
+    /// True while the rendition is being made — the states a player shows
+    /// "preparing a compatible version…" for.
+    public var isPreparing: Bool { self == .pending || self == .running }
+}
+
 public struct VideoStats: Codable, Sendable, Hashable {
     public let views: Int
     public let likes: Int
@@ -234,6 +260,14 @@ public struct Video: Codable, Sendable, Hashable, Identifiable {
     /// release, so a client built against it must not break on a server
     /// without it. Prefer ``nativeAudioURL`` over reading this directly.
     public let audioAacURL: String?
+    /// The compatible H.264/AAC rendition, delivered as HLS — what to play
+    /// when ``streams`` says this device cannot decode the archived file.
+    /// Always present on a server that has it, whether or not the rendition
+    /// exists yet; optional here because the field arrives with a later
+    /// backend release. Prefer ``compatibleVideoURL``.
+    public let hlsURL: String?
+    /// Where that rendition stands. `nil` on a backend without `hls_url`.
+    public let hlsState: HLSState?
     public let youtubeUrl: String
     /// Source renditions. Optional: the field arrives with a later backend
     /// release, so a client built against it must not break on a server
@@ -255,6 +289,15 @@ public struct Video: Codable, Sendable, Hashable, Identifiable {
     public var nativeAudioURL: String? {
         guard let audioAacURL, !audioAacURL.isEmpty else { return nil }
         return audioAacURL
+    }
+
+    /// The compatible rendition to play instead of ``mediaUrl`` when the
+    /// device has no decoder for what was archived. `nil` means the server
+    /// predates `hls_url` — the only case where an unplayable video is still
+    /// a dead end.
+    public var compatibleVideoURL: String? {
+        guard let hlsURL, !hlsURL.isEmpty else { return nil }
+        return hlsURL
     }
 
     /// The stub form, for the places that take a list item.
@@ -281,12 +324,14 @@ public struct Video: Codable, Sendable, Hashable, Identifiable {
     /// lowercase `rl`, not the `URL` acronym form used everywhere else in
     /// this file), so the property needs an explicit raw value or the key
     /// silently fails to match and `audioAacURL` decodes as `nil` on every
-    /// server, gated or not.
+    /// server, gated or not. `hls_url` → `hlsUrl` is the same trap.
     private enum CodingKeys: String, CodingKey {
         case id, title, channel, thumbUrl, duration, published, downloaded, type
         case subtitleLangs, hasAutoSubtitles, watched, position, progress, lastPlayedAt
         case description, height, mediaUrl, audioUrl
         case audioAacURL = "audioAacUrl"
+        case hlsURL = "hlsUrl"
+        case hlsState
         case youtubeUrl, streams, subtitles, sponsorblock, stats, tags, playlists
     }
 
@@ -311,6 +356,8 @@ public struct Video: Codable, Sendable, Hashable, Identifiable {
         mediaUrl = try c.decode(.mediaUrl, or: "")
         audioUrl = try c.decode(.audioUrl, or: "")
         audioAacURL = try c.decodeIfPresent(String.self, forKey: .audioAacURL)
+        hlsURL = try c.decodeIfPresent(String.self, forKey: .hlsURL)
+        hlsState = try c.decodeIfPresent(HLSState.self, forKey: .hlsState)
         youtubeUrl = try c.decode(.youtubeUrl, or: "")
         streams = try c.decodeIfPresent([MediaStream].self, forKey: .streams)
         subtitles = try c.decode(.subtitles, or: [])
@@ -329,6 +376,17 @@ public struct ProgressResult: Codable, Sendable, Hashable {
     public init(position: Double, watched: Bool) {
         self.position = position
         self.watched = watched
+    }
+}
+
+/// `POST /videos/{id}/hls` response — where the compatible rendition stands
+/// after the call. The call is idempotent: a running or finished rendition is
+/// not started again.
+public struct HLSStatus: Codable, Sendable, Hashable {
+    public let state: HLSState
+
+    public init(state: HLSState) {
+        self.state = state
     }
 }
 

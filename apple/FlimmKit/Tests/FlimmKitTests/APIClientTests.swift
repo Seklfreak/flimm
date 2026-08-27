@@ -106,6 +106,22 @@ final class APIClientTests: XCTestCase {
         XCTAssertEqual(object["position"] as? Int, 561)
     }
 
+    /// The prefetch/"is it ready yet?" call. It must not wait on the server,
+    /// so all the client does is post and read the state back.
+    func testStartHLSPostsAndReturnsTheState() async throws {
+        let session = StubURLProtocol.session(json: Fixtures.hlsStatus)
+        let client = APIClient(baseURL: baseURL, tokens: StaticTokenProvider("tok"), session: session)
+
+        let state = try await client.startHLS("yt-id")
+
+        XCTAssertEqual(state, .running)
+        let request = try XCTUnwrap(StubURLProtocol.recorded.last)
+        XCTAssertEqual(request.method, "POST")
+        XCTAssertEqual(request.path, "/api/v1/videos/yt-id/hls")
+        XCTAssertNil(request.query)
+        XCTAssertEqual(request.header("Authorization"), "Bearer tok")
+    }
+
     func testFlagQueriesAreOmittedWhenFalse() async throws {
         let session = StubURLProtocol.session(json: Fixtures.searchResults)
         let client = APIClient(baseURL: baseURL, session: session)

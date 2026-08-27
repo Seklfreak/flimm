@@ -85,6 +85,8 @@ enum Fixtures {
       "media_url": "/media/video/yt-id.mp4",
       "audio_url": "/media/audio/yt-id.webm",
       "audio_aac_url": "/media/audio/yt-id.m4a",
+      "hls_url": "/media/hls/yt-id/index.m3u8",
+      "hls_state": "pending",
       "youtube_url": "https://www.youtube.com/watch?v=yt-id",
       "streams": [ { "type": "video", "codec": "avc1", "width": 1920, "height": 1080, "bitrate": 4500000 },
                    { "type": "audio", "codec": "mp4a", "width": 0, "height": 0, "bitrate": 130000 } ],
@@ -112,6 +114,20 @@ enum Fixtures {
             .filter { !$0.contains("\"audio_aac_url\"") }
         return lines.joined(separator: "\n")
     }()
+
+    /// The same detail from a backend that predates the compatible rendition.
+    /// A video this device cannot decode is a dead end only here.
+    static let videoDetailWithoutHLS: String = {
+        let lines = videoDetail
+            .split(separator: "\n", omittingEmptySubsequences: false)
+            .filter { !$0.contains("\"hls_url\"") && !$0.contains("\"hls_state\"") }
+        return lines.joined(separator: "\n")
+    }()
+
+    /// `POST /videos/{id}/hls`.
+    static let hlsStatus = """
+    { "state": "running" }
+    """
 
     static let feed = """
     {

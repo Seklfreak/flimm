@@ -3,12 +3,14 @@ import SwiftUI
 
 /// What is drawn over the video, in `contentOverlayView`.
 ///
-/// Two things live here. **Subtitles**: Flimm's tracks are WebVTT sidecars
+/// Three things live here. **Subtitles**: Flimm's tracks are WebVTT sidecars
 /// fetched with a bearer header, which `AVPlayerItem` has no way to attach, so
 /// the cues are rendered rather than handed to the legible-media system — the
 /// same choice the phone app makes, for the same reason. **Audio-only
 /// artwork**: a music playlist has no video track, and a black rectangle is not
-/// a player.
+/// a player. **The compatible-rendition wait**: when this device cannot decode
+/// what was archived the server transcodes on demand, and the first segment
+/// takes a few seconds — said out loud rather than left as a black screen.
 ///
 /// It is deliberately inert: `allowsHitTesting(false)` keeps every remote press
 /// going to the transport bar underneath.
@@ -18,6 +20,7 @@ struct TVPlayerOverlay: View {
     var body: some View {
         ZStack {
             if model.audioOnly { artwork }
+            if model.isPreparingCompatible { preparing }
             if let cue = model.activeCue, !cue.isEmpty {
                 VStack {
                     Spacer()
@@ -35,6 +38,26 @@ struct TVPlayerOverlay: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .allowsHitTesting(false)
+    }
+
+    private var preparing: some View {
+        ZStack {
+            Color.black.opacity(0.8)
+            VStack(spacing: 24) {
+                ProgressView()
+                    .scaleEffect(1.6)
+                Text("Preparing a compatible version…")
+                    .font(.title2.bold())
+                Text("""
+                This Apple TV can't decode the archived file, so the server is converting it. \
+                Playback starts as soon as the first part is ready.
+                """)
+                    .font(.title3)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: 900)
+            }
+        }
     }
 
     private var artwork: some View {

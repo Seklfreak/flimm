@@ -42,6 +42,8 @@ struct TVPlayerInfoPanel: View {
             parts.append("\(nav.index + 1) of \(Fmt.count(nav.total))")
         }
         if model.isWatched { parts.append("seen") }
+        // Worth saying: this is not the archived file, and it is capped.
+        if model.usingCompatibleRendition { parts.append("compatible version · up to 1080p") }
         return parts.joined(separator: " · ")
     }
 
