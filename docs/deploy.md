@@ -163,9 +163,9 @@ renditions of one video over an evening.
   | height | codec | disk per hour |
   |---|---|---|
   | 2160 | HEVC | ~1.5–2 GB |
-  | 1440 | HEVC | ~3–4 GB |
+  | 1440 | HEVC | ~1–1.5 GB |
   | 1080 | H.264 | ~1.5 GB |
-  | 720 | H.264 | ~1–1.5 GB |
+  | 720 | H.264 | ~0.8 GB |
   | 480 | H.264 | ~0.5–0.8 GB |
 
   So the 5 GiB default `MEDIA_CACHE_MAX_BYTES` holds a couple of 1080p hours,
