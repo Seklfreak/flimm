@@ -32,9 +32,7 @@ permissions:
 
 jobs:
   release:
-    # Self-hosted runner in the homelab cluster. Only private repos may use
-    # this — see docs/self-hosted-runners.md in the homelab repo.
-    runs-on: homelab
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
         with:
