@@ -49,6 +49,17 @@ struct WatchView: View {
         .navigationTitle(player.model?.video?.title ?? "")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(isFullScreen ? .hidden : .automatic, for: .navigationBar)
+        .toolbar {
+            // The phone presents this screen modally, which has no Back
+            // button; the overlay's own chevron hides itself and is absent
+            // entirely on the codec-gate and failure views.
+            if horizontalSizeClass == .compact {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Close", systemImage: "xmark") { player.dismiss() }
+                        .accessibilityLabel("Close player")
+                }
+            }
+        }
         // Hardware keyboard, matching the web client's map. The focus has to be
         // somewhere for key presses to arrive, and it belongs here rather than
         // in a text field — typing in one takes focus back, which is exactly
@@ -135,6 +146,19 @@ struct WatchView: View {
                 artwork(model)
             } else {
                 PlayerSurface(engine: model.engine)
+            }
+            if (model.codecIssue != nil || model.audioUnavailable) && isFullScreen {
+                // No overlay controls on these views, and full screen hides
+                // the toolbar — so this is the only way out in landscape.
+                Button(action: close) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .padding(10)
+                }
+                .accessibilityLabel("Close player")
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .padding(8)
             }
             if model.codecIssue == nil && !model.audioUnavailable {
                 SubtitleOverlay(text: model.activeCue, size: model.prefs.subtitleSize)
