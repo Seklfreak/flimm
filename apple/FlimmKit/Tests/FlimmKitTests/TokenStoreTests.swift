@@ -102,3 +102,54 @@ actor Counter {
     private(set) var value = 0
     func increment() { value += 1 }
 }
+
+extension TokenStoreTests {
+    /// The bug that logged users out every morning: a session restored from
+    /// the Keychain had tokens but no OIDC client, so the first refresh after
+    /// a relaunch silently returned nil and the 401 became "Signed out".
+    func testRestoredSessionRefreshesThroughTheLazyProvider() async throws {
+        let session = StubURLProtocol.session { _, _ in
+            (200, Data(#"{"access_token":"at-2","refresh_token":"rt-2","token_type":"Bearer","expires_in":600}"#.utf8))
+        }
+        let secrets = InMemorySecretStore()
+        let signedIn = TokenStore(store: secrets)
+        try await signedIn.adopt(tokens(expiresIn: 5))
+
+        // A fresh process: load from the store, no client handed over.
+        let restored = TokenStore(store: secrets)
+        _ = await restored.load()
+        let built = SendableCounter()
+        await restored.configure(clientProvider: { [client = self.client(session: session)] in
+            await built.increment()
+            return client
+        })
+
+        let first = try await restored.accessToken()
+        XCTAssertEqual(first, "at-2")
+        _ = try await restored.refreshAccessToken()
+        let count = await built.value
+        XCTAssertEqual(count, 1, "the provider builds the client once and caches it")
+        let rotated = await restored.current?.refreshToken
+        XCTAssertEqual(rotated, "rt-2", "the rotated token was adopted")
+    }
+
+    /// Discovery failing (VPN down) must read as transient, not as a sign-out.
+    func testProviderFailureIsTransient() async throws {
+        let store = TokenStore(store: InMemorySecretStore())
+        try await store.adopt(tokens(expiresIn: 5))
+        await store.configure(clientProvider: { throw ServerProbeError.unreachable("vpn down") })
+        do {
+            _ = try await store.accessToken()
+            XCTFail("expected the provider's error")
+        } catch let error as ServerProbeError {
+            XCTAssertEqual(error, .unreachable("vpn down"))
+        }
+        let remaining = await store.current
+        XCTAssertNotNil(remaining, "tokens survive a failed refresh")
+    }
+}
+
+private actor SendableCounter {
+    private(set) var value = 0
+    func increment() { value += 1 }
+}
