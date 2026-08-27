@@ -6,6 +6,8 @@ import SwiftUI
 struct SettingsView: View {
     @Environment(AppModel.self) private var app
     @Environment(AuthSession.self) private var session
+    /// Quality is per device, so it comes from here rather than from ``Prefs``.
+    @Environment(PlaybackSettings.self) private var playback
 
     @State private var confirmSignOut = false
     @State private var confirmChangeServer = false
@@ -16,6 +18,7 @@ struct SettingsView: View {
         Form {
             serverSection
             playbackSection
+            qualitySection
             subtitleSection
             everythingSection
             appearanceSection
@@ -71,6 +74,29 @@ struct SettingsView: View {
             Sponsor, self-promotion and interaction-reminder segments are \
             skipped automatically; other SponsorBlock categories are only \
             tinted on the scrubber.
+            """)
+        }
+    }
+
+    /// The one playback setting that does not follow the account: quality is
+    /// about this screen and this network.
+    private var qualitySection: some View {
+        Section {
+            Picker("Video quality", selection: qualityBinding) {
+                ForEach(VideoQuality.options) { option in
+                    Text(VideoQuality.label(option)).tag(option)
+                }
+            }
+        } header: {
+            Text("Video quality")
+        } footer: {
+            Text("""
+            Auto plays the archived file whenever this device can decode it — \
+            full quality, and nothing for the server to convert — and otherwise \
+            the tallest rendition this screen can show. A fixed height always \
+            plays a converted rendition, even when the archive would have \
+            played, and falls to the nearest lower one a video offers. This \
+            setting stays on this device.
             """)
         }
     }
@@ -141,7 +167,14 @@ struct SettingsView: View {
         }
     }
 
-    // MARK: - Binding helper
+    // MARK: - Binding helpers
+
+    private var qualityBinding: Binding<QualityPreference> {
+        Binding(
+            get: { playback.videoQuality },
+            set: { playback.videoQuality = $0 }
+        )
+    }
 
     /// Reads a pref locally and writes it through `PATCH /me/prefs`.
     private func bind<Value>(

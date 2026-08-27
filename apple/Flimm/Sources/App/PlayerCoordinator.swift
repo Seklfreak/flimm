@@ -33,10 +33,15 @@ final class PlayerCoordinator {
     var isFullScreen = false
 
     @ObservationIgnored private weak var app: AppModel?
+    /// The device's own playback settings — quality. One instance is shared
+    /// with the settings screen, so a change made there is the one the next
+    /// video reads.
+    @ObservationIgnored private var playback = PlaybackSettings()
 
     /// Called when the signed-in `AppModel` appears or is replaced.
-    func configure(app: AppModel?) {
+    func configure(app: AppModel?, playback: PlaybackSettings) {
         self.app = app
+        self.playback = playback
         if app == nil { dismiss() }
     }
 
@@ -45,7 +50,7 @@ final class PlayerCoordinator {
         let next = PlayRequest(videoId: videoId, context: context, startAt: startAt)
         let leaving = model
         Task { await leaving?.tearDown() }
-        let created = WatchModel(request: next, app: app)
+        let created = WatchModel(request: next, app: app, playback: playback)
         model = created
         request = next
         isFullScreen = false

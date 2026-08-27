@@ -37,8 +37,10 @@ What is there:
   `AVURLAsset`), **auth** (`ServerProbe`, `OIDCClient` with PKCE,
   Keychain-backed `TokenStore`, `AuthSession`), and **playback**
   (`PlaybackContext`, `ProgressReporter`, `WebVTT` cue parsing,
-  `ChapterMath`, `SponsorRules`, `CodecGate`). Tested against fixtures cut
-  from api.md. Sign-in is a strategy: `Authenticating` has a
+  `ChapterMath`, `SponsorRules`, `CodecGate` with the quality rule,
+  `QualityPreference`/`PlaybackSettings` for the per-device quality choice and
+  `DeviceCapabilities` for what this screen and this chip can actually do).
+  Tested against fixtures cut from api.md. Sign-in is a strategy: `Authenticating` has a
   `BrowserAuthenticator` (Authorization Code + PKCE through
   `ASWebAuthenticationSession`) and a `DeviceCodeAuthenticator` (RFC 8628),
   and `AuthSession` holds one without knowing which.
@@ -48,8 +50,8 @@ What is there:
     state for an invalid address, an unreachable server, a server that is not
     Flimm and a Flimm server with no OIDC provider; then sign-in, which names
     the exact redirect URI verbatim when the provider rejects it. Settings
-    covers the account, every field of `Prefs`, feed management, the app
-    version, sign out and "change server".
+    covers the account, every field of `Prefs`, the per-device video quality,
+    feed management, the app version, sign out and "change server".
   - **Tabs** — Feeds · Channels · Playlists · History with `.searchable` in
     the header. The pinned feed is the launch screen. Video cards carry the
     resume pill, seen check, duration and progress bar; lists page on the last
@@ -124,8 +126,8 @@ What is there:
     `skip_sponsors` preference), previous/next are mapped onto the remote's
     skip gestures via `skippingBehavior = .skipItem`, autoplay follows
     `up-next`, and shuffle is a new seed starting at `nav.first`. Resume is
-    the default; "Start over" and the playback preferences live in a custom
-    Info-panel tab. Subtitles are rendered from the WebVTT cues in
+    the default; "Start over", the quality picker and the playback preferences
+    live in a custom Info-panel tab. Subtitles are rendered from the WebVTT cues in
     `contentOverlayView` — the tracks are authenticated sidecars an
     `AVPlayerItem` cannot fetch itself. Audio-only plays `audio_aac_url` with
     artwork in the overlay and `MPNowPlayingInfoCenter`.
@@ -326,43 +328,80 @@ offers, tallest first, each with its own `url`, `state` and `codec`: `h264` at
 1080 and below, `hevc` at 1440 and 2160. Both decode in hardware on every
 device these apps target — HEVC since the iPhone 7 and the first Apple TV 4K —
 so `AVPlayer` takes either as it stands; the HEVC tracks are `hvc1`-tagged,
-which is the part AVFoundation is strict about. What the apps have to add:
+which is the part AVFoundation is strict about. **Both apps ship a picker over
+that ladder**, and this is how it behaves:
 
-- **A picker, defaulting to a per-device setting.** "Preferred quality" belongs
-  in the app's own settings (not a server preference — it is a property of the
-  device and its network, and an Apple TV on ethernet wants a different answer
-  from a phone on cellular). Resolve it against `hls_variants` at play time and
-  fall to the nearest lower height when the preferred one is not offered;
-  `hls_url` is the sensible default before the user has chosen anything.
-- **Start the one you will play.** `POST /videos/{id}/hls?height=<h>` before
-  handing the URL to `AVPlayer`, exactly as the single-rendition flow does. The
-  server runs one transcode at a time, so prefetching three heights of the same
-  video only makes the first one later — never warm the whole ladder.
+- **The choice is per device, not per account.** `QualityPreference` (`.auto`
+  or `.height(Int)`) lives in `PlaybackSettings`, an `@Observable` backed by
+  `UserDefaults` under `videoQuality` — never `PATCH /me/prefs`, because an
+  Apple TV on ethernet wants a different answer from a phone on cellular. It
+  outlives the video, the app and a sign-out.
+- **The Auto rule**, resolved by `CodecGate.decision(for:preference:device:)`
+  at play time:
+  1. If the archive is natively decodable **and** the preference is `.auto` →
+     `.native`: the original file, full quality, nothing for the server to do.
+  2. Otherwise pick from `hls_variants`, out of the rungs this device can
+     decode at all (`hevc` is dropped when
+     `VTIsHardwareDecodeSupported(kCMVideoCodecType_HEVC)` is false).
+     `.height(h)` takes that height or the **nearest lower** one offered;
+     `.auto` takes the **tallest rung at or below the screen's pixel height**
+     (`DeviceScreen`: the short side of the active window scene's
+     `nativeBounds` — 2160 on a 4K Apple TV, 1080 on an HD one, ~1200 on a
+     current phone, so a phone lands on 1080 and a 4K TV on 2160). Either way
+     a ladder that starts above what was asked for falls to its smallest rung
+     rather than to nothing.
+  3. Nothing pickable — an older backend without `hls_variants`, or a ladder
+     this device cannot decode at all — falls to the archive if it plays, then
+     to `hls_url` as before, then to the codec wall.
+
+  The subtle case is deliberate: a **natively decodable** archive with an
+  explicit `.height(720)` plays the 720p rendition, because that is a request
+  for less data, not a mistake. Only `.auto` reads "playable" as "best".
+- **Start the one you will play.** `POST /videos/{id}/hls?height=<h>` runs
+  before the URL is handed to `AVPlayer` — `APIClient.startHLS(_:height:)`,
+  with the height the gate chose and no other. The server transcodes one job at
+  a time, so warming the whole ladder would only make the played rung later.
 - **A switch is a reload.** These are independent playlists, not one master
-  with several `EXT-X-STREAM-INF` renditions, so switching quality means
-  loading the other variant's URL and seeking to `currentTime` (start its job
-  first, then swap when its `state` reaches `running`/`done`). Expect the wait
-  a fresh transcode implies and say so in the UI rather than stalling silently.
+  with several `EXT-X-STREAM-INF` renditions, so `setVideoQuality(_:)` on both
+  watch models remembers the clock, starts the new height's job, swaps the
+  `AVPlayerItem` and seeks back — playback carries on where it was. A rung the
+  server has not made yet raises the same "Preparing a compatible version…"
+  overlay a fresh video does, with the same retry loop behind it.
+- **Where the picker is.** On iOS, a *Quality* submenu in the player's options
+  menu: `Auto`, then `Source · 2160p · AV1` as a disabled line naming what Auto
+  plays when the archive decodes here, then a row per rung
+  (`2160p · HEVC · ready`, `1080p · preparing`, `720p`) with a checkmark on the
+  current one and that rung's own `state` as the hint — `ready` for `done`,
+  `preparing` for `running`, nothing for `pending`, which is the normal state
+  of most of the ladder. On tvOS, a *Quality* row in the
+  `AVPlayerViewController` Info panel stepping through Auto and the offered
+  heights, in the same one-click idiom as Speed and Subtitles, with a line
+  under it saying what Auto settled on. Both apps also carry a **Video
+  quality** row in Settings — `Auto`, `2160p`, `1440p`, `1080p`, `720p`,
+  `480p` — as the default for future playback.
 - **`state` is per height.** A video can be `done` at 720 and `pending` at
-  1080; show the picker's rows accordingly instead of assuming one state for
-  the video.
+  1080, and the picker's rows say so instead of assuming one state for the
+  video.
 - **The un-suffixed URL still works.** An older build hitting
-  `/media/hls/{id}/index.m3u8` gets the 1080p rendition; there is no rush to
-  migrate, but a client that reads `hls_variants` should use the height-qualified URLs
-  so it and the server agree on which entry is being played.
+  `/media/hls/{id}/index.m3u8` gets the 1080p rendition. Where a server has no
+  `hls_variants` at all the apps still play `hls_url`, but with no height to
+  name it by: the picker hides itself and `startHLS` is called without one.
 
 **Both apps do this, and the fallback is automatic.** `FlimmKit`'s
-`CodecGate.decision(for:)` returns one of four answers, and the iOS and tvOS
-players act on the same one:
+`CodecGate.decision(for:preference:device:)` returns one of four answers, and
+the iOS and tvOS players act on the same one:
 
 1. `.native` — a video stream's codec is playable here (`avc1` always;
    `vp09`/`av01` decided at runtime by `VTIsHardwareDecodeSupported`), so
    `media_url` plays. The original file, no server cost. Also the answer when
    the server reports no `streams` at all: unknown must not read as
    unplayable.
-2. `.hls` — nothing decodes here, but the server offers `hls_url`. The player
-   posts `POST /videos/{id}/hls` first so the transcode starts before
-   AVFoundation opens the playlist, then loads `hls_url` into `AVPlayer` with
+2. `.hls` — a rendition plays: either nothing decodes here, or a height was
+   picked by hand. The decision carries the chosen `hls_variants` entry (`nil`
+   on a server that has only `hls_url`). The player posts
+   `POST /videos/{id}/hls?height=` first so that transcode starts before
+   AVFoundation opens the playlist, then loads the variant's URL into
+   `AVPlayer` with
    the same `AVURLAssetHTTPHeaderFieldsKey` Bearer header every other media
    route takes. AVFoundation re-sends those headers on **every** request the
    asset makes — the playlist, its re-reads as the EVENT playlist grows, the
@@ -390,7 +429,7 @@ the asset, for up to two minutes without playback before it finally shows the
 error. The window rolls forward while the rendition is actually playing, so a
 stumble an hour in gets its own two minutes rather than inheriting a spent
 one. Where it is cheap to say so — the iOS options menu, the tvOS Info panel —
-the UI notes that this is the compatible version, capped at 1080p.
+the UI names the rendition that is playing: `1080p · compatible version`.
 
 Chapters, SponsorBlock and subtitles are untouched: they are in seconds
 against the archived duration, and that duration stays authoritative because a

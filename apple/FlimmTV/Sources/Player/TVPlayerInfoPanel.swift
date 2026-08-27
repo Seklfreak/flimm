@@ -42,8 +42,9 @@ struct TVPlayerInfoPanel: View {
             parts.append("\(nav.index + 1) of \(Fmt.count(nav.total))")
         }
         if model.isWatched { parts.append("seen") }
-        // Worth saying: this is not the archived file, and it is capped.
-        if model.usingCompatibleRendition { parts.append("compatible version · up to 1080p") }
+        // Worth saying: this is not the archived file, and which rendition it
+        // is instead.
+        if model.usingCompatibleRendition { parts.append(VideoQuality.renditionHint(model.activeVariant)) }
         return parts.joined(separator: " · ")
     }
 
@@ -114,7 +115,45 @@ struct TVPlayerInfoPanel: View {
             TVOptionRow(title: "Subtitles", value: subtitleLabel) {
                 Task { await model.setSubtitleLanguage(nextSubtitleLanguage) }
             }
+
+            if !model.audioOnly, !model.qualityLadder.isEmpty {
+                TVOptionRow(title: "Quality", value: qualityLabel) {
+                    Task { await model.setVideoQuality(nextQuality) }
+                }
+                Text(qualityFooter)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
         }
+    }
+
+    /// `Auto` / `2160p · HEVC · preparing` — the current choice, with the
+    /// rendition's state when there is something to say about it.
+    private var qualityLabel: String {
+        guard let height = model.videoQuality.height else { return VideoQuality.label(.auto) }
+        guard let variant = model.qualityLadder.first(where: { $0.height == height }) else {
+            return "\(height)p · not offered"
+        }
+        guard let hint = VideoQuality.stateHint(variant.state) else { return VideoQuality.label(variant) }
+        return "\(VideoQuality.label(variant)) · \(hint)"
+    }
+
+    /// What Auto is doing right now, said in a line rather than left to be
+    /// guessed at from a black screen.
+    private var qualityFooter: String {
+        guard model.videoQuality == .auto else { return "Changing quality restarts this video where you are." }
+        if model.archivePlaysNatively { return "Auto is playing \(VideoQuality.sourceLabel(for: model.video).lowercased())." }
+        guard let variant = model.activeVariant else { return "Auto picks the best rendition this screen can show." }
+        return "Auto picked \(VideoQuality.label(variant)) for this screen."
+    }
+
+    /// Cycles Auto → the heights this video actually offers, tallest first. A
+    /// picker is a poor fit inside the Info panel, and a ladder is at most five
+    /// rungs long — the same reasoning as the speed and subtitle rows.
+    private var nextQuality: QualityPreference {
+        let options: [QualityPreference] = [.auto] + model.qualityLadder.map { .height($0.height) }
+        guard let index = options.firstIndex(of: model.videoQuality) else { return options.first ?? .auto }
+        return options[(index + 1) % options.count]
     }
 
     private var subtitleLabel: String {

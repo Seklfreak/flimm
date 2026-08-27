@@ -56,9 +56,14 @@ final class ModelDecodingTests: XCTestCase {
         XCTAssertEqual(video.audioUrl, "/media/audio/yt-id.webm")
         XCTAssertEqual(video.audioAacURL, "/media/audio/yt-id.m4a")
         XCTAssertEqual(video.nativeAudioURL, "/media/audio/yt-id.m4a")
-        XCTAssertEqual(video.hlsURL, "/media/hls/yt-id/index.m3u8")
-        XCTAssertEqual(video.compatibleVideoURL, "/media/hls/yt-id/index.m3u8")
-        XCTAssertEqual(video.hlsState, .pending)
+        XCTAssertEqual(video.hlsURL, "/media/hls/yt-id/1080/index.m3u8")
+        XCTAssertEqual(video.compatibleVideoURL, "/media/hls/yt-id/1080/index.m3u8")
+        XCTAssertEqual(video.hlsState, .done)
+        // The ladder, tallest first, each rung with its own state.
+        XCTAssertEqual(video.hlsLadder.map(\.height), [1080, 720, 480])
+        XCTAssertEqual(video.hlsLadder.map(\.state), [.done, .pending, .pending])
+        XCTAssertEqual(video.hlsLadder.map(\.codec), [.h264, .h264, .h264])
+        XCTAssertEqual(video.hlsLadder.first?.url, "/media/hls/yt-id/1080/index.m3u8")
         XCTAssertEqual(video.height, 1080)
         XCTAssertEqual(video.channel.videoCount, 212)
         XCTAssertEqual(video.subtitles.first?.source, .user)
@@ -105,10 +110,36 @@ final class ModelDecodingTests: XCTestCase {
 
     /// A state the contract grows later must not fail the whole video detail.
     func testUnknownHLSStateDecodes() throws {
-        let source = Fixtures.videoDetail.replacingOccurrences(of: "\"hls_state\": \"pending\"", with: "\"hls_state\": \"queued\"")
+        let source = Fixtures.videoDetail.replacingOccurrences(of: "\"hls_state\": \"done\"", with: "\"hls_state\": \"queued\"")
         let video = try decode(Video.self, source)
         XCTAssertEqual(video.hlsState, .unknown)
         XCTAssertFalse(try XCTUnwrap(video.hlsState).isPreparing)
+    }
+
+    /// A backend between the two releases: one rendition, no ladder. The
+    /// ladder must be empty rather than invented.
+    func testVideoDetailWithoutVariants() throws {
+        let video = try decode(Video.self, Fixtures.videoDetailWithoutVariants)
+        XCTAssertNil(video.hlsVariants)
+        XCTAssertTrue(video.hlsLadder.isEmpty)
+        XCTAssertEqual(video.compatibleVideoURL, "/media/hls/yt-id/1080/index.m3u8")
+    }
+
+    /// HEVC above 1080p, and a codec added to the contract later decodes as
+    /// `unknown` rather than failing the whole video detail.
+    func testHLSVariantCodecs() throws {
+        let video = try decode(Video.self, Fixtures.videoDetail4K)
+        XCTAssertEqual(video.hlsLadder.map(\.height), [2160, 1440, 1080, 720, 480])
+        XCTAssertEqual(video.hlsLadder.map(\.codec), [.hevc, .hevc, .h264, .h264, .h264])
+
+        let future = Fixtures.videoDetail4K.replacingOccurrences(of: "\"codec\": \"hevc\"", with: "\"codec\": \"av1\"")
+        XCTAssertEqual(try decode(Video.self, future).hlsLadder.first?.codec, .unknown)
+    }
+
+    /// A rung with no URL is not something to hand to `AVPlayer`.
+    func testEmptyVariantsAreDroppedFromTheLadder() throws {
+        let source = Fixtures.videoDetail.replacingOccurrences(of: "\"/media/hls/yt-id/720/index.m3u8\"", with: "\"\"")
+        XCTAssertEqual(try decode(Video.self, source).hlsLadder.map(\.height), [1080, 480])
     }
 
     func testHLSStatePreparing() {

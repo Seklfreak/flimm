@@ -12,6 +12,9 @@ struct TVRootView: View {
 
     @State private var app: AppModel?
     @State private var player = TVPlayerCoordinator()
+    /// Per-device playback settings (video quality) — never a server
+    /// preference, and not tied to the account.
+    @State private var playback = PlaybackSettings()
 
     var body: some View {
         Group {
@@ -27,6 +30,7 @@ struct TVRootView: View {
                     TVShell()
                         .environment(app)
                         .environment(player)
+                        .environment(playback)
                 } else {
                     TVLoadingState()
                 }
@@ -46,12 +50,12 @@ struct TVRootView: View {
     private func syncAppModel() {
         guard session.state == .signedIn, let client = session.client else {
             app = nil
-            player.configure(app: nil)
+            player.configure(app: nil, playback: playback)
             return
         }
         if app?.client !== client {
             app = AppModel(client: client)
         }
-        player.configure(app: app)
+        player.configure(app: app, playback: playback)
     }
 }

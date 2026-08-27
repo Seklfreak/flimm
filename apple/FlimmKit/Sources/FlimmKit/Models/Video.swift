@@ -199,6 +199,64 @@ public enum HLSState: String, Codable, Sendable, CaseIterable {
     public var isPreparing: Bool { self == .pending || self == .running }
 }
 
+/// The codec one rendition of the ladder is encoded in: `h264` at 1080p and
+/// below, `hevc` at 1440 and 2160 (an H.264 encode of 4K is enormous, and 4K
+/// H.264 is past what Apple's decoders are specified for).
+///
+/// Every device these apps run on decodes HEVC in hardware — the iPhone 7 and
+/// the first Apple TV 4K onwards — but that is checked at runtime rather than
+/// assumed; see ``DeviceCapabilities``. `unknown` is not a server value: it is
+/// what an unrecognised one decodes to, so a codec added to the contract later
+/// cannot fail the whole video detail.
+public enum HLSCodec: String, Codable, Sendable, CaseIterable {
+    case h264
+    case hevc
+    case unknown
+
+    public init(from decoder: any Decoder) throws {
+        let raw = try decoder.singleValueContainer().decode(String.self)
+        self = HLSCodec(rawValue: raw) ?? .unknown
+    }
+}
+
+/// One rung of the quality ladder (`hls_variants`), each a rendition in its own
+/// right: its own URL, its own cache entry, its own `state`, derived only when
+/// something asks for it. The states within one video therefore differ.
+public struct HLSVariant: Codable, Sendable, Hashable, Identifiable {
+    /// The rendition's height in pixels; the width follows the source's
+    /// aspect ratio. One of 2160, 1440, 1080, 720, 480.
+    public let height: Int
+    /// The playlist to load, `/media/hls/{id}/{height}/index.m3u8`.
+    public let url: String
+    /// Where *this* height stands, exactly as ``HLSState``.
+    public let state: HLSState
+    public let codec: HLSCodec
+
+    public var id: Int { height }
+
+    public init(height: Int, url: String, state: HLSState = .pending, codec: HLSCodec = .h264) {
+        self.height = height
+        self.url = url
+        self.state = state
+        self.codec = codec
+    }
+
+    /// Explicit, like every other URL-carrying key in this file:
+    /// `.convertFromSnakeCase` is close enough to right here that a silent
+    /// mismatch would be easy to miss.
+    private enum CodingKeys: String, CodingKey {
+        case height, url, state, codec
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        height = try c.decode(.height, or: 0)
+        url = try c.decode(.url, or: "")
+        state = try c.decode(.state, or: HLSState.unknown)
+        codec = try c.decode(.codec, or: HLSCodec.unknown)
+    }
+}
+
 public struct VideoStats: Codable, Sendable, Hashable {
     public let views: Int
     public let likes: Int
@@ -268,6 +326,11 @@ public struct Video: Codable, Sendable, Hashable, Identifiable {
     public let hlsURL: String?
     /// Where that rendition stands. `nil` on a backend without `hls_url`.
     public let hlsState: HLSState?
+    /// The whole quality ladder, tallest first — what a quality picker picks
+    /// from. Optional: the field arrives with a later backend release, and a
+    /// server without it offers ``hlsURL`` and nothing else. Prefer
+    /// ``hlsLadder``.
+    public let hlsVariants: [HLSVariant]?
     public let youtubeUrl: String
     /// Source renditions. Optional: the field arrives with a later backend
     /// release, so a client built against it must not break on a server
@@ -298,6 +361,15 @@ public struct Video: Codable, Sendable, Hashable, Identifiable {
     public var compatibleVideoURL: String? {
         guard let hlsURL, !hlsURL.isEmpty else { return nil }
         return hlsURL
+    }
+
+    /// The offered renditions, tallest first and with anything unusable
+    /// dropped (a height of 0, an empty URL). Empty on a backend that predates
+    /// `hls_variants` — which is the signal to fall back to ``hlsURL``.
+    public var hlsLadder: [HLSVariant] {
+        (hlsVariants ?? [])
+            .filter { $0.height > 0 && !$0.url.isEmpty }
+            .sorted { $0.height > $1.height }
     }
 
     /// The stub form, for the places that take a list item.
@@ -331,7 +403,7 @@ public struct Video: Codable, Sendable, Hashable, Identifiable {
         case description, height, mediaUrl, audioUrl
         case audioAacURL = "audioAacUrl"
         case hlsURL = "hlsUrl"
-        case hlsState
+        case hlsState, hlsVariants
         case youtubeUrl, streams, subtitles, sponsorblock, stats, tags, playlists
     }
 
@@ -358,6 +430,7 @@ public struct Video: Codable, Sendable, Hashable, Identifiable {
         audioAacURL = try c.decodeIfPresent(String.self, forKey: .audioAacURL)
         hlsURL = try c.decodeIfPresent(String.self, forKey: .hlsURL)
         hlsState = try c.decodeIfPresent(HLSState.self, forKey: .hlsState)
+        hlsVariants = try c.decodeIfPresent([HLSVariant].self, forKey: .hlsVariants)
         youtubeUrl = try c.decode(.youtubeUrl, or: "")
         streams = try c.decodeIfPresent([MediaStream].self, forKey: .streams)
         subtitles = try c.decode(.subtitles, or: [])

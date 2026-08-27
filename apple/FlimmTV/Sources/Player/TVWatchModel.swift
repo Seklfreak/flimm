@@ -34,6 +34,10 @@ final class TVWatchModel {
     private(set) var usingCompatibleRendition = false
     /// The server-reported state of that rendition, refreshed on every attempt.
     private(set) var compatibleState: HLSState?
+    /// Which rung of the ladder is playing, when one is. `nil` while the
+    /// archived file plays, and on a server that offers `hls_url` without
+    /// `hls_variants` — there the rendition has no height to name.
+    private(set) var activeVariant: HLSVariant?
     /// Set when the rendition never became playable inside the retry window.
     private(set) var compatibleGaveUp = false
     /// True once the current item reports `readyToPlay`.
@@ -56,6 +60,9 @@ final class TVWatchModel {
 
     @ObservationIgnored private let app: AppModel
     @ObservationIgnored private let client: APIClient
+    /// Per-device, unlike ``prefs``: a TV on ethernet wants a different answer
+    /// from a phone on cellular, so quality never goes to `PATCH /me/prefs`.
+    @ObservationIgnored private let playback: PlaybackSettings
     @ObservationIgnored private let reporter: ProgressReporter
     @ObservationIgnored private var startAtOverride: Double?
     @ObservationIgnored private var timeObserver: Any?
@@ -76,6 +83,17 @@ final class TVWatchModel {
     private static let compatibleRetryDelay: Duration = .seconds(5)
 
     var prefs: Prefs { app.prefs }
+    /// Read through the settings object so the Info panel's row tracks it.
+    var videoQuality: QualityPreference { playback.videoQuality }
+    /// What the quality picker offers, tallest first. Empty on a server
+    /// without `hls_variants`, which is the signal to offer no picker.
+    var qualityLadder: [HLSVariant] { video?.hlsLadder ?? [] }
+    /// True when the archived file plays on this Apple TV — what makes
+    /// ``QualityPreference/auto`` mean "the source, at full quality".
+    var archivePlaysNatively: Bool {
+        guard let video else { return false }
+        return CodecGate.archivePlays(video)
+    }
     var hasContext: Bool { context.source != nil }
     var canGoNext: Bool { nav?.next != nil || !upNext.isEmpty }
     var canGoPrevious: Bool { nav?.previous != nil }
@@ -95,9 +113,10 @@ final class TVWatchModel {
         usingCompatibleRendition && !isReady && compatibleState != .done && !compatibleGaveUp
     }
 
-    init(request: TVPlayRequest, app: AppModel) {
+    init(request: TVPlayRequest, app: AppModel, playback: PlaybackSettings) {
         self.app = app
         self.client = app.client
+        self.playback = playback
         self.videoId = request.videoId
         self.context = request.context
         self.audioOnly = request.context.audioOnly
@@ -145,6 +164,7 @@ final class TVWatchModel {
         audioUnavailable = false
         codecIssue = nil
         usingCompatibleRendition = false
+        activeVariant = nil
         isReady = false
 
         let path: String
@@ -155,17 +175,22 @@ final class TVWatchModel {
             }
             path = nativeAudioURL
         } else {
-            switch CodecGate.decision(for: detail) {
+            switch CodecGate.decision(for: detail, preference: playback.videoQuality, device: .current) {
             case .native:
                 path = detail.mediaUrl
-            case .hls(let compatible):
-                path = compatible
+            case .hls(let choice):
+                path = choice.url
                 usingCompatibleRendition = true
+                activeVariant = choice.variant
                 compatibleSince = compatibleSince ?? Date()
                 // Start the job before AVFoundation opens the playlist, so the
                 // transcode's head start is the server's rather than ours. The
                 // call is idempotent and reports where the rendition stands.
-                compatibleState = (try? await client.startHLS(videoId)) ?? detail.hlsState
+                // Only the height about to play is started: the server runs one
+                // transcode at a time.
+                compatibleState = (try? await client.startHLS(videoId, height: choice.height))
+                    ?? choice.state
+                    ?? detail.hlsState
             case .audioOnly(let issue), .unplayable(let issue):
                 codecIssue = issue
                 return
@@ -307,6 +332,23 @@ final class TVWatchModel {
         isWatched = watched
         try? await client.setWatched(videoId, watched: watched)
         await app.refreshFeeds()
+    }
+
+    /// Switches rendition without leaving the video.
+    ///
+    /// The renditions are independent playlists, so a switch is a reload:
+    /// remember the clock, start the new height's job, swap the item and seek
+    /// back. A height the server has not made yet raises the "Preparing a
+    /// compatible version…" overlay exactly as a fresh video does. The choice
+    /// belongs to this Apple TV and outlives the video.
+    func setVideoQuality(_ preference: QualityPreference) async {
+        guard playback.videoQuality != preference else { return }
+        playback.videoQuality = preference
+        guard let video, !audioOnly else { return }
+        startAtOverride = pendingSeek ?? currentTime
+        compatibleSince = nil
+        compatibleGaveUp = false
+        await startPlayback(video)
     }
 
     func toggleAudioOnly() async {
