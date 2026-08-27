@@ -493,7 +493,7 @@ func TestPostVideoHLSStartsWithoutWaiting(t *testing.T) {
 func TestVideoDetailCarriesHLSURLAndState(t *testing.T) {
 	h, _ := hlsFixture(t, []byte("segment"))
 	detail := decode[VideoDetail](t, do(t, h, http.MethodGet, "/api/v1/videos/v1", ""))
-	if detail.HLSURL != "/media/hls/v1/1080/index.m3u8" {
+	if detail.HLSURL != "/media/hls/v1/1080/master.m3u8" {
 		t.Errorf("hls_url = %q", detail.HLSURL)
 	}
 	if detail.HLSState != string(media.StateDone) {
@@ -506,7 +506,7 @@ func TestVideoDetailCarriesHLSURLAndState(t *testing.T) {
 	fake.Videos["v2"] = &ta.Video{YoutubeID: "v2", Title: "Video v2", MediaURL: "/youtube/UC1/v2.mp4"}
 	plain := newTestServer(fake, newEventStore().querier()).Router()
 	d2 := decode[VideoDetail](t, do(t, plain, http.MethodGet, "/api/v1/videos/v2", ""))
-	if d2.HLSURL != "/media/hls/v2/1080/index.m3u8" || d2.HLSState != string(media.StatePending) {
+	if d2.HLSURL != "/media/hls/v2/1080/master.m3u8" || d2.HLSState != string(media.StatePending) {
 		t.Errorf("without a cache: hls_url = %q, hls_state = %q", d2.HLSURL, d2.HLSState)
 	}
 }
@@ -903,17 +903,17 @@ func TestVideoDetailCarriesHLSVariants(t *testing.T) {
 
 	detail := decode[VideoDetail](t, do(t, srv, http.MethodGet, "/api/v1/videos/v1", ""))
 	want := []HLSVariantInfo{
-		{Height: 1080, URL: "/media/hls/v1/1080/index.m3u8", State: string(media.StatePending), Codec: "h264", Progress: 0},
+		{Height: 1080, URL: "/media/hls/v1/1080/master.m3u8", State: string(media.StatePending), Codec: "h264", Progress: 0},
 		// A finished rendition is 100% transcoded, whether or not its job is
 		// still around to say so.
-		{Height: 720, URL: "/media/hls/v1/720/index.m3u8", State: string(media.StateDone), Codec: "h264", Progress: 1},
-		{Height: 480, URL: "/media/hls/v1/480/index.m3u8", State: string(media.StatePending), Codec: "h264", Progress: 0},
+		{Height: 720, URL: "/media/hls/v1/720/master.m3u8", State: string(media.StateDone), Codec: "h264", Progress: 1},
+		{Height: 480, URL: "/media/hls/v1/480/master.m3u8", State: string(media.StatePending), Codec: "h264", Progress: 0},
 	}
 	if !reflect.DeepEqual(detail.HLSVariants, want) {
 		t.Errorf("hls_variants =\n%+v\nwant\n%+v", detail.HLSVariants, want)
 	}
 	// hls_url stays, pointing at the default height.
-	if detail.HLSURL != "/media/hls/v1/1080/index.m3u8" || detail.HLSState != string(media.StatePending) {
+	if detail.HLSURL != "/media/hls/v1/1080/master.m3u8" || detail.HLSState != string(media.StatePending) {
 		t.Errorf("hls_url = %q, hls_state = %q", detail.HLSURL, detail.HLSState)
 	}
 }
@@ -951,7 +951,7 @@ func TestVideoDetailHLSVariantsForA4KSource(t *testing.T) {
 	}
 	// Even on a 4K source the default rendition is 1080p H.264: nothing starts
 	// a 4K transcode unless a client asks for one.
-	if detail.HLSURL != "/media/hls/v4k/1080/index.m3u8" {
+	if detail.HLSURL != "/media/hls/v4k/1080/master.m3u8" {
 		t.Errorf("hls_url = %q", detail.HLSURL)
 	}
 
@@ -959,7 +959,7 @@ func TestVideoDetailHLSVariantsForA4KSource(t *testing.T) {
 	if len(small.HLSVariants) != 1 || small.HLSVariants[0].Height != 480 {
 		t.Errorf("480p source variants = %+v", small.HLSVariants)
 	}
-	if small.HLSURL != "/media/hls/vsmall/480/index.m3u8" {
+	if small.HLSURL != "/media/hls/vsmall/480/master.m3u8" {
 		t.Errorf("hls_url for a 480p source = %q", small.HLSURL)
 	}
 }
@@ -988,6 +988,80 @@ func TestVideoDetailHLSVariantsJSONShape(t *testing.T) {
 	for _, key := range []string{"hls_url", "hls_state"} {
 		if _, ok := body[key]; !ok {
 			t.Errorf("the detail lost %q", key)
+		}
+	}
+}
+
+// The multivariant (master) playlist is what hls_url and the variant URLs point
+// at now: it carries the CODECS attribute hls.js needs to schedule the fMP4
+// fragments, and references the media playlist (index.m3u8) with a relative URI.
+func TestHLSMasterPlaylist(t *testing.T) {
+	h, _ := hlsFixture(t, []byte("segment"))
+
+	rec := getMedia(t, h, "/media/hls/v1/1080/master.m3u8", "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("master status = %d: %s", rec.Code, rec.Body.String())
+	}
+	if ct := rec.Header().Get("Content-Type"); ct != media.HLSPlaylistType {
+		t.Errorf("master Content-Type = %q, want %q", ct, media.HLSPlaylistType)
+	}
+	body := rec.Body.String()
+	for _, want := range []string{
+		"#EXTM3U",
+		"#EXT-X-INDEPENDENT-SEGMENTS",
+		"#EXT-X-STREAM-INF:BANDWIDTH=5000000,",
+		// The fixture's init is not a real fMP4, so the master falls back to the
+		// height's default codecs — which are what the encoder always produces.
+		"CODECS=\"avc1.640829,mp4a.40.2\"",
+		"\nindex.m3u8\n",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("master playlist missing %q:\n%s", want, body)
+		}
+	}
+	// A master lists renditions, never segments.
+	if strings.Contains(body, ".m4s") {
+		t.Errorf("master playlist names segments:\n%s", body)
+	}
+}
+
+// When the codecs are known — parsed from the init and cached, or written by the
+// finished job — the master names them exactly, with RESOLUTION, and is
+// cacheable.
+func TestHLSMasterUsesCachedCodecs(t *testing.T) {
+	dir := t.TempDir()
+	writeHLSEntry(t, dir, "v1", media.HLSDefaultHeight, []byte("segment"))
+	entry := filepath.Join(dir, media.HLSName("v1", media.HLSDefaultHeight))
+	if err := os.WriteFile(filepath.Join(entry, ".codecs"), []byte("avc1.4d401f,mp4a.40.2\n1280\n720\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	h := hlsServer(t, dir, "ffmpeg")
+
+	rec := getMedia(t, h, "/media/hls/v1/1080/master.m3u8", "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("master status = %d: %s", rec.Code, rec.Body.String())
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, "CODECS=\"avc1.4d401f,mp4a.40.2\"") || !strings.Contains(body, "RESOLUTION=1280x720") {
+		t.Errorf("master did not use the cached codecs:\n%s", body)
+	}
+	if cc := rec.Header().Get("Cache-Control"); !strings.Contains(cc, "max-age") {
+		t.Errorf("exact master Cache-Control = %q, want cacheable", cc)
+	}
+}
+
+// A height the source cannot fill, or one that is not a rendition height at all,
+// is a 404 on the master route just as it is on the playlist route.
+func TestHLSMasterRejectsBadHeight(t *testing.T) {
+	h, _ := hlsFixture(t, []byte("segment")) // v1 is a 1080p source
+	for _, path := range []string{
+		"/media/hls/v1/2160/master.m3u8", // offered heights stop at 1080
+		"/media/hls/v1/1440/master.m3u8",
+		"/media/hls/v1/999/master.m3u8",
+		"/media/hls/v1/abc/master.m3u8",
+	} {
+		if rec := getMedia(t, h, path, ""); rec.Code != http.StatusNotFound {
+			t.Errorf("%s: status = %d, want 404", path, rec.Code)
 		}
 	}
 }

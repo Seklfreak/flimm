@@ -2,6 +2,18 @@
 
 ## Done
 
+- **HLS multivariant playlist for hls.js** (2026-08-27) — `hls_url` and every
+  `hls_variants[].url` now point at `/media/hls/{id}/{height}/master.m3u8`, a
+  one-entry master playlist carrying `#EXT-X-STREAM-INF` with `BANDWIDTH`,
+  `CODECS` and `RESOLUTION`. Without it hls.js parsed the media playlist, saw
+  the fragment count, and then never scheduled fragment 0: a codec-less media
+  playlist gives it nothing to create the MSE `SourceBuffer` from. The `CODECS`
+  string is parsed from the init segment the transcode writes (avcC → `avc1.…`,
+  hvcC → `hvc1.…`, esds → `mp4a.40.2`), so it is truthful even for a copied
+  source, and cached per rendition. The media playlist stays at `index.m3u8`
+  (the master references it) for the native and byte-range paths; `AVPlayer`
+  plays the master unchanged. See
+  [api.md](api.md#compatible-video-renditions-hls).
 - **Web: compatible renditions + quality picker** (2026-08-27) — the web client
   now uses the ladder it was built for. A codec gate
   (`frontend/src/player/codecGate.ts`) asks the browser what it can decode with

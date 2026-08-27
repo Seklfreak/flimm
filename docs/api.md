@@ -70,12 +70,12 @@ resume is the default action, and `t=` only exists to jump to a subtitle hit.
   "media_url": "/media/video/yt-id.mp4",
   "audio_url": "/media/audio/yt-id.webm",       // Opus in WebM; derived on first request, see Derived media
   "audio_aac_url": "/media/audio/yt-id.m4a",   // the same audio as AAC in MP4, for AVFoundation
-  "hls_url": "/media/hls/yt-id/1080/index.m3u8", // the default compatible rendition; always present
+  "hls_url": "/media/hls/yt-id/1080/master.m3u8", // the default compatible rendition; always present
   "hls_state": "pending|running|done|failed",  // where that rendition stands, see Derived media
   "hls_variants": [                            // every quality offered, tallest first
-    { "height": 1080, "url": "/media/hls/yt-id/1080/index.m3u8", "state": "done",    "codec": "h264", "hls_progress": 1 },
-    { "height": 720,  "url": "/media/hls/yt-id/720/index.m3u8",  "state": "running", "codec": "h264", "hls_progress": 0.37 },
-    { "height": 480,  "url": "/media/hls/yt-id/480/index.m3u8",  "state": "pending", "codec": "h264", "hls_progress": 0 }
+    { "height": 1080, "url": "/media/hls/yt-id/1080/master.m3u8", "state": "done",    "codec": "h264", "hls_progress": 1 },
+    { "height": 720,  "url": "/media/hls/yt-id/720/master.m3u8",  "state": "running", "codec": "h264", "hls_progress": 0.37 },
+    { "height": 480,  "url": "/media/hls/yt-id/480/master.m3u8",  "state": "pending", "codec": "h264", "hls_progress": 0 }
   ],
   "youtube_url": "https://www.youtube.com/watch?v=yt-id",
   "streams": [ { "type": "video", "codec": "avc1", "width": 1920, "height": 1080, "bitrate": 4500000 },
@@ -116,7 +116,7 @@ video differ.
 | field | means |
 |---|---|
 | `height` | the rendition's height in pixels; the width follows the source's aspect ratio |
-| `url` | the playlist to load, `/media/hls/{id}/{height}/index.m3u8` |
+| `url` | the playlist to load, `/media/hls/{id}/{height}/master.m3u8` — a **multivariant (master) playlist** that names the codecs so hls.js schedules the fMP4 fragments; it references the media playlist at `index.m3u8` in the same directory, which stays directly reachable |
 | `state` | `pending\|running\|done\|failed` for *that* height, exactly as `hls_state` |
 | `codec` | `h264` (heights up to 1080) or `hevc` (1440 and 2160) — see [Compatible video renditions (HLS)](#compatible-video-renditions-hls) |
 | `hls_progress` | how much of that rendition has been transcoded, `0`–`1`. `1` for a finished one, `0` for one nothing has asked for. It is **not** how far playback can get: the playlist is complete from the first request and segments are filled in wherever the viewer is, so this is only a number to show while preparing |
@@ -390,10 +390,11 @@ and `feed` filter the video results in the backend.
 | `GET /media/video/{id}.mp4` | reverse-proxies TA `/media/<media_url>` with `Range`, `If-Range`, `Accept-Ranges`, `Content-Length`, `Content-Type` passthrough |
 | `GET /media/audio/{id}.webm` | audio-only stream, Opus in WebM, derived and cached on first request (see below); supports `Range` |
 | `GET /media/audio/{id}.m4a` | the same audio as AAC in MP4 (`audio/mp4`), for players that cannot decode Opus in WebM; derived and cached the same way; supports `Range` |
-| `GET /media/hls/{id}/{height}/index.m3u8` | the compatible rendition's playlist (`application/vnd.apple.mpegurl`) at that height. `{height}` must be one of 2160, 1440, 1080, 720, 480 and must be one the video offers (`hls_variants`), else **404**. Starts the transcode on the first request and returns the **complete VOD playlist immediately** — every segment of the video, `#EXT-X-ENDLIST` on the end — whatever the encoder has reached. `?from=<seconds>` is the resume position, for a client that cannot `POST` first; it changes where the transcode starts, never what the playlist says. 503 + `Retry-After: 5` only if the playlist itself cannot be produced (a video whose duration has to be probed from an unreachable source) |
+| `GET /media/hls/{id}/{height}/master.m3u8` | the compatible rendition's **multivariant (master) playlist** (`application/vnd.apple.mpegurl`) at that height — the URL `hls_url` and `hls_variants[].url` point at. It is a one-entry master carrying an `#EXT-X-STREAM-INF` with `BANDWIDTH`, `CODECS` (e.g. `avc1.640829,mp4a.40.2`) and, when known, `RESOLUTION`, and a single relative variant URI of `index.m3u8`. It exists because **hls.js** will not schedule fMP4 fragments from a codec-less media playlist; a master naming the codecs makes it, and native `AVPlayer`/Safari take it just as happily. `{height}` must be one of 2160, 1440, 1080, 720, 480 and one the video offers (`hls_variants`), else **404**. It starts the transcode like the media-playlist route. The `CODECS` string is parsed from the init segment the job produces (truthful even for a copied source); before the first init lands it is the height's fixed-encoder default (served `no-store` until the real one is known) |
+| `GET /media/hls/{id}/{height}/index.m3u8` | the compatible rendition's **media** playlist (`application/vnd.apple.mpegurl`) at that height — what the master references, and what native players and the byte-range path load directly. Same `{height}` rules and **404**. Starts the transcode on the first request and returns the **complete VOD playlist immediately** — every segment of the video, `#EXT-X-ENDLIST` on the end — whatever the encoder has reached. `?from=<seconds>` is the resume position, for a client that cannot `POST` first; it changes where the transcode starts, never what the playlist says. 503 + `Retry-After: 5` only if the playlist itself cannot be produced (a video whose duration has to be probed from an unreachable source) |
 | `GET /media/hls/{id}/{height}/init.mp4` | the fMP4 initialisation segment (`video/mp4`) |
 | `GET /media/hls/{id}/{height}/seg00000.m4s` | a media segment (`video/iso.segment`). A segment the encoder has not reached **blocks** until it lands, up to `MEDIA_SEGMENT_WAIT` (60 s), then 503 + `Retry-After: 2`; a request far ahead of the encoder also re-aims it. 404 for a segment past the end of the video or of a rendition nothing is deriving; 502 if the transcode failed |
-| `GET /media/hls/{id}/index.m3u8`, `/init.mp4`, `/seg00000.m4s` | the same three files without a height: a **legacy alias** for the 1080p rendition, kept for clients written before the ladder. It serves that rendition's cache entry rather than one of its own. New clients use `hls_variants` |
+| `GET /media/hls/{id}/master.m3u8`, `/index.m3u8`, `/init.mp4`, `/seg00000.m4s` | the same files without a height: a **legacy alias** for the 1080p rendition, kept for clients written before the ladder. It serves that rendition's cache entry rather than one of its own. New clients use `hls_variants` |
 | `GET /media/subtitles/{id}/{lang}.vtt` | TA subtitle track |
 | `GET /media/thumb/video/{id}` | TA `/cache/videos/…` |
 | `GET /media/thumb/channel/{id}` and `/media/thumb/channel/{id}/banner` | TA `/cache/channels/…` |
@@ -465,11 +466,23 @@ next/previous, autoplay and a reload, exactly as the shuffle seed does.
 
 #### Compatible video renditions (HLS)
 
-`GET /media/hls/{id}/{height}/index.m3u8` is an `hls-<height>` variant: the
+`GET /media/hls/{id}/{height}/master.m3u8` is an `hls-<height>` variant: the
 video transcoded to a codec Apple hardware decodes, with AAC audio, delivered
 as HLS with fMP4 segments. It exists because the archive is full of AV1 and
 VP9, which AVFoundation cannot decode on most Apple hardware — the source file
 is simply unplayable there, and audio-only is a poor consolation.
+
+The URL a client loads is a **multivariant (master) playlist**. A media
+playlist with fMP4 segments and no `CODECS` attribute is one hls.js (the player
+every non-Safari browser uses) parses and then stalls on — it never schedules
+fragment 0, because it cannot create the MSE `SourceBuffer` without knowing the
+codecs. A one-entry master carries `CODECS` in its `EXT-X-STREAM-INF`, which
+fixes the stall; native `AVPlayer` and Safari play a master just as happily. The
+master references the media playlist below it at `index.m3u8`, which stays
+directly reachable for the byte-range and native paths. The `CODECS` string is
+parsed from the init segment the transcode produces — `avc1.PPCCLL` from the
+avcC record (High@4.1 → `avc1.640829`), `hvc1.…` from hvcC, plus `mp4a.40.2` —
+so it is truthful even when the source is copied rather than re-encoded.
 
 **The quality is the client's choice**, from the `hls_variants` ladder on the
 video detail. Each height is derived on its own, on demand; asking for 720p on
@@ -580,9 +593,11 @@ Switching quality mid-playback is a client-side matter: load the other
 variant's playlist and seek to the current time, passing that time as `from` so
 the other height's transcode starts there too. Every rendition cuts on the same
 4-second grid (a keyframe is forced at every boundary), so the seek lands
-exactly, but they are separate playlists rather than one master with several
-`EXT-X-STREAM-INF` renditions — nothing here does adaptive bitrate switching,
-because that would mean transcoding every height of every video up front.
+exactly. Each height's `master.m3u8` is a single-variant master (one
+`EXT-X-STREAM-INF`, named so hls.js will play it) — there is no one master
+listing several renditions for the player to switch between, so nothing here
+does adaptive bitrate switching, because that would mean transcoding every
+height of every video up front.
 
 ## Backend ↔ TubeArchivist mapping
 

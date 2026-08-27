@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"math"
@@ -59,19 +60,31 @@ const defaultSegmentWait = 60 * time.Second
 // ffmpeg gives no signal when it publishes one, and a stat is nothing.
 const hlsFilePoll = 100 * time.Millisecond
 
-// validHLSFile is the complete set of names the rendition contains. Anything
-// else — a traversal, a stray temp file, the completion marker — is a 404
-// before it reaches the filesystem.
-var validHLSFile = regexp.MustCompile(`^(index\.m3u8|init\.mp4|seg[0-9]{5}\.m4s)$`)
+// validHLSFile is the complete set of names a client may ask for. The rendition
+// on disk holds index.m3u8, init.mp4 and the segments; master.m3u8 is not a file
+// but the multivariant playlist rendered on the fly (see serveHLSMaster).
+// Anything else — a traversal, a stray temp file, the completion marker — is a
+// 404 before it reaches the filesystem.
+var validHLSFile = regexp.MustCompile(`^(master\.m3u8|index\.m3u8|init\.mp4|seg[0-9]{5}\.m4s)$`)
 
 // errHLSHeightNotOffered is what starting a rendition the video cannot fill
 // returns: a 4K rendition of a 1080p source is a transcode nobody asked for.
 var errHLSHeightNotOffered = errors.New("hls: height not offered for this video")
 
-// hlsURL is the playlist a client loads to play the rendition at height.
+// hlsURL is the playlist a client loads to play the rendition at height: the
+// multivariant (master) playlist, so hls.js learns the codecs up front and
+// schedules the fMP4 fragments. It references the media playlist (index.m3u8)
+// at the same path, which stays reachable for the byte-range and native paths.
 func hlsURL(id string, height int) string {
-	return "/media/hls/" + id + "/" + strconv.Itoa(height) + "/" + media.HLSPlaylistName
+	return "/media/hls/" + id + "/" + strconv.Itoa(height) + "/" + media.HLSMasterName
 }
+
+// hlsCodecsWait bounds how long a master request waits for the init segment to
+// land so it can name the real codecs, before falling back to the height's
+// default. It only bites on a rendition whose transcode has not written init.mp4
+// yet; a finished or already-parsed one answers at once. A variable so tests
+// need not wait it out.
+var hlsCodecsWait = 3 * time.Second
 
 // mediaHLS serves one file of a video's rendition at a given height. Both the
 // playlist and the segments go through the same route because AVPlayer
@@ -105,11 +118,14 @@ func (s *Server) serveHLSVariant(w http.ResponseWriter, r *http.Request, height 
 		writeError(w, http.StatusNotFound, "not found")
 		return
 	}
-	if file == media.HLSPlaylistName {
+	switch file {
+	case media.HLSMasterName:
+		s.serveHLSMaster(w, r, id, height, enforceOffered)
+	case media.HLSPlaylistName:
 		s.serveHLSPlaylist(w, r, id, height, enforceOffered)
-		return
+	default:
+		s.serveHLSFile(w, r, id, height, file)
 	}
-	s.serveHLSFile(w, r, id, height, file)
 }
 
 // serveHLSPlaylist starts (or re-aims) the transcode and serves the playlist.
@@ -153,6 +169,67 @@ func (s *Server) serveHLSPlaylist(w http.ResponseWriter, r *http.Request, id str
 	}
 	w.Header().Set("Cache-Control", cacheControl)
 	serveHLSContent(w, r, filepath.Join(dir, media.HLSPlaylistName), media.HLSPlaylistType)
+}
+
+// serveHLSMaster starts (or re-aims) the transcode and serves the multivariant
+// playlist. It exists so hls.js schedules the fMP4 fragments at all: a media
+// playlist with no CODECS attribute leaves it unable to create the MSE
+// SourceBuffer, so it parses the playlist and then never requests a fragment. A
+// one-entry master naming the codecs fixes that, and native players take it too.
+//
+// The CODECS come from the init segment the job actually produced, so they are
+// truthful even for a copied source; before the first init lands, the height's
+// default is used — correct for the fixed encoder settings — and the real value
+// is cached once the init exists.
+func (s *Server) serveHLSMaster(w http.ResponseWriter, r *http.Request, id string, height int, enforceOffered bool) {
+	if _, err := s.startHLS(r.Context(), id, height, enforceOffered, fromSeconds(r)); err != nil {
+		if errors.Is(err, errHLSHeightNotOffered) {
+			writeError(w, http.StatusNotFound, "not found")
+			return
+		}
+		s.writeTAError(w, "get video", err)
+		return
+	}
+	dir := s.mediaCache.Dir(media.HLSName(id, height))
+	info, exact := s.hlsCodecs(r.Context(), dir, height)
+	master := media.BuildHLSMaster(info.Codecs, media.HLSBandwidth(height), info.Width, info.Height)
+
+	// A master built from parsed codecs never changes; one built from the
+	// default is provisional until the init lands, so it must not be cached.
+	cacheControl := "no-store"
+	if exact {
+		cacheControl = "private, max-age=3600"
+	}
+	w.Header().Set("Cache-Control", cacheControl)
+	w.Header().Set("Content-Type", media.HLSPlaylistType)
+	http.ServeContent(w, r, media.HLSMasterName, time.Time{}, bytes.NewReader(master))
+}
+
+// hlsCodecs resolves the rendition's CODECS, waiting briefly for the init
+// segment so the master can name the real streams rather than the default. The
+// wait only matters for a fresh transcode that has not written init.mp4 yet; a
+// finished rendition, or one whose codecs are already cached, returns at once.
+func (s *Server) hlsCodecs(ctx context.Context, dir string, height int) (media.HLSCodecsInfo, bool) {
+	if info, exact := media.EnsureHLSCodecs(dir, height); exact {
+		return info, true
+	}
+	// Not cached and no parseable init yet: wait briefly for the first run to
+	// write init.mp4 so the codecs are the real ones, then try once more.
+	initPath := filepath.Join(dir, media.HLSInitName)
+	deadline := time.NewTimer(hlsCodecsWait)
+	defer deadline.Stop()
+	poll := time.NewTicker(hlsFilePoll)
+	defer poll.Stop()
+	for !hlsFileReady(initPath) {
+		select {
+		case <-poll.C:
+		case <-deadline.C:
+			return media.EnsureHLSCodecs(dir, height)
+		case <-ctx.Done():
+			return media.EnsureHLSCodecs(dir, height)
+		}
+	}
+	return media.EnsureHLSCodecs(dir, height)
 }
 
 // serveHLSFile serves an init or media segment out of the cache entry, waiting

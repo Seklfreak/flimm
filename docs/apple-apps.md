@@ -325,13 +325,21 @@ outcomes:
 2. Some plays — decide per video, using the stream metadata, and fall back.
 3. Little plays — the apps need a compatible rendition.
 
-**Outcome 3 is built.** `GET /media/hls/{id}/{height}/index.m3u8` serves the
-video transcoded to a codec Apple decodes, with AAC audio, as HLS with fMP4
-segments — which is exactly what `AVPlayer` is happiest with. The video detail
-carries `hls_url` (always), `hls_state` (`pending|running|done|failed`) and
-`hls_variants`, the ladder of qualities. See
+**Outcome 3 is built.** The compatible rendition serves the video transcoded to
+a codec Apple decodes, with AAC audio, as HLS with fMP4 segments — which is
+exactly what `AVPlayer` is happiest with. The video detail carries `hls_url`
+(always), `hls_state` (`pending|running|done|failed`) and `hls_variants`, the
+ladder of qualities. See
 [*Compatible video renditions (HLS)*](api.md#compatible-video-renditions-hls) in
 api.md for the contract.
+
+`hls_url` and each `hls_variants[].url` now end in `master.m3u8` — a
+multivariant (master) playlist that names the codecs so browser hls.js will
+schedule the fMP4 fragments. **This needs no change in the apps:** they load
+whatever URL `hls_url`/the variant hands them, and `AVPlayer` plays a master
+playlist exactly as it played the media playlist before. The media playlist
+stays reachable at `index.m3u8` in the same directory (the master points at it),
+so the byte-range and header-forwarding paths are unaffected.
 
 **Codecs and the quality picker.** `hls_variants` lists every height the video
 offers, tallest first, each with its own `url`, `state` and `codec`: `h264` at
@@ -375,8 +383,9 @@ that ladder**, and this is how it behaves:
   encoder produces that part of the video first instead of the forty minutes
   nobody is going to watch. The server transcodes one job at a time, so warming
   the whole ladder would only make the played rung later.
-- **A switch is a reload.** These are independent playlists, not one master
-  with several `EXT-X-STREAM-INF` renditions, so `setVideoQuality(_:)` on both
+- **A switch is a reload.** Each height is its own independent playlist (a
+  single-variant master over its own media playlist), not one master listing
+  every height for the player to switch between, so `setVideoQuality(_:)` on both
   watch models remembers the clock, starts the new height's job at that
   position, swaps the `AVPlayerItem` and seeks back once it is ready —
   playback carries on where it was. A rung the server has not made yet raises
@@ -398,7 +407,7 @@ that ladder**, and this is how it behaves:
   1080, and the picker's rows say so instead of assuming one state for the
   video.
 - **The un-suffixed URL still works.** An older build hitting
-  `/media/hls/{id}/index.m3u8` gets the 1080p rendition. Where a server has no
+  `/media/hls/{id}/index.m3u8` (or `/master.m3u8`) gets the 1080p rendition. Where a server has no
   `hls_variants` at all the apps still play `hls_url`, but with no height to
   name it by: the picker hides itself and `startHLS` is called without one.
 
