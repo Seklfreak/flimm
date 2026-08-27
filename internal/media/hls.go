@@ -46,6 +46,12 @@ const (
 	// hlsGOP forces a keyframe at least every 96 frames (4 s at 24 fps) so the
 	// muxer can always cut a segment where it wants to.
 	hlsGOP = "96"
+	// hlsVAAPIQP is the constant quantiser for the hardware encoder, matched
+	// to the software path's crf 23 so the two renditions look alike. QP and
+	// CRF are not the same scale, but for H.264 at 1080p they land close
+	// enough that a viewer cannot tell which path produced what they are
+	// watching — which is the whole requirement here.
+	hlsVAAPIQP = "23"
 )
 
 // HLSName is the cache entry (a directory) for a video's HLS rendition.
@@ -66,27 +72,90 @@ type HLSSource struct {
 // Both tracks are copied when the source already matches what a player wants
 // (H.264 at or below 1080p, AAC audio): segmenting a stream copy is nearly
 // free, so a compatible archive costs no more than the audio variants do.
-// Otherwise the track is encoded for real.
-func HLS(ffmpegPath string, src HLSSource, log *slog.Logger, source SourceFunc) DirDeriveFunc {
+// Otherwise the track is encoded for real — on the GPU when hw says so, and
+// on the CPU when it does not or when the GPU turns out not to manage this
+// particular source.
+func HLS(ffmpegPath string, src HLSSource, hw HWAccel, log *slog.Logger, source SourceFunc) DirDeriveFunc {
 	return func(ctx context.Context, dir string) error {
-		vc, ac := hlsVideoCodec(src), aacCodec(src.AudioCodec)
-		err := runFFmpegIn(ctx, ffmpegPath, dir, source, hlsArgs(vc, ac), log)
-		if err != nil && ctx.Err() == nil && (vc == "copy" || ac == "copy") {
-			// The codec strings come from TA's metadata; a container that
-			// refuses the copied track must not fail the request when a real
-			// encode would have worked. Clear the partial output first: the
-			// playlist would otherwise carry the abandoned segments.
-			if clearErr := clearDir(dir); clearErr != nil {
-				return fmt.Errorf("derive hls: %w (and clearing the partial output failed: %w)", err, clearErr)
-			}
-			if reErr := runFFmpegIn(ctx, ffmpegPath, dir, source, hlsArgs("libx264", "aac"), log); reErr != nil {
-				return fmt.Errorf("derive hls: copy failed (%w) and re-encode failed: %w", err, reErr)
-			}
-		} else if err != nil {
-			return fmt.Errorf("derive hls: %w", err)
+		if err := runHLSAttempts(ctx, ffmpegPath, dir, source, hlsAttempts(src, hw), log); err != nil {
+			return err
 		}
 		return ensureEndList(filepath.Join(dir, HLSPlaylistName))
 	}
+}
+
+// hlsAttempt is one ffmpeg run, named so a log line and an error can say which
+// of them failed.
+type hlsAttempt struct {
+	name string
+	args []string
+}
+
+// hlsAttempts is the fallback ladder, cheapest first. Each rung is strictly
+// more likely to work than the one before it and strictly more expensive, and
+// the last one — a plain software encode — is the one that always works. That
+// ordering is what makes the failure of any earlier rung a non-event.
+//
+//   - copy, when TA's metadata says the tracks are already what a player
+//     wants. Metadata is not a guarantee, so a muxer that refuses it falls
+//     through rather than failing the request.
+//   - vaapi, when a GPU was resolved at start-up. It can fail for a source the
+//     fixed-function decoder does not handle (10-bit AV1, most often) or
+//     because the device went away; neither is the user's problem.
+//   - libx264. If this fails, the source really is broken.
+func hlsAttempts(src HLSSource, hw HWAccel) []hlsAttempt {
+	vc, ac := hlsVideoCodec(src), aacCodec(src.AudioCodec)
+	var out []hlsAttempt
+	if vc == "copy" || ac == "copy" {
+		out = append(out, hlsAttempt{name: "copy", args: hlsArgs(vc, ac)})
+	}
+	if hw.VAAPI {
+		out = append(out, hlsAttempt{name: "vaapi", args: hlsVAAPIArgs(hw.Device, "aac")})
+	}
+	return append(out, hlsAttempt{name: "libx264", args: hlsArgs("libx264", "aac")})
+}
+
+// runHLSAttempts walks the ladder until one rung produces a rendition.
+//
+// Between rungs the directory is emptied: the playlist is written incrementally
+// and would otherwise carry the abandoned attempt's segments. The error it
+// finally returns leads with the *last* failure — the software encode — because
+// that is the one that means the source is unusable; the earlier failures ride
+// along as context so a broken GPU is still visible in the log.
+func runHLSAttempts(ctx context.Context, ffmpegPath, dir string, source SourceFunc, attempts []hlsAttempt, log *slog.Logger) error {
+	var (
+		lastName string
+		lastErr  error
+		earlier  []string
+	)
+	for i, a := range attempts {
+		if i > 0 {
+			if clearErr := clearDir(dir); clearErr != nil {
+				return fmt.Errorf("derive hls: %s failed (%w) and clearing the partial output failed: %w", lastName, lastErr, clearErr)
+			}
+		}
+		err := runFFmpegIn(ctx, ffmpegPath, dir, source, a.args, log)
+		if err == nil {
+			return nil
+		}
+		if ctx.Err() != nil {
+			// Cancelled or out of time: nothing to learn from another attempt,
+			// and the next one would only be killed too.
+			return fmt.Errorf("derive hls: %s: %w", a.name, err)
+		}
+		if lastErr != nil {
+			earlier = append(earlier, lastName+": "+lastErr.Error())
+		}
+		lastName, lastErr = a.name, err
+		if i+1 < len(attempts) && log != nil {
+			log.Warn("hls attempt failed, falling back",
+				"entry", filepath.Base(dir), "attempt", a.name, "next", attempts[i+1].name, "err", err)
+		}
+	}
+	if len(earlier) > 0 {
+		return fmt.Errorf("derive hls: %s failed: %w (earlier attempts: %s)", lastName, lastErr, strings.Join(earlier, "; "))
+	}
+	return fmt.Errorf("derive hls: %s failed: %w", lastName, lastErr)
 }
 
 // hlsVideoCodec copies a source that is already what the rendition would
@@ -138,6 +207,58 @@ func hlsArgs(videoCodec, audioCodec string) []string {
 			"-g", hlsGOP, "-keyint_min", hlsGOP, "-sc_threshold", "0",
 		)
 	}
+	return hlsOutputArgs(args, audioCodec)
+}
+
+// hlsVAAPIArgs is hlsArgs' hardware twin: the same input, the same audio and
+// the same HLS muxer, with the decode, the scale and the encode moved onto the
+// GPU. The frames never leave VA surfaces between the three, which is where
+// most of the win is — a round trip through system memory per frame would give
+// much of it back.
+//
+// Deliberately absent, next to the software path:
+//
+//   - -pix_fmt yuv420p. The pixel format is the filter's format=nv12 (4:2:0,
+//     which is what the encoder and every Apple decoder want); naming a
+//     software format here would force a download off the GPU.
+//   - -preset. h264_vaapi has no such knob: the encoder is fixed silicon, and
+//     -quality (its nearest equivalent) is left at the driver's default.
+//   - -sc_threshold. It is a generic AVCodecContext option, so ffmpeg accepts
+//     it here and it does nothing — VAAPI has no scene-cut detection to turn
+//     off. -g/-keyint_min already pin the GOP the segmenter needs, so it is
+//     dropped rather than carried as a lie about what ran.
+func hlsVAAPIArgs(device, audioCodec string) []string {
+	args := []string{
+		"-hide_banner", "-loglevel", "error",
+		// Hardware decode, with the decoded frames left on the GPU. A source
+		// the fixed-function decoder cannot take (10-bit AV1, say) fails here,
+		// which is exactly the failure the software fallback exists for.
+		"-hwaccel", "vaapi", "-hwaccel_device", device, "-hwaccel_output_format", "vaapi",
+		"-i", "pipe:0",
+		"-map", "0:v:0", "-map", "0:a:0",
+		// The GPU-side scale=-2:'min(1080,ih)'. w=-2 keeps the width even and
+		// the aspect ratio; min() means a source below the cap is not upscaled.
+		"-vf", "scale_vaapi=w=-2:h='min(" + strconv.Itoa(hlsMaxHeight) + ",ih)':format=nv12",
+		"-c:v", "h264_vaapi",
+		// Constant-quality, the closest thing to x264's crf: quality is pinned
+		// and the bitrate goes where it must, instead of a bitrate cap that
+		// would starve a busy 1080p scene. Intel's encoder is less efficient
+		// than x264 at equal quality, so a QP matching the software crf trades
+		// a somewhat larger rendition for the same picture — the right way
+		// round for a cache that is thrown away anyway.
+		"-rc_mode", "CQP", "-qp", hlsVAAPIQP,
+		// High@4.1 4:2:0, as on the software path: what every Apple device
+		// since the 4S decodes in hardware.
+		"-profile:v", "high", "-level", "4.1",
+		"-g", hlsGOP, "-keyint_min", hlsGOP,
+	}
+	return hlsOutputArgs(args, audioCodec)
+}
+
+// hlsOutputArgs appends the half both paths share: the audio track and the HLS
+// muxer. Keeping it in one place is what stops the hardware path drifting into
+// a subtly different rendition from the software one.
+func hlsOutputArgs(args []string, audioCodec string) []string {
 	args = append(args, "-c:a", audioCodec)
 	if audioCodec != "copy" {
 		args = append(args, "-b:a", "160k", "-ac", "2")

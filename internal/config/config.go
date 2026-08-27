@@ -51,6 +51,13 @@ type Config struct {
 	MediaTranscodeJobs int
 	// FFmpegPath is the ffmpeg binary used for derivations.
 	FFmpegPath string
+	// MediaHWAccel selects hardware-accelerated transcoding: "auto" (the
+	// default: use the GPU when the render node is there and openable),
+	// "vaapi" (always try) or "off". Parsed by media.ParseHWAccelMode.
+	MediaHWAccel string
+	// MediaVAAPIDevice is the DRM render node VAAPI uses. Empty means
+	// media.DefaultVAAPIDevice (/dev/dri/renderD128).
+	MediaVAAPIDevice string
 
 	// PublicURL is the browser-facing origin: the cookie's Secure flag follows
 	// its scheme and it is the CORS allowed origin.
@@ -84,6 +91,8 @@ func Load() (*Config, error) {
 		MediaCacheMaxBytes: int64(envFloat("MEDIA_CACHE_MAX_BYTES", 5<<30)),
 		MediaTranscodeJobs: int(envFloat("MEDIA_TRANSCODE_JOBS", 1)),
 		FFmpegPath:         cmp.Or(os.Getenv("FFMPEG_PATH"), "ffmpeg"),
+		MediaHWAccel:       getenvDefault("MEDIA_HWACCEL", "auto"),
+		MediaVAAPIDevice:   os.Getenv("MEDIA_VAAPI_DEVICE"),
 		PublicURL:          strings.TrimRight(os.Getenv("PUBLIC_URL"), "/"),
 		CORSOrigins:        splitCSV(os.Getenv("CORS_ORIGINS")),
 		AppName:            getenvDefault("APP_NAME", "Flimm"),

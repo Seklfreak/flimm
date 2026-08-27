@@ -114,6 +114,14 @@ func main() {
 		mediaCache = nil
 	}
 
+	// Decided once, here, rather than per transcode: the answer cannot change
+	// while the process runs, and an operator who passed a GPU in wants to see
+	// on the first line whether it was found.
+	hwMode := media.ParseHWAccelMode(cfg.MediaHWAccel)
+	hwaccel, hwReason := media.ResolveHWAccel(hwMode, cfg.MediaVAAPIDevice)
+	log.Info("media hardware acceleration",
+		"mode", string(hwMode), "vaapi", hwaccel.VAAPI, "device", hwaccel.Device, "reason", hwReason)
+
 	srv := api.NewServer(api.Options{
 		Pool:           pool,
 		TA:             client,
@@ -128,6 +136,7 @@ func main() {
 		MinPlaySeconds: cfg.MinPlaySeconds,
 		MediaCache:     mediaCache,
 		FFmpegPath:     cfg.FFmpegPath,
+		HWAccel:        hwaccel,
 		SecureCookies:  cfg.SecureCookies(),
 		CORSOrigins:    append([]string{cfg.PublicURL}, cfg.CORSOrigins...),
 		Frontend:       dist,

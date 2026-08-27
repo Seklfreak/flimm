@@ -2,6 +2,15 @@
 
 ## Done
 
+- **Hardware transcoding** (2026-08-26) — the HLS rendition runs on an Intel
+  iGPU through VAAPI when one is available: hardware decode, `scale_vaapi` and
+  `h264_vaapi` with the frames never leaving the GPU, turning a 4K AV1 hour
+  from tens of minutes of CPU into a few minutes. `MEDIA_HWACCEL` (`auto` by
+  default) and `MEDIA_VAAPI_DEVICE` configure it, and it is never a hard
+  dependency: no render node means the CPU path, and a source the hardware
+  decoder refuses clears the partial rendition and re-runs in software rather
+  than failing the request. See
+  [deploy.md](deploy.md#hardware-acceleration-intel-vaapi).
 - **Compatible video rendition** (2026-08-26) — `GET /media/hls/{id}/index.m3u8`
   serves the video transcoded to H.264/AAC as HLS with fMP4 segments, for the
   AV1 and VP9 in the archive that Apple hardware cannot decode. It is

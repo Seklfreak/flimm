@@ -463,6 +463,14 @@ Costs, so nobody is surprised:
   tens of minutes to finish — though watching can start almost immediately.
   `MEDIA_TRANSCODE_JOBS` (default 1) caps how many run at once; extra requests
   queue, because two transcodes sharing a core make both viewers wait longer.
+- **Unless there is a GPU.** With an Intel iGPU exposed to the server
+  (`MEDIA_HWACCEL`, default `auto`) the decode, the scale and the H.264 encode
+  all run on it, and the same job takes minutes instead. Nothing about the
+  rendition or this contract changes: same H.264 High@4.1 ≤1080p, same
+  playlist, same states. A source the hardware decoder cannot take falls back
+  to the software encode by itself, so a client never sees the difference
+  except in how long it waits. See
+  [deploy.md](deploy.md#hardware-acceleration-intel-vaapi).
 - **Disk.** ~2–3 GB for a 1080p hour, against `MEDIA_CACHE_MAX_BYTES`. A few
   renditions fill the default 5 GiB cap, and the least recently watched are
   evicted.
@@ -512,6 +520,8 @@ tested against a fake.
 | `MEDIA_CACHE_MAX_BYTES` | no | cache size cap before LRU eviction; default 5 GiB |
 | `MEDIA_TRANSCODE_JOBS` | no | concurrent HLS transcodes; default 1, extra requests queue |
 | `FFMPEG_PATH` | no | ffmpeg binary; default `ffmpeg` on `PATH` |
+| `MEDIA_HWACCEL` | no | `auto` (default), `vaapi` or `off` — hardware transcoding for the HLS rendition; falls back to the CPU per video |
+| `MEDIA_VAAPI_DEVICE` | no | DRM render node for VAAPI; default `/dev/dri/renderD128` |
 | `APP_NAME` | no | default `Flimm` |
 | `PORT` | no | default 8080 |
 | `SENTRY_DSN` | no | |

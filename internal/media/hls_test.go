@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 )
 
 // The copy-vs-encode decision is what makes this variant affordable on an
@@ -200,7 +201,7 @@ func TestHLSCopiesCompatibleSource(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	derive := HLS(stub, HLSSource{VideoCodec: "avc1", Height: 720, AudioCodec: "mp4a"}, nil, emptySource)
+	derive := HLS(stub, HLSSource{VideoCodec: "avc1", Height: 720, AudioCodec: "mp4a"}, HWAccel{}, nil, emptySource)
 	if err := derive(t.Context(), out); err != nil {
 		t.Fatalf("derive: %v", err)
 	}
@@ -225,7 +226,7 @@ func TestHLSFallsBackWhenCopyFails(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	derive := HLS(stub, HLSSource{VideoCodec: "avc1", Height: 720, AudioCodec: "mp4a"}, nil, emptySource)
+	derive := HLS(stub, HLSSource{VideoCodec: "avc1", Height: 720, AudioCodec: "mp4a"}, HWAccel{}, nil, emptySource)
 	if err := derive(t.Context(), out); err != nil {
 		t.Fatalf("a failed copy should fall back to encoding, got: %v", err)
 	}
@@ -245,7 +246,7 @@ func TestHLSSkipsCopyForIncompatibleSource(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	derive := HLS(stub, HLSSource{VideoCodec: "av01", Height: 1080, AudioCodec: "opus"}, nil, emptySource)
+	derive := HLS(stub, HLSSource{VideoCodec: "av01", Height: 1080, AudioCodec: "opus"}, HWAccel{}, nil, emptySource)
 	if err := derive(t.Context(), out); err != nil {
 		t.Fatalf("derive: %v", err)
 	}
@@ -264,7 +265,7 @@ func TestHLSClosesThePlaylist(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	derive := HLS(stub, HLSSource{VideoCodec: "av01", AudioCodec: "opus"}, nil, emptySource)
+	derive := HLS(stub, HLSSource{VideoCodec: "av01", AudioCodec: "opus"}, HWAccel{}, nil, emptySource)
 	if err := derive(t.Context(), out); err != nil {
 		t.Fatalf("derive: %v", err)
 	}
@@ -309,7 +310,7 @@ func TestHLSTranscodesToPlayableRendition(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Claim AV1 so the encode path runs, which is the case that matters.
-	derive := HLS("ffmpeg", HLSSource{VideoCodec: "av01", Height: 240, AudioCodec: "opus"}, nil,
+	derive := HLS("ffmpeg", HLSSource{VideoCodec: "av01", Height: 240, AudioCodec: "opus"}, HWAccel{}, nil,
 		func(context.Context) (io.ReadCloser, error) {
 			return os.Open(src) //nolint:gosec // test fixture path
 		})
@@ -384,5 +385,240 @@ func assertH264AAC(t *testing.T, segment, init string) {
 		if !strings.Contains(got, want) {
 			t.Errorf("rendition is not %s: %q", want, got)
 		}
+	}
+}
+
+// The hardware command line is the part no unit test can prove works — only a
+// GPU can — so what is checked here is that it is the *same rendition* as the
+// software path, built the way VAAPI needs: the acceleration flags before the
+// input, the frames scaled and formatted on the GPU, and none of the
+// software-encoder knobs carried along.
+func TestHLSVAAPIArgs(t *testing.T) {
+	want := []string{
+		"-hide_banner", "-loglevel", "error",
+		"-hwaccel", "vaapi", "-hwaccel_device", "/dev/dri/renderD128", "-hwaccel_output_format", "vaapi",
+		"-i", "pipe:0",
+		"-map", "0:v:0", "-map", "0:a:0",
+		"-vf", "scale_vaapi=w=-2:h='min(1080,ih)':format=nv12",
+		"-c:v", "h264_vaapi",
+		"-rc_mode", "CQP", "-qp", "23",
+		"-profile:v", "high", "-level", "4.1",
+		"-g", "96", "-keyint_min", "96",
+		"-c:a", "aac", "-b:a", "160k", "-ac", "2",
+		"-threads", "0",
+		"-f", "hls",
+		"-hls_time", "4",
+		"-hls_playlist_type", "event",
+		"-hls_segment_type", "fmp4",
+		"-hls_flags", "independent_segments+temp_file",
+		"-hls_fmp4_init_filename", "init.mp4",
+		"-hls_segment_filename", "seg%05d.m4s",
+		"-y", "index.m3u8",
+	}
+	if got := hlsVAAPIArgs(DefaultVAAPIDevice, "aac"); !reflect.DeepEqual(got, want) {
+		t.Errorf("vaapi args =\n%v\nwant\n%v", got, want)
+	}
+}
+
+func TestHLSVAAPIArgsShape(t *testing.T) {
+	got := hlsVAAPIArgs("/dev/dri/renderD129", "aac")
+
+	// -hwaccel* configure the *input*; after -i they would be ignored and the
+	// decode would silently run on the CPU, which is the failure mode this
+	// whole change exists to avoid.
+	input := slices.Index(got, "-i")
+	for _, flag := range []string{"-hwaccel", "-hwaccel_device", "-hwaccel_output_format"} {
+		i := slices.Index(got, flag)
+		if i < 0 || i > input {
+			t.Errorf("%s must appear before -i: %v", flag, got)
+		}
+	}
+	if i := slices.Index(got, "-hwaccel_device"); got[i+1] != "/dev/dri/renderD129" {
+		t.Errorf("the configured device is not used: %v", got)
+	}
+	// Software-encoder settings: either rejected or ignored by h264_vaapi, and
+	// -pix_fmt would drag every frame back off the GPU.
+	for _, unwanted := range []string{"-preset", "-crf", "-pix_fmt", "-sc_threshold"} {
+		if slices.Contains(got, unwanted) {
+			t.Errorf("vaapi args carry the software knob %s: %v", unwanted, got)
+		}
+	}
+	// The rendition still has to be the one clients are promised.
+	for _, pair := range [][2]string{{"-c:v", "h264_vaapi"}, {"-profile:v", "high"}, {"-level", "4.1"}, {"-c:a", "aac"}} {
+		if i := slices.Index(got, pair[0]); i < 0 || got[i+1] != pair[1] {
+			t.Errorf("vaapi args missing %v: %v", pair, got)
+		}
+	}
+	if got[len(got)-1] != HLSPlaylistName {
+		t.Errorf("vaapi args do not end in the playlist: %v", got)
+	}
+}
+
+// The ladder decides how much work a video costs. Getting the order or the
+// membership wrong is either a pointless GPU attempt on a stream copy or a
+// software encode on a box with a perfectly good GPU.
+func TestHLSAttemptLadder(t *testing.T) {
+	hw := HWAccel{VAAPI: true, Device: DefaultVAAPIDevice}
+	for _, tc := range []struct {
+		name string
+		src  HLSSource
+		hw   HWAccel
+		want []string
+	}{
+		{"gpu off: encode in software", HLSSource{VideoCodec: "av01", AudioCodec: "opus"}, HWAccel{}, []string{"libx264"}},
+		{"gpu on: try it, then software", HLSSource{VideoCodec: "av01", AudioCodec: "opus"}, hw, []string{"vaapi", "libx264"}},
+		{"a copyable source is still copied first", HLSSource{VideoCodec: "avc1", Height: 720, AudioCodec: "mp4a"}, hw, []string{"copy", "vaapi", "libx264"}},
+		{"copied video, encoded audio", HLSSource{VideoCodec: "avc1", Height: 720, AudioCodec: "opus"}, hw, []string{"copy", "vaapi", "libx264"}},
+	} {
+		attempts := hlsAttempts(tc.src, tc.hw)
+		var got []string
+		for _, a := range attempts {
+			got = append(got, a.name)
+		}
+		if !reflect.DeepEqual(got, tc.want) {
+			t.Errorf("%s: ladder = %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}
+
+// writeStubVAAPIFFmpeg installs a stub that fails the hardware attempt the way
+// a GPU that cannot decode a source does — after writing part of a rendition —
+// and succeeds on the software one. It records what each call was asked to do,
+// and whether the hardware attempt's leftovers were still lying about.
+func writeStubVAAPIFFmpeg(t *testing.T, dir, callLog string) string {
+	t.Helper()
+	path := filepath.Join(dir, "ffmpeg-vaapi-stub")
+	script := "#!/bin/sh\n" +
+		"case \"$*\" in\n" +
+		"  *h264_vaapi*) codec=vaapi ;;\n" +
+		"  *libx264*) codec=libx264 ;;\n" +
+		"  *) codec=copy ;;\n" +
+		"esac\n" +
+		"echo \"$codec\" >> " + callLog + "\n" +
+		"[ -e vaapi-leftover.m4s ] && echo 'dirty' >> " + callLog + "\n" +
+		"if [ \"$codec\" = vaapi ]; then\n" +
+		// A hardware attempt gets far enough to publish a segment and a
+		// playlist naming it before the decoder gives up on a 10-bit frame.
+		"  : > vaapi-leftover.m4s\n" +
+		"  printf '#EXTM3U\\n#EXTINF:4.0,\\nvaapi-leftover.m4s\\n' > " + HLSPlaylistName + "\n" +
+		"  echo 'Failed setup for format vaapi: hwaccel initialisation returned error' >&2\n" +
+		"  exit 1\n" +
+		"fi\n" +
+		"printf '#EXTM3U\\n#EXT-X-MAP:URI=\"init.mp4\"\\n#EXTINF:4.0,\\nseg00000.m4s\\n#EXT-X-ENDLIST\\n' > " + HLSPlaylistName + "\n" +
+		": > " + HLSInitName + "\n: > seg00000.m4s\n"
+	if err := os.WriteFile(path, []byte(script), 0o700); err != nil { //nolint:gosec // test fixture must be executable
+		t.Fatal(err)
+	}
+	return path
+}
+
+// A GPU that cannot manage a source is not the viewer's problem: the transcode
+// falls back to the CPU and the request succeeds. What must not happen is the
+// half-written hardware attempt surviving into the software one — the playlist
+// would then name segments nothing wrote.
+func TestHLSFallsBackFromVAAPIToSoftware(t *testing.T) {
+	dir := t.TempDir()
+	callLog := filepath.Join(dir, "calls.log")
+	stub := writeStubVAAPIFFmpeg(t, dir, callLog)
+	out := filepath.Join(dir, "out")
+	if err := os.Mkdir(out, 0o750); err != nil {
+		t.Fatal(err)
+	}
+
+	derive := HLS(stub, HLSSource{VideoCodec: "av01", Height: 2160, AudioCodec: "opus"},
+		HWAccel{VAAPI: true, Device: DefaultVAAPIDevice}, nil, emptySource)
+	if err := derive(t.Context(), out); err != nil {
+		t.Fatalf("a failed hardware attempt must fall back, not fail: %v", err)
+	}
+	if got := readCalls(t, callLog); got != "vaapi\nlibx264" {
+		t.Errorf("ffmpeg calls = %q, want vaapi then libx264 with a cleared directory in between", got)
+	}
+	if _, err := os.Stat(filepath.Join(out, "vaapi-leftover.m4s")); err == nil {
+		t.Error("the abandoned hardware attempt is still in the rendition")
+	}
+	b, err := os.ReadFile(filepath.Join(out, HLSPlaylistName)) //nolint:gosec // test fixture path
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(b), "vaapi-leftover") {
+		t.Errorf("the playlist still names the abandoned attempt: %q", b)
+	}
+}
+
+// End to end through the cache, because "no user-visible failure" is a
+// statement about the job state clients are told about, not about an error
+// return: hls_state must read done, not failed.
+func TestHLSVAAPIFallbackEndsUpDone(t *testing.T) {
+	dir := t.TempDir()
+	callLog := filepath.Join(dir, "calls.log")
+	stub := writeStubVAAPIFFmpeg(t, dir, callLog)
+
+	c, err := NewCache(filepath.Join(dir, "cache"), 0, 1, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+
+	name := HLSName("yt-id")
+	derive := HLS(stub, HLSSource{VideoCodec: "av01", Height: 2160, AudioCodec: "opus"},
+		HWAccel{VAAPI: true, Device: DefaultVAAPIDevice}, nil, emptySource)
+	if st := c.StartDir(name, derive); st != StateRunning {
+		t.Fatalf("StartDir = %q, want running", st)
+	}
+	if _, err := c.WaitDir(t.Context(), name, HLSPlaylistReady, 10*time.Second); err != nil {
+		t.Fatalf("wait: %v", err)
+	}
+	// The playlist can be ready a moment before the job marks the entry
+	// complete; the state clients see is the one that has to settle on done.
+	deadline := time.Now().Add(10 * time.Second)
+	for c.DirState(name) != StateDone && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if st := c.DirState(name); st != StateDone {
+		t.Errorf("hls_state = %q after a hardware failure and a software retry, want done", st)
+	}
+	if got := readCalls(t, callLog); got != "vaapi\nlibx264" {
+		t.Errorf("ffmpeg calls = %q, want vaapi then libx264", got)
+	}
+}
+
+// When the software encode fails too, the source really is unusable — and that
+// is the failure the operator must see, with the hardware attempt kept as
+// context rather than mistaken for the cause.
+func TestHLSSoftwareFailureIsTheRealFailure(t *testing.T) {
+	dir := t.TempDir()
+	callLog := filepath.Join(dir, "calls.log")
+	stub := filepath.Join(dir, "ffmpeg-always-fails")
+	script := "#!/bin/sh\n" +
+		"case \"$*\" in\n" +
+		"  *h264_vaapi*) echo vaapi >> " + callLog + "; echo 'hwaccel initialisation returned error' >&2 ;;\n" +
+		"  *) echo libx264 >> " + callLog + "; echo 'Invalid data found when processing input' >&2 ;;\n" +
+		"esac\nexit 1\n"
+	if err := os.WriteFile(stub, []byte(script), 0o700); err != nil { //nolint:gosec // test fixture must be executable
+		t.Fatal(err)
+	}
+	out := filepath.Join(dir, "out")
+	if err := os.Mkdir(out, 0o750); err != nil {
+		t.Fatal(err)
+	}
+
+	derive := HLS(stub, HLSSource{VideoCodec: "av01", Height: 1080, AudioCodec: "opus"},
+		HWAccel{VAAPI: true, Device: DefaultVAAPIDevice}, nil, emptySource)
+	err := derive(t.Context(), out)
+	if err == nil {
+		t.Fatal("a source nothing can transcode must fail the derivation")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "libx264 failed") {
+		t.Errorf("the error should lead with the software failure: %v", err)
+	}
+	if !strings.Contains(msg, "Invalid data found") {
+		t.Errorf("the error should carry ffmpeg's reason: %v", err)
+	}
+	if !strings.Contains(msg, "vaapi") {
+		t.Errorf("the earlier hardware attempt should still be visible: %v", err)
+	}
+	if got := readCalls(t, callLog); got != "vaapi\nlibx264" {
+		t.Errorf("ffmpeg calls = %q, want both attempts", got)
 	}
 }
