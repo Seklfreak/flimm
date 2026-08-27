@@ -23,14 +23,8 @@ final class PlayerEngine {
     /// True once the current item reports `readyToPlay` — the moment a
     /// "preparing…" state has something real to hand over to.
     private(set) var isReady = false
-    /// The position the caller asked to start at, while the item has not been
-    /// able to honour it yet. A growing HLS playlist can only be seeked inside
-    /// what the transcode has produced, so a resume further in than that has
-    /// to wait — and until it lands, *this*, not the clock, is where the
-    /// viewer is meant to be.
-    var unreachedStart: Double? { pendingSeek }
     /// Set when the item itself failed — a bad URL, a 401, an unsupported
-    /// file, or a compatible rendition the server has not produced yet.
+    /// file, or a rendition whose playlist the server could not open yet.
     private(set) var failure: String?
 
     @ObservationIgnored var onEnded: (@MainActor () -> Void)?
@@ -50,9 +44,12 @@ final class PlayerEngine {
     @ObservationIgnored private var pipObservation: NSKeyValueObservation?
     @ObservationIgnored private var pip: AVPictureInPictureController?
     @ObservationIgnored private let pipObserver = PiPObserver()
+    /// Where to start, until the item reports `readyToPlay` and the seek can
+    /// actually be issued. One seek, once — the compatible rendition is a
+    /// complete VOD playlist from its first request, so seeking anywhere in it
+    /// works exactly as it does in the archived file.
     @ObservationIgnored private var pendingSeek: Double?
     @ObservationIgnored private var desiredRate: Double = 1
-    @ObservationIgnored private var trustsItemDuration = true
 
     init() {
         player.automaticallyWaitsToMinimizeStalling = true
@@ -69,17 +66,15 @@ final class PlayerEngine {
     /// `/media`, including on every byte-range request seeking makes and on
     /// every segment of an HLS rendition.
     ///
-    /// `trustsItemDuration` is `false` for the compatible rendition: it is a
-    /// growing `EXT-X-PLAYLIST-TYPE:EVENT` playlist, so the item's duration is
-    /// "how much has been transcoded so far", not the video's length, and
-    /// adopting it would shrink the scrubber to a few seconds.
+    /// The compatible rendition needs no special case: its playlist is a
+    /// complete VOD one from the first request, so the item's duration is the
+    /// video's own and `startAt` lands wherever it is asked to.
     func load(
         url: URL,
         headers: [String: String],
         startAt: Double,
         rate: Double,
-        duration knownDuration: Double,
-        trustsItemDuration: Bool = true
+        duration knownDuration: Double
     ) {
         failure = nil
         isReady = false
@@ -87,7 +82,6 @@ final class PlayerEngine {
         duration = knownDuration
         currentTime = startAt
         pendingSeek = startAt > 0 ? startAt : nil
-        self.trustsItemDuration = trustsItemDuration
 
         let asset = AVURLAsset(url: url, options: [APIClient.assetHTTPHeaderFieldsKey: headers])
         let item = AVPlayerItem(asset: asset)
@@ -203,41 +197,21 @@ final class PlayerEngine {
     private func tick(_ seconds: Double) {
         guard seconds.isFinite else { return }
         if let item = player.currentItem, item.status == .readyToPlay {
-            if let pending = pendingSeek {
-                // Seeking outside what the item has is clamped, not honoured,
-                // so on a growing HLS playlist the resume is re-tried each
-                // tick until the transcode has produced that far.
-                if PlayerEngine.canSeek(to: pending, in: item) {
-                    pendingSeek = nil
-                    player.seek(to: CMTime(seconds: pending, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
-                    return
-                }
-                // Playing on has reached it by itself; nothing left to honour.
-                if seconds >= pending { pendingSeek = nil }
-            }
-            // The archived duration is authoritative, but a live-ish item can
-            // report a better one — except a growing HLS playlist, which
-            // reports only what has been transcoded so far.
+            // The archived duration is authoritative until the item reports a
+            // better one; the rendition's playlist carries the whole video, so
+            // that one agrees rather than shrinking the scrubber.
             let itemDuration = item.duration.seconds
-            if trustsItemDuration, itemDuration.isFinite, itemDuration > 0 { duration = itemDuration }
+            if itemDuration.isFinite, itemDuration > 0 { duration = itemDuration }
         } else if pendingSeek != nil {
             // The item has not reported ready, so its clock says 0 rather than
             // anything true. Letting that through would overwrite the position
             // playback is about to start from — which is how a resume is lost
-            // when the item fails and is reopened.
+            // when the item fails and is reopened, or while the first segment
+            // of a rendition is still being encoded.
             return
         }
         currentTime = seconds
         onTick?(seconds)
-    }
-
-    /// Whether the item can actually be seeked to `target` right now. An empty
-    /// `seekableTimeRanges` means the item has not said — a progressive file
-    /// before its first range is published — so the seek is tried anyway.
-    private static func canSeek(to target: Double, in item: AVPlayerItem) -> Bool {
-        let ranges = item.seekableTimeRanges.map(\.timeRangeValue).filter { $0.duration.seconds.isFinite }
-        guard !ranges.isEmpty else { return true }
-        return ranges.contains { target >= $0.start.seconds - 0.5 && target <= $0.end.seconds + 0.5 }
     }
 
     private func observeControlStatus() {
@@ -262,6 +236,17 @@ final class PlayerEngine {
                 switch status {
                 case .readyToPlay:
                     self.isReady = true
+                    // The one seek a resume needs. Issuing it before the item
+                    // is ready is silently dropped, so it waits for exactly
+                    // this moment — and then lands, wherever it points.
+                    if let pending = self.pendingSeek {
+                        self.pendingSeek = nil
+                        self.player.seek(
+                            to: CMTime(seconds: pending, preferredTimescale: 600),
+                            toleranceBefore: .zero,
+                            toleranceAfter: .zero
+                        )
+                    }
                 case .failed:
                     self.isReady = false
                     self.failure = message

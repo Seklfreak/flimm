@@ -33,6 +33,10 @@ final class WatchModel {
     /// The server-reported state of that rendition, refreshed on every
     /// attempt. `done` means the wait is AVFoundation's, not the transcode's.
     private(set) var compatibleState: HLSState?
+    /// How far that rendition has been encoded, 0…1 — what turns the
+    /// preparing overlay into "Preparing… 37%". 0 when the server has not
+    /// said, which is also what a backend without the field reports.
+    private(set) var compatibleProgress: Double = 0
     /// Which rung of the ladder is playing, when one is. `nil` while the
     /// archived file plays, and also on a server that offers `hls_url` without
     /// `hls_variants` — there the rendition has no height to name.
@@ -66,10 +70,14 @@ final class WatchModel {
     /// stumble gets its own window rather than inheriting a spent one.
     @ObservationIgnored private var compatibleSince: Date?
     @ObservationIgnored private var compatibleRetry: Task<Void, Never>?
+    /// Keeps the transcode pointed where the viewer is, and says how far it
+    /// has got. Only the compatible rendition uses it.
+    @ObservationIgnored private let steering: RenditionSteering
 
-    /// How long to keep retrying a rendition the server has not produced yet.
-    /// The playlist gives up waiting after 45 s and answers `503` with
-    /// `Retry-After: 5`, so this is several of those in a row.
+    /// How long to keep retrying a playlist the server could not open. A
+    /// segment that has not been encoded yet no longer lands here — it blocks
+    /// server-side and arrives late — so this is the job failing to start at
+    /// all: `503` with `Retry-After: 5`, several of them in a row.
     private static let compatibleRetryWindow: TimeInterval = 120
     private static let compatibleRetryDelay: Duration = .seconds(5)
 
@@ -104,6 +112,8 @@ final class WatchModel {
         self.audioOnly = request.context.audioOnly
         self.startAtOverride = request.startAt
         self.reporter = ProgressReporter(client: app.client)
+        self.steering = RenditionSteering(client: app.client)
+        wireSteering()
         wireEngine()
         wireRemoteCommands()
     }
@@ -121,6 +131,7 @@ final class WatchModel {
         compatibleSince = nil
         compatibleGaveUp = false
         compatibleState = nil
+        compatibleProgress = 0
         do {
             let detail = try await client.video(videoId)
             video = detail
@@ -144,15 +155,20 @@ final class WatchModel {
     private func startPlayback(_ detail: Video) async {
         compatibleRetry?.cancel()
         compatibleRetry = nil
+        steering.cancel()
         audioUnavailable = false
         codecIssue = nil
         usingCompatibleRendition = false
         activeVariant = nil
 
+        // Resume is the default action, and it is settled before anything is
+        // started: the server encodes from here first, which is what makes
+        // resuming an hour in immediate.
+        let resume = startAtOverride ?? (detail.watched ? 0 : detail.position)
+        let isResume = startAtOverride == nil && resume > 0
+        startAtOverride = nil
+
         let path: String
-        // A growing EVENT playlist reports only what has been transcoded so
-        // far, so the archived duration stays authoritative for the scrubber.
-        var trustsItemDuration = true
         if audioOnly {
             guard let nativeAudioURL = detail.nativeAudioURL else {
                 // Audio-only was requested but this server predates
@@ -168,19 +184,18 @@ final class WatchModel {
                 path = detail.mediaUrl
             case .hls(let choice):
                 path = choice.url
-                trustsItemDuration = false
                 usingCompatibleRendition = true
                 activeVariant = choice.variant
                 compatibleSince = compatibleSince ?? Date()
-                // Start the job before AVFoundation opens the playlist, so the
-                // transcode's head start is the server's rather than ours. The
+                // Start the job before AVFoundation opens the playlist, with
+                // `from` so it encodes the part about to be played first. The
                 // call is idempotent and reports where the rendition stands.
                 // Only the height about to play is started: the server
-                // transcodes one job at a time, so warming the ladder would
-                // only make this one later.
-                compatibleState = (try? await client.startHLS(videoId, height: choice.height))
-                    ?? choice.state
-                    ?? detail.hlsState
+                // transcodes one at a time.
+                let status = await steering.start(videoId: videoId, height: choice.height, from: resume)
+                compatibleState = status?.state ?? choice.state ?? detail.hlsState
+                compatibleProgress = status?.progress ?? choice.variant?.progress ?? 0
+                steering.adopt(state: compatibleState)
             case .audioOnly(let issue), .unplayable(let issue):
                 codecIssue = issue
                 return
@@ -191,11 +206,7 @@ final class WatchModel {
             return
         }
         let headers = (try? await client.mediaHeaders()) ?? [:]
-        // Resume is the default action: any saved position on an unwatched
-        // video resumes, and only a subtitle hit overrides it.
-        let resume = startAtOverride ?? (detail.watched ? 0 : detail.position)
-        if startAtOverride == nil, resume > 0 { resumedFrom = resume }
-        startAtOverride = nil
+        if isResume { resumedFrom = resume }
 
         NowPlayingController.configureAudioSession()
         engine.load(
@@ -203,18 +214,26 @@ final class WatchModel {
             headers: headers,
             startAt: resume,
             rate: prefs.playbackSpeed,
-            duration: detail.duration,
-            trustsItemDuration: trustsItemDuration
+            duration: detail.duration
         )
         if audioOnly { engine.detachPiP() }
+        if usingCompatibleRendition {
+            // "Waiting" is either overlay: nothing on screen yet, or a stall
+            // on a segment the encoder has not reached.
+            steering.poll { [weak self] in
+                guard let self else { return false }
+                return !self.engine.isReady || self.engine.isBuffering
+            }
+        }
         await beginReporting()
     }
 
-    /// A rendition the transcode has not reached yet fails the item outright:
-    /// the playlist answers `503` with `Retry-After: 5` until the first
-    /// segment exists, and `AVPlayer` has no notion of "come back later". That
-    /// is still preparing, not an error, so it is retried on the server's own
-    /// cadence until the window runs out.
+    /// A playlist the server cannot open — the job failed to start — answers
+    /// `503` with `Retry-After: 5`, which fails the item outright, because
+    /// `AVPlayer` has no notion of coming back later. A segment that has not
+    /// been encoded yet does *not* land here: it blocks on the server and the
+    /// player simply buffers. So this is still preparing, not an error, and it
+    /// is retried on the server's own cadence until the window runs out.
     private func handleEngineFailure() {
         guard usingCompatibleRendition, !compatibleGaveUp, let detail = video else { return }
         guard let since = compatibleSince, Date().timeIntervalSince(since) < Self.compatibleRetryWindow else {
@@ -294,6 +313,7 @@ final class WatchModel {
 
     func seek(to seconds: Double) {
         engine.seek(to: seconds)
+        steering.steer(to: seconds)
         resumedFrom = nil
         Task { await reporter.flush() }
         pushNowPlaying(force: true)
@@ -332,6 +352,7 @@ final class WatchModel {
         resumedFrom = nil
         try? await client.startOver(videoId)
         engine.seek(to: 0)
+        steering.steer(to: 0)
     }
 
     func setSpeed(_ rate: Double) async {
@@ -436,6 +457,7 @@ final class WatchModel {
     func tearDown() async {
         compatibleRetry?.cancel()
         compatibleRetry = nil
+        steering.cancel()
         await reporter.stop()
         nowPlaying.unregister()
         engine.tearDown()
@@ -443,6 +465,15 @@ final class WatchModel {
     }
 
     // MARK: - Wiring
+
+    /// Everything the server says about the job while it is steered or polled
+    /// lands here, so the overlay's percentage has one source.
+    private func wireSteering() {
+        steering.onStatus = { [weak self] status in
+            self?.compatibleState = status.state
+            self?.compatibleProgress = status.progress
+        }
+    }
 
     private func wireEngine() {
         engine.onEnded = { [weak self] in
@@ -480,15 +511,10 @@ final class WatchModel {
         }
     }
 
-    /// What the heartbeat reports.
-    ///
-    /// While a resume has not landed — the compatible rendition's playlist has
-    /// not grown that far yet — the player is temporarily earlier in the video
-    /// than the viewer is. Reporting the clock there would overwrite a good
-    /// server-held position with a worse one, so the position being sought is
-    /// what goes back: the same value the server already holds, which the
-    /// reporter then stops repeating.
-    private var playbackPosition: Double { engine.unreachedStart ?? engine.currentTime }
+    /// What the heartbeat reports: the player's own clock, which the engine
+    /// holds at the position playback is about to start from until the item is
+    /// ready to report a real one.
+    private var playbackPosition: Double { engine.currentTime }
 
     private func applyProgress(_ result: ProgressResult) {
         guard result.watched, !isWatched else { return }

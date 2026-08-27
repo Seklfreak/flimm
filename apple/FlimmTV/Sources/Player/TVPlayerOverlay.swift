@@ -9,8 +9,9 @@ import SwiftUI
 /// same choice the phone app makes, for the same reason. **Audio-only
 /// artwork**: a music playlist has no video track, and a black rectangle is not
 /// a player. **The compatible-rendition wait**: when this device cannot decode
-/// what was archived the server transcodes on demand, and the first segment
-/// takes a few seconds — said out loud rather than left as a black screen.
+/// what was archived the server transcodes on demand, and the part being
+/// resumed from takes a few seconds — said out loud, with the encoder's own
+/// progress, rather than left as a black screen.
 ///
 /// It is deliberately inert: `allowsHitTesting(false)` keeps every remote press
 /// going to the transport bar underneath.
@@ -46,11 +47,11 @@ struct TVPlayerOverlay: View {
             VStack(spacing: 24) {
                 ProgressView()
                     .scaleEffect(1.6)
-                Text("Preparing a compatible version…")
+                Text(VideoQuality.preparingTitle(model.compatibleProgress))
                     .font(.title2.bold())
                 Text("""
                 This Apple TV can't decode the archived file, so the server is converting it. \
-                Playback starts as soon as the first part is ready.
+                It starts where you left off, so playback begins as soon as that part is ready.
                 """)
                     .font(.title3)
                     .foregroundStyle(.secondary)

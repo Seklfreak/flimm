@@ -87,7 +87,7 @@ enum Fixtures {
       "audio_aac_url": "/media/audio/yt-id.m4a",
       "hls_url": "/media/hls/yt-id/1080/index.m3u8",
       "hls_state": "done",
-      "hls_variants": [ { "height": 1080, "url": "/media/hls/yt-id/1080/index.m3u8", "state": "done", "codec": "h264" },
+      "hls_variants": [ { "height": 1080, "url": "/media/hls/yt-id/1080/index.m3u8", "state": "done", "codec": "h264", "progress": 1 },
                         { "height": 720, "url": "/media/hls/yt-id/720/index.m3u8", "state": "pending", "codec": "h264" },
                         { "height": 480, "url": "/media/hls/yt-id/480/index.m3u8", "state": "pending", "codec": "h264" } ],
       "youtube_url": "https://www.youtube.com/watch?v=yt-id",
@@ -150,7 +150,7 @@ enum Fixtures {
 
     /// `POST /videos/{id}/hls`.
     static let hlsStatus = """
-    { "state": "running" }
+    { "state": "running", "progress": 0.37 }
     """
 
     static let feed = """

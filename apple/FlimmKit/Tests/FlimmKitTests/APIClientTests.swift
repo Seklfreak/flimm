@@ -106,15 +106,17 @@ final class APIClientTests: XCTestCase {
         XCTAssertEqual(object["position"] as? Int, 561)
     }
 
-    /// The prefetch/"is it ready yet?" call. It must not wait on the server,
-    /// so all the client does is post and read the state back.
-    func testStartHLSPostsAndReturnsTheState() async throws {
+    /// The prefetch/"how far along is it?" call. It must not wait on the
+    /// server, so all the client does is post and read the status back.
+    func testStartHLSPostsAndReturnsTheStatus() async throws {
         let session = StubURLProtocol.session(json: Fixtures.hlsStatus)
         let client = APIClient(baseURL: baseURL, tokens: StaticTokenProvider("tok"), session: session)
 
-        let state = try await client.startHLS("yt-id")
+        let status = try await client.startHLS("yt-id")
 
-        XCTAssertEqual(state, .running)
+        XCTAssertEqual(status.state, .running)
+        // What "Preparing… 37%" is made of.
+        XCTAssertEqual(status.progress, 0.37, accuracy: 0.0001)
         let request = try XCTUnwrap(StubURLProtocol.recorded.last)
         XCTAssertEqual(request.method, "POST")
         XCTAssertEqual(request.path, "/api/v1/videos/yt-id/hls")
@@ -133,6 +135,65 @@ final class APIClientTests: XCTestCase {
         let request = try XCTUnwrap(StubURLProtocol.recorded.last)
         XCTAssertEqual(request.path, "/api/v1/videos/yt-id/hls")
         XCTAssertEqual(request.query, "height=720")
+    }
+
+    /// Resuming an hour in encodes *there* first, so `from` is the resume
+    /// position the server itself handed over — in whole seconds, like every
+    /// other position the API takes.
+    func testStartHLSCarriesTheResumePositionAsWholeSeconds() async throws {
+        let session = StubURLProtocol.session(json: Fixtures.hlsStatus)
+        let client = APIClient(baseURL: baseURL, tokens: StaticTokenProvider("tok"), session: session)
+
+        _ = try await client.startHLS("yt-id", height: 1080, from: 2461.8)
+
+        let request = try XCTUnwrap(StubURLProtocol.recorded.last)
+        XCTAssertEqual(request.query, "height=1080&from=2461")
+    }
+
+    /// "Start over" is a real answer — encode from the top — so 0 is sent
+    /// rather than dropped, while no opinion at all sends nothing.
+    func testStartHLSSendsZeroButNotNil() async throws {
+        let session = StubURLProtocol.session(json: Fixtures.hlsStatus)
+        let client = APIClient(baseURL: baseURL, tokens: StaticTokenProvider("tok"), session: session)
+
+        _ = try await client.startHLS("yt-id", from: 0)
+        XCTAssertEqual(try XCTUnwrap(StubURLProtocol.recorded.last).query, "from=0")
+
+        _ = try await client.startHLS("yt-id", from: nil)
+        XCTAssertNil(try XCTUnwrap(StubURLProtocol.recorded.last).query)
+    }
+
+    /// The backend spells the fraction `hls_progress`; a bare `progress` is
+    /// read too, so a rename on either side of the contract cannot quietly
+    /// turn the percentage into a spinner.
+    func testStartHLSReadsEitherProgressSpelling() async throws {
+        let client = APIClient(
+            baseURL: baseURL,
+            tokens: StaticTokenProvider("tok"),
+            session: StubURLProtocol.session(json: #"{"state":"running","hls_progress":0.42,"height":1080}"#)
+        )
+        let prefixed = try await client.startHLS("yt-id").progress
+        XCTAssertEqual(prefixed, 0.42, accuracy: 0.0001)
+
+        let plain = APIClient(
+            baseURL: baseURL,
+            tokens: StaticTokenProvider("tok"),
+            session: StubURLProtocol.session(json: #"{"state":"running","progress":0.42}"#)
+        )
+        let bare = try await plain.startHLS("yt-id").progress
+        XCTAssertEqual(bare, 0.42, accuracy: 0.0001)
+    }
+
+    /// A backend that predates `progress` reports none, which must read as
+    /// "nothing to show" rather than failing the call the player waits on.
+    func testStartHLSWithoutProgressDecodesAsZero() async throws {
+        let session = StubURLProtocol.session(json: #"{"state":"pending"}"#)
+        let client = APIClient(baseURL: baseURL, tokens: StaticTokenProvider("tok"), session: session)
+
+        let status = try await client.startHLS("yt-id")
+
+        XCTAssertEqual(status.state, .pending)
+        XCTAssertEqual(status.progress, 0)
     }
 
     func testFlagQueriesAreOmittedWhenFalse() async throws {

@@ -72,26 +72,35 @@ extension APIClient {
         try await discard(.post, "/videos/\(esc(id))/watched", body: WatchedBody(watched: watched))
     }
 
-    /// Starts a compatible rendition **without waiting** for it, and reports
-    /// where it stands.
+    /// Starts — or steers — a compatible rendition **without waiting** for it,
+    /// and reports where it stands.
     ///
     /// `height` picks the rung of `hls_variants`; without one the server
     /// starts the height `hls_url` points at. A height the video does not
     /// offer is a 400, so pass one that came from the video's own ladder.
     ///
+    /// `from` is where playback is about to start, in seconds: the server
+    /// encodes that part of the video first, so resuming an hour in does not
+    /// wait for the first 40 minutes nobody is going to watch. Pass the resume
+    /// position the server itself handed over (`position`), 0 for "start
+    /// over", and the target of a seek that landed outside what has been
+    /// produced — the encoder is re-pointed rather than restarted. It is sent
+    /// as whole seconds.
+    ///
     /// Idempotent — a running or finished rendition is not started again — so
-    /// it doubles as "how far along is it?", which is what a player retrying a
-    /// not-yet-ready playlist wants to know. Call it before opening the asset
+    /// it doubles as "how far along is it?", which is what a player waiting on
+    /// a segment that does not exist yet wants to know: ``HLSStatus/progress``
+    /// is what "Preparing… 37%" is made of. Call it before opening the asset
     /// so the transcode is already running while AVFoundation connects, and
     /// call it ahead of time to prefetch the next video in a queue. The server
     /// runs one transcode at a time, so never warm several heights of the same
     /// video: ask for the one that will be played.
     @discardableResult
-    public func startHLS(_ id: String, height: Int? = nil) async throws -> HLSState {
+    public func startHLS(_ id: String, height: Int? = nil, from: Double? = nil) async throws -> HLSStatus {
         var query = QueryBuilder()
         query.add("height", height)
-        let status: HLSStatus = try await send(.post, "/videos/\(esc(id))/hls", query: query.items)
-        return status.state
+        query.add("from", from.map { Int(max(0, $0).rounded(.down)) })
+        return try await send(.post, "/videos/\(esc(id))/hls", query: query.items)
     }
 
     /// "Start over": position → 0 and TubeArchivist progress deleted.

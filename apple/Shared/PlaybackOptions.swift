@@ -68,6 +68,14 @@ enum VideoQuality {
         return (codec.split(separator: ".").first.map(String.init) ?? codec).uppercased()
     }
 
+    /// The preparing overlay's headline, with the encoder's progress where
+    /// there is any: `Preparing a compatible version… 37%`. A job that has not
+    /// reported anything yet says nothing — "0%" reads as stuck.
+    static func preparingTitle(_ progress: Double) -> String {
+        guard progress > 0 else { return "Preparing a compatible version…" }
+        return "Preparing a compatible version… \(Int((min(progress, 1) * 100).rounded()))%"
+    }
+
     /// The rendition a player is on, as the "compatible version" hint puts it:
     /// `1080p · compatible version`, or just the tail on a server that has no
     /// ladder to name a height from.

@@ -155,7 +155,7 @@ struct WatchView: View {
                 PlayerSurface(engine: model.engine)
             }
             if model.isPreparingCompatible {
-                PreparingCompatibleView()
+                PreparingCompatibleView(progress: model.compatibleProgress)
             }
             if blocked && isFullScreen {
                 // No overlay controls on these views, and full screen hides
@@ -317,20 +317,24 @@ enum PlayerCommand {
 /// The wait while the server transcodes a compatible rendition.
 ///
 /// It is shown from the moment the archived file is ruled out until the player
-/// reports `readyToPlay` — including across the retries a playlist that is not
-/// ready yet (`503`, `Retry-After: 5`) provokes, which is why "preparing" and
-/// not "failed" is what a viewer sees.
+/// reports `readyToPlay` — including across the retries a playlist whose job
+/// failed to start (`503`, `Retry-After: 5`) provokes, which is why
+/// "preparing" and not "failed" is what a viewer sees. `progress` is the
+/// server's own, polled while the wait lasts.
 struct PreparingCompatibleView: View {
+    var progress: Double = 0
+
     var body: some View {
         VStack(spacing: 12) {
             ProgressView()
                 .tint(.white)
                 .scaleEffect(1.3)
-            Text("Preparing a compatible version…")
+            Text(VideoQuality.preparingTitle(progress))
                 .font(.subheadline.weight(.semibold))
+                .contentTransition(.numericText())
             Text("""
             This device can't decode the archived file, so the server is converting it. \
-            Playback starts as soon as the first part is ready.
+            It starts where you left off, so playback begins as soon as that part is ready.
             """)
                 .font(.caption)
                 .foregroundStyle(.white.opacity(0.7))

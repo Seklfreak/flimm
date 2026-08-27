@@ -136,6 +136,26 @@ final class ModelDecodingTests: XCTestCase {
         XCTAssertEqual(try decode(Video.self, future).hlsLadder.first?.codec, .unknown)
     }
 
+    /// Each rung says how far its own encode has got, and a rung from a
+    /// backend that predates the field reads as 0 rather than failing.
+    func testHLSVariantProgress() throws {
+        let video = try decode(Video.self, Fixtures.videoDetail)
+        XCTAssertEqual(video.hlsLadder.map(\.progress), [1, 0, 0])
+
+        let running = Fixtures.videoDetail.replacingOccurrences(
+            of: "\"state\": \"done\", \"codec\": \"h264\", \"progress\": 1",
+            with: "\"state\": \"running\", \"codec\": \"h264\", \"progress\": 0.37"
+        )
+        let rung = try XCTUnwrap(try decode(Video.self, running).hlsLadder.first)
+        XCTAssertEqual(rung.state, .running)
+        XCTAssertEqual(rung.progress, 0.37, accuracy: 0.0001)
+
+        // The backend spells it `hls_progress`; a bare `progress` is read too,
+        // so a rename on either side cannot silently decode as 0.
+        let prefixed = Fixtures.videoDetail.replacingOccurrences(of: "\"progress\": 1", with: "\"hls_progress\": 1")
+        XCTAssertEqual(try decode(Video.self, prefixed).hlsLadder.map(\.progress), [1, 0, 0])
+    }
+
     /// A rung with no URL is not something to hand to `AVPlayer`.
     func testEmptyVariantsAreDroppedFromTheLadder() throws {
         let source = Fixtures.videoDetail.replacingOccurrences(of: "\"/media/hls/yt-id/720/index.m3u8\"", with: "\"\"")
