@@ -109,8 +109,13 @@ export function FeedEditor({ feed, onClose }: { feed?: Feed; onClose: () => void
       </div>
       {error && <p className="px-7 pt-3 text-sm font-semibold text-danger">{error}</p>}
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto md:flex-row md:overflow-hidden">
+        {/* `flex-1` + `min-h-0` on the picker column only from md up, where it
+            is a real column that scrolls on its own. Below that the whole body
+            is one scroller (the parent), and letting this column shrink below
+            its content there — with nothing clipping or scrolling it — spilled
+            the channel rows over the Options section underneath. */}
         {!isEverything && (
-          <div className="flex min-h-0 flex-1 flex-col gap-3.5 px-5 py-5 md:overflow-hidden md:border-r md:border-hair md:px-7">
+          <div className="flex flex-col gap-3.5 px-5 py-5 md:min-h-0 md:flex-1 md:overflow-hidden md:border-r md:border-hair md:px-7">
             <label className="flex flex-col gap-1.5">
               <span className="sec">Name</span>
               <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. DevOps" autoFocus />
