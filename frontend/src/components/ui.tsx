@@ -23,7 +23,10 @@ export function Segmented<T extends string>({
   size?: "md" | "sm";
 }) {
   return (
-    <div className="flex gap-1.5 overflow-x-auto no-scrollbar" role="tablist">
+    // Wrap rather than scroll: these are short labels in a form/header, and a
+    // clipped, scrollbar-hidden row leaves options unreachable (no cue, no
+    // affordance). Wrapping needs neither.
+    <div className="flex flex-wrap gap-1.5" role="tablist">
       {options.map((o) => (
         <button
           key={o.value}

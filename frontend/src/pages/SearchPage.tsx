@@ -95,12 +95,14 @@ export default function SearchPage() {
             {currentFeed.name} feed
           </button>
         )}
-        {r && (
-          <span className="meta ml-auto whitespace-nowrap">
-            {totalResults} results · {(r.took_ms / 1000).toFixed(2)} s
-          </span>
-        )}
       </div>
+      {/* Its own line rather than squeezed into the chip row, which clipped
+          it (e.g. "2 results · 0.0") once the chips filled the width. */}
+      {r && (
+        <span className="meta whitespace-nowrap">
+          {totalResults} results · {(r.took_ms / 1000).toFixed(2)} s
+        </span>
+      )}
 
       {!q ? (
         <EmptyState title="Search the archive" hint="Titles, channel and playlist names, and every word of the archived subtitles." />

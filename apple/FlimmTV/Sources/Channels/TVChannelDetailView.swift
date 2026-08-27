@@ -1,12 +1,16 @@
 import FlimmKit
 import SwiftUI
 
-/// One channel: its banner, what it is in, and its videos.
+/// One channel: its banner, what it is in, its playlists and its videos.
 ///
 /// The "In feeds:" control from the phone is deliberately absent — feed
 /// membership is editing, and editing happens elsewhere — but which feeds the
 /// channel is already in is still worth showing, because it explains why its
-/// videos turn up where they do.
+/// videos turn up where they do. Playlists follow the phone's idea (a strip
+/// above the videos, not a section of its own screen) but in the TV's own
+/// horizontally-scrolling row of the same card the Playlists tab uses, and
+/// most channels have none, so the row simply isn't there rather than
+/// showing an empty "Playlists" header.
 struct TVChannelDetailView: View {
     let channelId: String
 
@@ -14,6 +18,7 @@ struct TVChannelDetailView: View {
     @Environment(TVPlayerCoordinator.self) private var player
 
     @State private var channel: Channel?
+    @State private var playlists: [PlaylistSummary] = []
     @State private var pager: Pager<VideoSummary>?
     @State private var view: ChannelView = .all
     @State private var error: String?
@@ -23,6 +28,7 @@ struct TVChannelDetailView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 30) {
                 header
+                if !playlists.isEmpty { playlistRow }
                 content
             }
             .padding(.horizontal, TVMetrics.margin)
@@ -30,6 +36,11 @@ struct TVChannelDetailView: View {
         }
         .task { await loadChannel() }
         .task(id: view) { await reload() }
+        // Same as the feed screen: the player invalidates these lists, and a
+        // stale "Unseen" channel is what a viewer notices.
+        .reloadsWhenPlayerCloses(request: player.request, isStale: isPagerStale) {
+            await reload()
+        }
     }
 
     private var header: some View {
@@ -95,6 +106,29 @@ struct TVChannelDetailView: View {
         .fixedSize(horizontal: true, vertical: false)
     }
 
+    /// The channel's playlists, as a horizontally-scrolling row of the same
+    /// card the dedicated Playlists tab uses — a channel with none shows
+    /// nothing here, not an empty section.
+    private var playlistRow: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Playlists")
+                .font(.title3.weight(.semibold))
+                .foregroundStyle(.secondary)
+            ScrollView(.horizontal) {
+                HStack(alignment: .top, spacing: TVMetrics.gridSpacing) {
+                    ForEach(playlists) { playlist in
+                        TVPlaylistCard(playlist: playlist)
+                            .frame(width: 400)
+                    }
+                }
+            }
+            .scrollClipDisabled()
+        }
+        // Section headers carry bottom padding everywhere on the TV: a
+        // focused card grows and would otherwise sit on top of the header.
+        .padding(.bottom, 4)
+    }
+
     @ViewBuilder
     private var content: some View {
         if let error {
@@ -115,13 +149,24 @@ struct TVChannelDetailView: View {
 
     // MARK: - Actions
 
+    /// Whether this screen is showing a pager the cache has since dropped.
+    private func isPagerStale() -> Bool {
+        guard let pager else { return false }
+        return !app.pagers.holds(pager, forKey: "tv-channel:\(channelId):\(view.rawValue)")
+    }
+
     private func loadChannel() async {
+        async let detail = app.client.channel(channelId)
+        // The videos are the point of this page; a playlists failure must not
+        // stop them from showing, so it is fetched alongside but never thrown.
+        async let lists = try? app.client.channelPlaylists(channelId)
         do {
-            channel = try await app.client.channel(channelId)
+            channel = try await detail
             error = nil
         } catch {
             self.error = AppModel.message(for: error)
         }
+        playlists = await lists ?? []
     }
 
     private func reload() async {

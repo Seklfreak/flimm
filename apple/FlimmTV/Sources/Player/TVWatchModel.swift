@@ -365,7 +365,7 @@ final class TVWatchModel {
     func setWatched(_ watched: Bool) async {
         isWatched = watched
         try? await client.setWatched(videoId, watched: watched)
-        await app.refreshFeeds()
+        await app.videoWatchedStateChanged()
     }
 
     /// Switches rendition without leaving the video.
@@ -397,9 +397,11 @@ final class TVWatchModel {
 
     // MARK: - Moving between videos
 
-    /// Mapped to the remote's skip-forward gesture through
-    /// `AVPlayerViewControllerSkippingBehavior.skipItem`, and to autoplay when
-    /// an item ends.
+    /// Wired to the "Next video" transport-bar button and the matching
+    /// Info-panel action (`TVPlayerViewController`), and to autoplay when an
+    /// item ends. The remote's own skip gesture stays AVKit's default — moving
+    /// ±10s inside this video — so the scrubber is never taken from the
+    /// viewer.
     func goNext() async {
         if let next = nav?.next {
             await go(to: next.id)
@@ -465,11 +467,6 @@ final class TVWatchModel {
             guard let model = self else { return 0 }
             return await model.reportedPosition
         }
-    }
-
-    private func applyProgress(_ result: ProgressResult) {
-        guard result.watched, !isWatched else { return }
-        isWatched = true
     }
 
     /// Everything the server says about the job while it is steered or polled
@@ -577,5 +574,16 @@ final class TVWatchModel {
             rate: player.rate == 0 ? 0 : prefs.playbackSpeed,
             artwork: artwork
         ))
+    }
+}
+
+private extension TVWatchModel {
+    /// The other way a video becomes seen: playback reaches the end and the
+    /// heartbeat comes back `watched`. The lists behind the player are then as
+    /// stale as after an explicit "Mark seen", and need the same invalidation.
+    func applyProgress(_ result: ProgressResult) async {
+        guard result.watched, !isWatched else { return }
+        isWatched = true
+        await app.videoWatchedStateChanged()
     }
 }

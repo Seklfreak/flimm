@@ -29,6 +29,7 @@ const NAV = [
   { to: "/playlists", label: "Playlists", icon: PlaylistsIcon },
   { to: "/history", label: "History", icon: HistoryIcon },
   { to: "/search", label: "Search", icon: SearchIcon },
+  { to: "/settings", label: "Settings", icon: SettingsIcon },
 ];
 
 // Keep the sidebar short; the History page holds the full list.
@@ -228,9 +229,17 @@ export function PageHeader({
           )}
           {meta && <span className="meta hidden md:inline">{meta}</span>}
           {feedPicker && (
-            <Link to="/search" className="ml-auto text-ink md:hidden" aria-label="Search">
-              <SearchIcon />
-            </Link>
+            // The narrow layout has no sidebar and its tab bar is full, so the
+            // two things it would otherwise lose — search and settings — sit
+            // here beside the title.
+            <span className="ml-auto flex items-center gap-4 md:hidden">
+              <Link to="/search" className="text-ink" aria-label="Search">
+                <SearchIcon />
+              </Link>
+              <Link to="/settings" className="text-ink" aria-label="Settings">
+                <SettingsIcon />
+              </Link>
+            </span>
           )}
         </div>
         {actions && <div className="flex min-w-0 max-w-full items-center gap-2 overflow-x-auto no-scrollbar">{actions}</div>}
@@ -318,6 +327,15 @@ function ChannelsIcon() {
 function PlaylistsIcon() {
   return <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 6h12M4 12h12M4 18h8" /><path d="M19 14l3 2-3 2z" fill="currentColor" /></svg>;
 }
+function SettingsIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <circle cx="12" cy="12" r="3.2" />
+      <path d="M12 3.5v2M12 18.5v2M3.5 12h2M18.5 12h2M6 6l1.4 1.4M16.6 16.6L18 18M18 6l-1.4 1.4M7.4 16.6L6 18" />
+    </svg>
+  );
+}
+
 function HistoryIcon() {
   return <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="8" /><path d="M12 8v4l3 2" /></svg>;
 }

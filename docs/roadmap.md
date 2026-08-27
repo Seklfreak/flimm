@@ -2,6 +2,30 @@
 
 ## Done
 
+- **A QA pass over all four clients** (2026-08-27) — the web app, the iPhone,
+  the iPad and the Apple TV were each walked end to end against the local dev
+  stack, and what came back was mostly **parity gaps** rather than broken
+  features. Fixed: the web had **no Settings screen at all**, so `theme` and
+  `skip_sponsors` were unreachable there while both other platforms exposed
+  them (now `/settings`, in the sidebar and behind a gear on narrow windows,
+  with a test that asserts *every* preference the API carries is present); the
+  tvOS channel page never showed the channel's **playlists**, which
+  `design.md` has always said it should and the phone always did; a finished
+  video left **stale "Unseen" lists** behind the player on both the phone and
+  the TV, now invalidated through one funnel and reloaded by one shared
+  modifier; the iPhone's search filters rendered as **two switches with no
+  labels**; the iPad's up-next column broke titles mid-word in portrait with
+  the sidebar out; the web `Segmented` control **hid options it could not
+  fit** (the feed editor's "Longest" sort was unreachable by mouse); the web
+  player showed no loading state on the direct-file path and hid its controls
+  over a black frame; and `cmd/fake-ta` was encoding test patterns at 15.7
+  Mbit/s, making a 45-second clip 88 MB and the fixture a gigabyte.
+  Two reported defects were **refuted with evidence** rather than fixed: tvOS
+  cards "overlapping" is the platform's focus parallax (measured: identical
+  widths and a normal gap with nothing focused), and a web playback stall
+  reproduced with no Flimm code in the path at all — Chrome's own player
+  stalls on the same file from a static server, while AVFoundation plays it on
+  two platforms.
 - **Apple TV display fixes** (2026-08-27) — a walkthrough of the whole tvOS
   app against the local dev stack turned up five real defects, all now fixed:
   the custom Info-panel tab rendered **with no background at all**, drawing its

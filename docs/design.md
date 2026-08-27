@@ -107,6 +107,12 @@ Autoplay, playback speed, subtitle language and size, skip sponsors, the
 Everything-feed options and theme (system / light / dark). Stored per user in
 Flimm.
 
+**Every client has a Settings screen carrying all of them** — the web sidebar
+(and, on a narrow window, a gear beside the title), the phone and iPad's
+Settings tab, and the Apple TV's. A preference reachable on one client and not
+another is a bug: the account is shared, so a viewer who turns sponsor skipping
+off at their desk expects it off on the TV that evening.
+
 Video quality is deliberately **not** one of them — it belongs to the screen
 and the network in front of it, so it is kept on the device (the browser's
 `localStorage`, `UserDefaults` on Apple platforms) and never synced.

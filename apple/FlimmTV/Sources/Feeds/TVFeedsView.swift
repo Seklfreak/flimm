@@ -37,6 +37,17 @@ struct TVFeedsView: View {
             .padding(.bottom, TVMetrics.margin)
         }
         .task(id: contextKey) { await rebuildPager() }
+        // A video finished or marked seen in the player drops this list from
+        // the cache; coming back to a stale "Unseen" grid is the bug.
+        .reloadsWhenPlayerCloses(request: player.request, isStale: isPagerStale) {
+            await rebuildPager()
+        }
+    }
+
+    /// Whether this screen is showing a pager the cache has since dropped.
+    private func isPagerStale() -> Bool {
+        guard let feed, let pager else { return false }
+        return !app.pagers.holds(pager, forKey: "feed:\(feed.id):\(view.rawValue)")
     }
 
     /// Identity of "what this screen is showing" — a change means a new query.

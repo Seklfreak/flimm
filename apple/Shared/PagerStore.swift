@@ -1,5 +1,6 @@
 import FlimmKit
 import Foundation
+import SwiftUI
 
 /// Keeps the list a screen is showing alive across shell rebuilds.
 ///
@@ -34,6 +35,15 @@ final class PagerStore {
         }
     }
 
+    /// Whether the store still holds this exact pager under `key`.
+    ///
+    /// A screen that kept its pager through a player presentation asks this on
+    /// the way back: if the answer is no, something dropped the cache while
+    /// the screen was covered and the list it is showing is stale.
+    func holds<Item>(_ pager: Pager<Item>, forKey key: String) -> Bool {
+        (cache[key] as? Pager<Item>) === pager
+    }
+
     func removeAll() {
         cache.removeAll()
         order.removeAll()
@@ -42,5 +52,31 @@ final class PagerStore {
     private func touch(_ key: String) {
         order.removeAll { $0 == key }
         order.append(key)
+    }
+}
+
+/// Reloading a cached list after the player closes over it.
+///
+/// Dismissing the full-screen player is not a context change: the screen
+/// underneath never changed what it is showing, so its `.task(id:)` does not
+/// rerun and its `.onAppear` does not fire. But a video finished or marked
+/// seen in there drops every cached pager
+/// (``AppModel/videoWatchedStateChanged()``), and an "Unseen" list that keeps
+/// showing what the viewer just watched is the bug that follows.
+///
+/// The player's own request going back to `nil` is exactly "the viewer came
+/// back to this list"; `isStale` then decides whether anything actually
+/// changed, so a dismissal that invalidated nothing reloads nothing and the
+/// list does not jump under the viewer.
+extension View {
+    func reloadsWhenPlayerCloses<Request: Equatable>(
+        request: Request?,
+        isStale: @escaping () -> Bool,
+        reload: @escaping () async -> Void
+    ) -> some View {
+        onChange(of: request) { old, new in
+            guard old != nil, new == nil, isStale() else { return }
+            Task { await reload() }
+        }
     }
 }

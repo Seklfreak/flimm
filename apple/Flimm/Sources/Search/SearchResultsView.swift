@@ -30,7 +30,7 @@ struct SearchResultsView: View {
     private var searchKey: String { "\(query)|\(scope.rawValue)|\(unseenOnly)|\(inCurrentFeed)" }
 
     private var filters: some View {
-        VStack(spacing: 8) {
+        VStack(alignment: .leading, spacing: 8) {
             ChipPicker(
                 options: [
                     (SearchScope.all, "Everything"),
@@ -41,18 +41,44 @@ struct SearchResultsView: View {
                 ],
                 selection: $scope
             )
-            HStack(spacing: 12) {
-                Toggle("Unseen only", isOn: $unseenOnly)
-                    .font(.footnote)
+            // Two things were wrong here, not one. `Toggle("title", isOn:)`
+            // paired with `.labelsHidden()` silently drops its own label in
+            // this position — the same reason `UpNextList`'s Autoplay toggle
+            // (PlayerDetails.swift) never uses that initializer and draws a
+            // `Text` of its own instead; the closure form below (`isOn:` with
+            // an explicit, empty label) doesn't have the problem. On top of
+            // that, an `HStack` of two such rows squeezes both labels down to
+            // nothing at the narrowest widths and with Dynamic Type turned up
+            // (the same lesson as the tvOS picker in docs/apple-apps.md — size
+            // to the label, don't guess a budget for it), so each row is
+            // stacked and given the full row width rather than sharing one.
+            VStack(alignment: .leading, spacing: 8) {
+                filterToggle("Unseen only", isOn: $unseenOnly)
                 if feedId != nil {
-                    Toggle("This feed", isOn: $inCurrentFeed)
-                        .font(.footnote)
+                    filterToggle("This feed", isOn: $inCurrentFeed)
                 }
             }
-            .toggleStyle(.switch)
+            .font(.footnote)
             .padding(.horizontal, 16)
         }
         .padding(.vertical, 8)
+    }
+
+    private func filterToggle(_ title: String, isOn: Binding<Bool>) -> some View {
+        HStack {
+            Text(title)
+            Spacer(minLength: 12)
+            Toggle(isOn: isOn) { EmptyView() }
+        }
+        // This row sits directly in a `.overlay` (`FeedsView`), which never
+        // proposes it a definite width — a `maxWidth: .infinity` here is
+        // simply ignored, and without a floor the row shrinks to the label's
+        // compressed width instead of the row width, wrapping "Unseen only"
+        // one word per line. A `minWidth` is a concrete lower bound the row
+        // always gets, comfortably under the narrowest iPhone's width, so the
+        // label lays out on one line there and wraps normally, not
+        // word-by-word, if Dynamic Type pushes past it.
+        .frame(minWidth: 260, alignment: .leading)
     }
 
     @ViewBuilder

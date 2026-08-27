@@ -97,6 +97,20 @@ struct VideoHeader: View {
 /// What follows in the current context, with the autoplay preference beside it.
 struct UpNextList: View {
     let model: WatchModel
+    /// The row's available width in the iPad wide layout's side column;
+    /// `nil` under the video at full width (`narrow(_:)`), which always gets
+    /// the roomy thumbnail-leading row. In portrait with the sidebar showing
+    /// that column can be under 200pt — too narrow for a fixed 132pt
+    /// thumbnail to leave the title and channel name a readable width, which
+    /// is what broke titles mid-word and truncated every channel name to a
+    /// couple of letters. Below the threshold the row stacks instead of
+    /// squeezing the text sideways.
+    var columnWidth: CGFloat?
+
+    private var stacked: Bool {
+        guard let columnWidth else { return false }
+        return columnWidth < 260
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -119,25 +133,41 @@ struct UpNextList: View {
                     Button {
                         Task { await model.go(to: video.id) }
                     } label: {
-                        HStack(alignment: .top, spacing: 12) {
-                            VideoThumbnail(video: video, compact: true)
-                                .frame(width: 132)
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text(video.title)
-                                    .font(.subheadline.weight(.bold))
-                                    .lineLimit(2)
-                                    .multilineTextAlignment(.leading)
-                                Text("\(video.channel.name) · \(Fmt.duration(video.duration))")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                    .lineLimit(1)
-                            }
-                            Spacer(minLength: 0)
-                        }
+                        row(video)
                     }
                     .buttonStyle(.plain)
                 }
             }
+        }
+    }
+
+    @ViewBuilder
+    private func row(_ video: VideoSummary) -> some View {
+        if stacked {
+            VStack(alignment: .leading, spacing: 8) {
+                VideoThumbnail(video: video, compact: true)
+                info(video)
+            }
+        } else {
+            HStack(alignment: .top, spacing: 12) {
+                VideoThumbnail(video: video, compact: true)
+                    .frame(width: 132)
+                info(video)
+                Spacer(minLength: 0)
+            }
+        }
+    }
+
+    private func info(_ video: VideoSummary) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(video.title)
+                .font(.subheadline.weight(.bold))
+                .lineLimit(2)
+                .multilineTextAlignment(.leading)
+            Text("\(video.channel.name) · \(Fmt.duration(video.duration))")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
         }
     }
 

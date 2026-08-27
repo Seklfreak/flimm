@@ -1,0 +1,186 @@
+import { EVERYTHING_ID, type FeedSort, type Prefs } from "@/lib/api";
+import { useMe, useUpdatePrefs } from "@/lib/queries";
+import { useConfig } from "@/lib/config";
+import { PageHeader } from "@/components/Layout";
+import { Segmented, Spinner, Toggle } from "@/components/ui";
+import { langName } from "@/player/Player";
+import { Link } from "react-router";
+import { SUBTITLE_OFF } from "@/player/Player";
+
+// The same preferences the phone and the TV expose, in the same order, because
+// they are one account: a viewer who turns sponsor skipping off here expects it
+// off on the Apple TV tonight. Everything on this page is a server preference
+// (`PATCH /me/prefs`) except where a row says otherwise — quality is per device
+// and lives in the player, which is the only place that knows what this browser
+// can decode.
+export default function SettingsPage() {
+  const me = useMe();
+  const config = useConfig();
+  const prefs = me.data?.prefs;
+  const update = useUpdatePrefs();
+
+  const set = (patch: Partial<Prefs>) => update.mutate(patch);
+
+  return (
+    <div className="flex flex-col gap-3 pb-16 md:gap-2.5">
+      <PageHeader title="Settings" meta={me.data ? config.app_name : undefined} />
+      <div className="flex flex-col gap-8 px-5 md:px-10">
+        {!prefs ? (
+          <Spinner label="Loading settings…" />
+        ) : (
+          <>
+            <Section title="Playback">
+              <Row label="Autoplay next video" hint="Play the next video in the list when one ends.">
+                <Toggle on={prefs.autoplay} onChange={(v) => set({ autoplay: v })} label="Autoplay next video" />
+              </Row>
+              <Row label="Playback speed">
+                <Segmented
+                  value={String(prefs.playback_speed)}
+                  onChange={(v) => set({ playback_speed: Number(v) })}
+                  options={SPEEDS.map((s) => ({ value: String(s), label: `${s}×` }))}
+                />
+              </Row>
+              <Row
+                label="Skip sponsor segments"
+                hint="Sponsor, self-promotion and interaction reminders are skipped automatically; other SponsorBlock categories are only tinted on the timeline."
+              >
+                <Toggle on={prefs.skip_sponsors} onChange={(v) => set({ skip_sponsors: v })} label="Skip sponsor segments" />
+              </Row>
+            </Section>
+
+            <Section title="Subtitles">
+              <Row label="Language" hint="The track picked by default when a video has one.">
+                <select
+                  className="rounded-lg border border-hair bg-raised px-3 py-2 text-[13px] font-semibold text-ink"
+                  value={prefs.subtitle_lang}
+                  onChange={(e) => set({ subtitle_lang: e.target.value })}
+                >
+                  <option value={SUBTITLE_OFF}>Off</option>
+                  {SUBTITLE_LANGS.map((code) => (
+                    <option key={code} value={code}>
+                      {langName(code)}
+                    </option>
+                  ))}
+                  {/* A language the account picked on another client stays selectable. */}
+                  {prefs.subtitle_lang !== SUBTITLE_OFF && !SUBTITLE_LANGS.includes(prefs.subtitle_lang) && (
+                    <option value={prefs.subtitle_lang}>{langName(prefs.subtitle_lang)}</option>
+                  )}
+                </select>
+              </Row>
+              <Row label="Size">
+                <Segmented
+                  value={prefs.subtitle_size}
+                  onChange={(v) => set({ subtitle_size: v })}
+                  options={[
+                    { value: "small", label: "Small" },
+                    { value: "medium", label: "Medium" },
+                    { value: "large", label: "Large" },
+                  ]}
+                />
+              </Row>
+            </Section>
+
+            <Section title="“Everything” feed" hint="The built-in feed over every channel. Its options are preferences, not feed settings.">
+              <Row label="Sort">
+                <Segmented
+                  value={prefs.everything_sort}
+                  onChange={(v) => set({ everything_sort: v as FeedSort })}
+                  options={[
+                    { value: "newest", label: "Newest" },
+                    { value: "oldest", label: "Oldest" },
+                    { value: "shortest", label: "Shortest" },
+                    { value: "longest", label: "Longest" },
+                  ]}
+                />
+              </Row>
+              <Row label="Hide seen">
+                <Toggle
+                  on={prefs.everything_hide_seen}
+                  onChange={(v) => set({ everything_hide_seen: v })}
+                  label="Hide seen"
+                />
+              </Row>
+              <Row label="Include Shorts">
+                <Toggle
+                  on={prefs.everything_include_shorts}
+                  onChange={(v) => set({ everything_include_shorts: v })}
+                  label="Include Shorts"
+                />
+              </Row>
+            </Section>
+
+            <Section title="Appearance">
+              <Row label="Theme">
+                <Segmented
+                  value={prefs.theme}
+                  onChange={(v) => set({ theme: v })}
+                  options={[
+                    { value: "system", label: "System" },
+                    { value: "light", label: "Light" },
+                    { value: "dark", label: "Dark" },
+                  ]}
+                />
+              </Row>
+            </Section>
+
+            <Section title="Library">
+              <Row label="Feeds" hint="Which channels a feed collects, how it sorts and whether it hides seen videos.">
+                <Link
+                  to={`/feeds/${EVERYTHING_ID}`}
+                  className="rounded-lg border border-hair px-3 py-2 text-[13px] font-bold text-ink no-underline hover:bg-raised"
+                >
+                  Manage feeds
+                </Link>
+              </Row>
+              <Row
+                label="Video quality"
+                hint="Chosen in the player and kept on this device only: it depends on what this browser can decode and how big its screen is."
+              />
+            </Section>
+
+            <Section title="Account">
+              <Row label="Signed in as">
+                <span className="text-[13px] font-semibold text-muted-2">
+                  {me.data?.name || me.data?.email || "—"}
+                  {me.data?.is_admin ? " · Administrator" : ""}
+                </span>
+              </Row>
+              <Row label="Server version">
+                <span className="text-[13px] font-semibold text-muted-2">{config.version || "—"}</span>
+              </Row>
+            </Section>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+const SPEEDS = [0.75, 1, 1.25, 1.5, 2];
+// The same shortlist the Apple clients offer (`Shared/PlaybackOptions.swift`).
+const SUBTITLE_LANGS = ["en", "de", "es", "fr", "it", "nl", "pt", "pl", "ru", "ja", "ko", "zh"];
+
+function Section({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }) {
+  return (
+    <section className="flex flex-col gap-1">
+      <h2 className="sec pb-1">{title}</h2>
+      {hint && <p className="max-w-[620px] pb-2 text-[13px] text-muted-2">{hint}</p>}
+      <div className="flex flex-col rounded-xl border border-hair">{children}</div>
+    </section>
+  );
+}
+
+// A label and its control, with the explanation under the label rather than
+// beside the control: the row stays readable when the window is narrow, which
+// is where a two-column layout would squeeze the text to nothing.
+function Row({ label, hint, children }: { label: string; hint?: string; children?: React.ReactNode }) {
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 border-b border-hair px-4 py-3.5 last:border-b-0">
+      <div className="flex min-w-[180px] flex-1 flex-col gap-1">
+        <span className="text-[14px] font-bold text-ink">{label}</span>
+        {hint && <span className="max-w-[560px] text-[12px] leading-[1.45] text-muted-2">{hint}</span>}
+      </div>
+      {children}
+    </div>
+  );
+}

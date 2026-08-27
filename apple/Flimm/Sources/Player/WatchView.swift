@@ -90,7 +90,7 @@ struct WatchView: View {
                     .aspectRatio(16 / 9, contentMode: .fit)
                 header(model)
                 ChapterListView(chapters: model.chapters, activeIndex: model.activeChapter) { model.seek(to: $0) }
-                UpNextList(model: model)
+                UpNextList(model: model, columnWidth: nil)
             }
             .padding(.horizontal, 16)
             .padding(.bottom, 32)
@@ -102,6 +102,12 @@ struct WatchView: View {
     private func wide(_ model: WatchModel) -> some View {
         GeometryReader { geo in
             let available = max(geo.size.width - 60, 320)
+            let videoWidth = max(available * 0.66, 280)
+            // What's left for the side column, e.g. an iPad in portrait with
+            // the sidebar showing. `UpNextList` needs this, not just
+            // `horizontalSizeClass`, because its row layout has to react to
+            // this specific width, not to compact-vs-regular.
+            let columnWidth = max(available - videoWidth, 0)
             HStack(alignment: .top, spacing: 20) {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 16) {
@@ -111,11 +117,11 @@ struct WatchView: View {
                     }
                     .padding(.bottom, 24)
                 }
-                .frame(width: max(available * 0.66, 280))
+                .frame(width: videoWidth)
                 ScrollView {
                     VStack(alignment: .leading, spacing: 20) {
                         ChapterListView(chapters: model.chapters, activeIndex: model.activeChapter) { model.seek(to: $0) }
-                        UpNextList(model: model)
+                        UpNextList(model: model, columnWidth: columnWidth)
                     }
                     .padding(.bottom, 24)
                 }

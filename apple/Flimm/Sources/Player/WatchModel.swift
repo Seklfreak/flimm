@@ -412,7 +412,7 @@ final class WatchModel {
     func setWatched(_ watched: Bool) async {
         isWatched = watched
         try? await client.setWatched(videoId, watched: watched)
-        await app.refreshFeeds()
+        await app.videoWatchedStateChanged()
     }
 
     // MARK: - Moving between videos
@@ -525,9 +525,14 @@ final class WatchModel {
     /// ready to report a real one.
     private var playbackPosition: Double { engine.currentTime }
 
-    private func applyProgress(_ result: ProgressResult) {
+    private func applyProgress(_ result: ProgressResult) async {
         guard result.watched, !isWatched else { return }
         isWatched = true
+        // The explicit "Mark seen" isn't the only way a video finishes —
+        // playback reaching the end reports `watched` right here, and an
+        // "Unseen" feed/channel list needs the same cache invalidation or it
+        // keeps listing this video after the viewer goes back to it.
+        await app.videoWatchedStateChanged()
     }
 
     private func handleEnded() async {

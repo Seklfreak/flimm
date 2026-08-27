@@ -30,6 +30,9 @@ One container image: a Go backend with the React frontend embedded.
   subtitle hit jumps straight to that timestamp.
 - **Player** — archived and auto-generated subtitle tracks, SponsorBlock
   segment skipping, playback speed, autoplay with context-aware *Up next*.
+- **Settings** — autoplay, speed, sponsor skipping, subtitle language and size,
+  the Everything-feed options and the theme, all stored per user and shared
+  with the native apps.
 - **SponsorBlock, fetched live** — the backend asks the SponsorBlock service
   itself rather than reading TubeArchivist's download-time snapshot, so
   segments stay current, `mute` segments mute instead of skipping, the

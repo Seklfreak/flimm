@@ -89,6 +89,11 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(function Player(
   const [speedAnchor, setSpeedAnchor] = useState<HTMLButtonElement | null>(null);
   const [qualityAnchor, setQualityAnchor] = useState<HTMLButtonElement | null>(null);
   const [idle, setIdle] = useState(false);
+  // True while the element wants to play but has no frame to show: the fetch
+  // has not delivered enough yet, or it stalled mid-stream. Distinct from
+  // `playing`, which the browser reports the moment play() is called — long
+  // before anything is on screen.
+  const [waiting, setWaiting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const idleTimer = useRef<number | undefined>(undefined);
   const prevAudioOnlyRef = useRef(audioOnly);
@@ -444,7 +449,10 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(function Player(
     idleTimer.current = window.setTimeout(() => setIdle(true), 2500);
   };
 
-  const showControls = !idle || !playing;
+  // Controls stay up while nothing is actually on screen. Hiding them 2.5s
+  // after play() leaves a black rectangle with no visible affordance, which
+  // reads as a broken player rather than a loading one.
+  const showControls = !idle || !playing || waiting;
 
   return (
     <div
@@ -462,8 +470,17 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(function Player(
         playsInline
         preload="metadata"
         onClick={togglePlay}
-        onPlay={() => setPlaying(true)}
+        onPlay={(e) => {
+          setPlaying(true);
+          // HAVE_FUTURE_DATA or better means there is a frame to show.
+          setWaiting(e.currentTarget.readyState < 3);
+        }}
         onPause={() => setPlaying(false)}
+        onWaiting={() => setWaiting(true)}
+        onStalled={() => setWaiting(true)}
+        onPlaying={() => setWaiting(false)}
+        onCanPlay={() => setWaiting(false)}
+        onLoadedData={() => setWaiting(false)}
         onTimeUpdate={(e) => setTime(e.currentTarget.currentTime)}
         onDurationChange={(e) => setDuration(e.currentTarget.duration || video.duration)}
         onVolumeChange={(e) => setMuted(e.currentTarget.muted)}
@@ -551,6 +568,16 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(function Player(
           <span>Jump to the highlight</span>
           <span className="font-semibold text-white/60">{fmtDuration(highlight.start)}</span>
         </button>
+      )}
+
+      {/* Buffering, on every path — not just the transcoded one. The archive
+          streams straight from the server and can take a moment on a cold
+          cache or a slow link; without this the player shows a black box and
+          a frozen 0:00, which is indistinguishable from a failure. */}
+      {!error && waiting && !(isHls && rendition.preparing) && (
+        <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+          <Spinner />
+        </div>
       )}
 
       {resumedFrom !== null && (

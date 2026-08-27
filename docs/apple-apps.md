@@ -139,6 +139,15 @@ What is there:
     `contentOverlayView` — the tracks are authenticated sidecars an
     `AVPlayerItem` cannot fetch itself. Audio-only plays `audio_aac_url` with
     artwork in the overlay and `MPNowPlayingInfoCenter`.
+  - **A finished video invalidates the lists behind the player.** Marking a
+    video seen — or playback reaching the end, which reports `watched` through
+    the heartbeat — goes through `AppModel.videoWatchedStateChanged()`, which
+    drops the cached pagers. Dismissing the player is not a context change, so
+    a list screen's `.task(id:)` never reruns and its `.onAppear` does not
+    fire; every list screen therefore carries
+    `.reloadsWhenPlayerCloses(request:isStale:reload:)`, which reloads only
+    when the cache actually dropped *that* screen's pager. Without it an
+    "Unseen" feed or channel keeps listing the video the viewer just watched.
   - **Layout rules the TV enforces.** A segmented picker is sized to its
     labels (`.fixedSize()`), never to a guessed `maxWidth` — a cap truncates
     them ("Uns…", "Co…") as soon as a label or a locale is longer than the

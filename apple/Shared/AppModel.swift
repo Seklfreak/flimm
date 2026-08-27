@@ -70,6 +70,18 @@ final class AppModel {
         pinnedPlaylists = loaded
     }
 
+    /// A single video's watched state just changed — an explicit "Mark
+    /// seen"/"Mark unseen", or the server's own progress heartbeat replying
+    /// `watched: true` as playback reached the end. Every cached list that
+    /// filters or orders by seen state (an "Unseen" feed or channel,
+    /// "Continue watching") is stale in exactly the way a bulk "Mark all
+    /// seen" already accounts for, so this gets the same full wipe rather
+    /// than a second, narrower invalidation path to keep in sync with it.
+    func videoWatchedStateChanged() async {
+        pagers.removeAll()
+        await refreshFeeds()
+    }
+
     // MARK: - Preferences
 
     /// Applies a patch optimistically, then persists it. A failed write rolls

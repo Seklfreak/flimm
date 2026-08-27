@@ -92,14 +92,19 @@ func (m *Media) encode(ctx context.Context, path, title string, s spec) error {
 		args = append(args, "-i", meta, "-map_metadata", "2")
 	}
 	args = append(args, "-map", "0:v", "-map", "1:a")
+	// Rate-capped on purpose. `ultrafast` with no rate control encodes a test
+	// pattern at ~15 Mbit/s, which made a 45-second clip 88 MB and the whole
+	// fixture a gigabyte — slow to generate, slow to serve, and pointless for
+	// something whose only job is to be recognisably moving video.
 	if s.codec == "vp09" {
 		args = append(args,
 			"-c:v", "libvpx-vp9", "-deadline", "realtime", "-cpu-used", "8", "-b:v", "600k",
-			"-c:a", "aac", "-shortest", "-movflags", "+faststart", tmp)
+			"-c:a", "aac", "-b:a", "96k", "-shortest", "-movflags", "+faststart", tmp)
 	} else {
 		args = append(args,
-			"-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p", "-g", "60",
-			"-c:a", "aac", "-shortest", "-movflags", "+faststart", tmp)
+			"-c:v", "libx264", "-preset", "veryfast", "-crf", "32",
+			"-maxrate", "2M", "-bufsize", "4M", "-pix_fmt", "yuv420p", "-g", "60",
+			"-c:a", "aac", "-b:a", "96k", "-shortest", "-movflags", "+faststart", tmp)
 	}
 	cmd := exec.CommandContext(ctx, m.ffmpeg, args...) //nolint:gosec // dev tool, fixed args
 	if out, err := cmd.CombinedOutput(); err != nil {

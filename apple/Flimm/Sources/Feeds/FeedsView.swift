@@ -50,11 +50,20 @@ struct FeedsView: View {
             }
         }
         .task(id: contextKey) { await rebuildPager() }
+        .reloadsWhenPlayerCloses(request: player.request, isStale: isPagerStale) {
+            await rebuildPager()
+        }
     }
 
     /// Identity of "what this screen is showing" — a change means a new query.
     private var contextKey: String {
         "\(feed?.id ?? "")|\(feedView.rawValue)"
+    }
+
+    /// The key `PagerStore` files this feed/view combination under — distinct
+    /// from ``contextKey``, which only exists to retrigger `.task(id:)`.
+    private var pagerKey: String? {
+        feed.map { "feed:\($0.id):\(feedView.rawValue)" }
     }
 
     @ViewBuilder
@@ -160,12 +169,11 @@ struct FeedsView: View {
     // MARK: - Actions
 
     private func rebuildPager() async {
-        guard let feed else { return }
+        guard let feed, let key = pagerKey else { return }
         if nav.feedId == nil { nav.feedId = feed.id }
         let client = app.client
         let id = feed.id
         let view = feedView
-        let key = "feed:\(id):\(view.rawValue)"
         // Already loaded — a size-class flip rebuilt the screen, not the query.
         if let cached: Pager<VideoSummary> = app.pagers.existing(key) {
             pager = cached
@@ -177,6 +185,12 @@ struct FeedsView: View {
         app.pagers.insert(next, for: key)
         pager = next
         await next.reload()
+    }
+
+    /// Whether this screen is showing a pager the cache has since dropped.
+    private func isPagerStale() -> Bool {
+        guard let key = pagerKey, let pager else { return false }
+        return !app.pagers.holds(pager, forKey: key)
     }
 
     private func refresh() async {

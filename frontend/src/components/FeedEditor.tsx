@@ -90,7 +90,9 @@ export function FeedEditor({ feed, onClose }: { feed?: Feed; onClose: () => void
   const busy = save.isPending || del.isPending || updatePrefs.isPending;
 
   return (
-    <Modal onClose={onClose} label={feed ? "Edit feed" : "New feed"}>
+    // The Everything feed only ever shows the single 360px options column
+    // (no channel picker), so it doesn't need the two-column New/Edit width.
+    <Modal onClose={onClose} label={feed ? "Edit feed" : "New feed"} width={isEverything ? 480 : 920}>
       <div className="flex flex-none items-center justify-between border-b border-hair px-5 py-4 md:px-7 md:py-[22px]">
         <div className="flex items-center gap-3">
           <span className="text-[20px] font-extrabold tracking-[-0.02em]">{feed ? (isEverything ? "Feed options" : "Edit feed") : "New feed"}</span>
