@@ -200,6 +200,7 @@ func (s *Server) Router() http.Handler {
 			r.Post("/videos/{id}/progress", s.postProgress)
 			r.Delete("/videos/{id}/progress", s.deleteProgress)
 			r.Post("/videos/{id}/watched", s.postWatched)
+			r.Post("/videos/{id}/hls", s.postVideoHLS)
 
 			r.Get("/playlists", s.listPlaylists)
 			r.Get("/playlists/pinned", s.listPinnedPlaylists)
@@ -223,6 +224,9 @@ func (s *Server) Router() http.Handler {
 		r.Get("/video/{id}.mp4", s.mediaVideo)
 		r.Get("/audio/{id}.webm", s.mediaAudio)
 		r.Get("/audio/{id}.m4a", s.mediaAudioAAC)
+		// One route for the playlist and every segment: AVPlayer re-sends the
+		// media credentials on each one, so they must share the auth gate.
+		r.Get("/hls/{id}/{file}", s.mediaHLS)
 		r.Get("/subtitles/{id}/{lang}.vtt", s.mediaSubtitles)
 		r.Get("/thumb/video/{id}", s.mediaVideoThumb)
 		r.Get("/thumb/channel/{id}", s.mediaChannelThumb)

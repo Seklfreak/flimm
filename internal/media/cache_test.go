@@ -17,7 +17,7 @@ func write(t *testing.T, dst string, n int) error {
 }
 
 func TestCacheDerivesOnceThenServesFromDisk(t *testing.T) {
-	c, err := NewCache(t.TempDir(), 0, nil)
+	c, err := NewCache(t.TempDir(), 0, 1, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -38,7 +38,7 @@ func TestCacheDerivesOnceThenServesFromDisk(t *testing.T) {
 
 // Several listeners opening the same track must not each spawn ffmpeg.
 func TestCacheCollapsesConcurrentDerivations(t *testing.T) {
-	c, err := NewCache(t.TempDir(), 0, nil)
+	c, err := NewCache(t.TempDir(), 0, 1, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -77,7 +77,7 @@ func TestCacheCollapsesConcurrentDerivations(t *testing.T) {
 // instead of serving a truncated file.
 func TestCacheDoesNotPublishFailedDerivation(t *testing.T) {
 	dir := t.TempDir()
-	c, err := NewCache(dir, 0, nil)
+	c, err := NewCache(dir, 0, 1, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -100,7 +100,7 @@ func TestCacheDoesNotPublishFailedDerivation(t *testing.T) {
 
 func TestCacheEvictsLeastRecentlyUsed(t *testing.T) {
 	dir := t.TempDir()
-	c, err := NewCache(dir, 250, nil)
+	c, err := NewCache(dir, 250, 1, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -125,7 +125,7 @@ func TestCacheEvictsLeastRecentlyUsed(t *testing.T) {
 // Reading an entry must refresh its position in the LRU order.
 func TestCacheTouchOnHitProtectsFromEviction(t *testing.T) {
 	dir := t.TempDir()
-	c, err := NewCache(dir, 250, nil)
+	c, err := NewCache(dir, 250, 1, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

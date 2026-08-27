@@ -79,6 +79,12 @@ type HTTP struct {
 	base  string
 	token string
 	http  *http.Client
+	// stream is for media bodies. It deliberately has no overall timeout: a
+	// derivation reads a multi-gigabyte file for as long as ffmpeg takes to
+	// consume it, and an HLS transcode runs for minutes. The transport still
+	// bounds connect and response-header time, and the caller's context bounds
+	// the read as a whole.
+	stream *http.Client
 
 	mu       sync.Mutex
 	channels *cached[[]Channel]
@@ -96,10 +102,13 @@ type cached[T any] struct {
 // New builds an HTTP client for baseURL (no trailing slash) using the Token
 // auth header.
 func New(baseURL, token string) *HTTP {
+	streamTransport := http.DefaultTransport.(*http.Transport).Clone()
+	streamTransport.ResponseHeaderTimeout = 30 * time.Second
 	return &HTTP{
 		base:   strings.TrimRight(baseURL, "/"),
 		token:  token,
 		http:   &http.Client{Timeout: 30 * time.Second},
+		stream: &http.Client{Transport: streamTransport},
 		counts: map[string]*cached[int]{},
 		stats:  map[string]*cached[ChannelStats]{},
 		videos: map[string]*cached[Video]{},
@@ -575,7 +584,7 @@ func (c *HTTP) OpenMedia(ctx context.Context, path string) (io.ReadCloser, error
 		return nil, err
 	}
 	req.Header.Set("Authorization", "Token "+c.token)
-	resp, err := c.http.Do(req)
+	resp, err := c.stream.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrUnavailable, err)
 	}

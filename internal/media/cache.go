@@ -1,11 +1,18 @@
 // Package media derives and caches alternative renditions of archived videos.
 //
 // TubeArchivist stores one muxed file per video. Anything else a client needs —
-// two audio renditions today (Opus in WebM for browsers, AAC in MP4 for
-// AVFoundation), a compatible video rendition later — is derived from that
-// file on first request and cached on disk. Every entry can be rebuilt from
-// TubeArchivist, so losing the directory costs CPU and nothing else, which is
-// what lets the cache live on ephemeral storage.
+// two audio renditions (Opus in WebM for browsers, AAC in MP4 for
+// AVFoundation) and a compatible H.264 video rendition as HLS — is derived
+// from that file on first request and cached on disk. Every entry can be
+// rebuilt from TubeArchivist, so losing the directory costs CPU and nothing
+// else, which is what lets the cache live on ephemeral storage.
+//
+// An entry is either a single file (the audio variants) or a directory (HLS:
+// a playlist, an init segment and the media segments). Files are derived to a
+// temp name and published by rename, so a reader never sees a partial one.
+// Directories cannot work that way — the point of HLS here is that a viewer
+// starts on the first segment while the rest is still being written — so they
+// are built in place, tracked as jobs, and removed wholesale on failure.
 package media
 
 import (
@@ -16,6 +23,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 )
@@ -24,9 +32,20 @@ import (
 // or return an error; the caller only publishes dst on success.
 type DeriveFunc func(ctx context.Context, dst string) error
 
-// deriveTimeout bounds a single derivation. A remux runs far faster than
-// realtime, so this is a stuck-process guard rather than a real budget.
-const deriveTimeout = 30 * time.Minute
+// DirDeriveFunc writes a multi-file rendition into dir, which already exists
+// and is empty. Unlike a DeriveFunc it is read while it runs, so it must add
+// files in an order that stays consistent (a playlist naming only segments
+// that are already there).
+type DirDeriveFunc func(ctx context.Context, dir string) error
+
+const (
+	// deriveTimeout bounds a single file derivation. A remux runs far faster
+	// than realtime, so this is a stuck-process guard rather than a budget.
+	deriveTimeout = 30 * time.Minute
+	// transcodeTimeout bounds a directory job. A video transcode can run near
+	// realtime on a busy box, so a long video needs hours, not minutes.
+	transcodeTimeout = 4 * time.Hour
+)
 
 type Cache struct {
 	dir      string
@@ -35,6 +54,18 @@ type Cache struct {
 
 	mu       sync.Mutex
 	inflight map[string]*job
+	dirs     map[string]*dirJob
+	closed   bool
+
+	// slots caps concurrent directory jobs. A transcode is CPU-bound, so
+	// running four at once does not finish any of them sooner — it only makes
+	// the first viewer wait four times as long for the first segment.
+	slots chan struct{}
+	// baseCtx outlives every request: a job runs to completion whoever walks
+	// away from it, and is cancelled only by Close.
+	baseCtx context.Context
+	cancel  context.CancelFunc
+	wg      sync.WaitGroup
 }
 
 type job struct {
@@ -42,14 +73,29 @@ type job struct {
 	err  error
 }
 
-func NewCache(dir string, maxBytes int64, log *slog.Logger) (*Cache, error) {
+// NewCache opens (creating it if needed) the cache directory. maxJobs caps
+// concurrent directory derivations; 0 or less means one at a time.
+func NewCache(dir string, maxBytes int64, maxJobs int, log *slog.Logger) (*Cache, error) {
 	if dir == "" {
 		return nil, errors.New("media cache: dir is required")
 	}
 	if err := os.MkdirAll(dir, 0o750); err != nil {
 		return nil, fmt.Errorf("media cache: %w", err)
 	}
-	return &Cache{dir: dir, maxBytes: maxBytes, log: log, inflight: map[string]*job{}}, nil
+	if maxJobs < 1 {
+		maxJobs = 1
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	return &Cache{
+		dir:      dir,
+		maxBytes: maxBytes,
+		log:      log,
+		inflight: map[string]*job{},
+		dirs:     map[string]*dirJob{},
+		slots:    make(chan struct{}, maxJobs),
+		baseCtx:  ctx,
+		cancel:   cancel,
+	}, nil
 }
 
 // Get returns the path of the cached rendition, deriving it first if needed.
@@ -130,7 +176,17 @@ func (c *Cache) touch(path string) bool {
 	return true
 }
 
+// touchDir is touch for a directory entry: the directory's own mtime is the
+// LRU signal, refreshed whenever any file inside it is served.
+func (c *Cache) touchDir(path string) {
+	now := time.Now()
+	_ = os.Chtimes(path, now, now)
+}
+
 // evict deletes least-recently-used entries until the cache is under its cap.
+// A directory counts as one entry sized by the sum of its files and is removed
+// whole — half a rendition is worse than none. A directory whose job is still
+// running is never evicted: it is about to grow, and a player is reading it.
 func (c *Cache) evict() {
 	if c.maxBytes <= 0 {
 		return
@@ -148,16 +204,31 @@ func (c *Cache) evict() {
 		items []item
 		total int64
 	)
+	running := c.runningDirs()
 	for _, e := range entries {
-		if e.IsDir() || filepath.Ext(e.Name()) == ".tmp" || len(e.Name()) > 0 && e.Name()[0] == '.' {
+		name := e.Name()
+		if filepath.Ext(name) == ".tmp" || strings.HasPrefix(name, ".") {
 			continue
 		}
 		info, err := e.Info()
 		if err != nil {
 			continue
 		}
-		items = append(items, item{filepath.Join(c.dir, e.Name()), info.Size(), info.ModTime()})
-		total += info.Size()
+		size, used := info.Size(), info.ModTime()
+		if e.IsDir() {
+			if size, err = dirSize(filepath.Join(c.dir, name)); err != nil {
+				continue
+			}
+			if running[name] {
+				// Counted against the cap — it is really on the disk — but
+				// never a candidate: a player is reading it and the job is
+				// still writing it.
+				total += size
+				continue
+			}
+		}
+		items = append(items, item{filepath.Join(c.dir, name), size, used})
+		total += size
 	}
 	if total <= c.maxBytes {
 		return
@@ -167,12 +238,12 @@ func (c *Cache) evict() {
 		if total <= c.maxBytes {
 			return
 		}
-		if err := os.Remove(it.path); err != nil {
+		if err := os.RemoveAll(it.path); err != nil {
 			continue // raced with another eviction or a read; skip it
 		}
 		total -= it.size
 		if c.log != nil {
-			c.log.Info("media cache evicted", "file", filepath.Base(it.path), "bytes", it.size)
+			c.log.Info("media cache evicted", "entry", filepath.Base(it.path), "bytes", it.size)
 		}
 	}
 }

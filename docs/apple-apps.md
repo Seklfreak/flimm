@@ -143,13 +143,16 @@ What is still missing:
   and `Flimm TV App Store` profiles). The upload needs an app record per
   platform in App Store Connect, which the API cannot create; the workflow
   stays dormant until `APP_STORE_CONNECT_KEY_ID` is set.
-- **The codec question is settled in code but not on hardware.** The player
-  reads `streams` and refuses with a named codec rather than spinning, and
-  offers audio-only whenever the server reports `audio_aac_url` for the video
-  — not whenever the archived audio codec happens to be one AVFoundation could
-  decode directly, since the server always derives a playable AAC rendition
-  regardless of the source codec — but nobody has yet run a real archive
-  against a real device to learn how often the codec gate fires at all.
+- **The codec gate now has somewhere better to go.** The player reads
+  `streams`, refuses with a named codec rather than spinning, and offers
+  audio-only whenever the server reports `audio_aac_url` — not whenever the
+  archived audio codec happens to be one AVFoundation could decode directly,
+  since the server always derives a playable AAC rendition regardless of the
+  source codec. What has changed is that an unplayable video is no longer a
+  dead end: the backend serves a compatible H.264/AAC HLS rendition at
+  `hls_url`, so the gate should play *that* and keep audio-only as the cheap
+  fallback. Wiring it up is open client work, and nobody has yet run a real
+  archive against a real device to learn how often the gate fires at all.
   See *Known complications*.
 - **No UI tests.** The logic worth testing was moved into `FlimmKit`, which
   has them; the views themselves are only covered by the compiler. The iPad
@@ -321,34 +324,50 @@ are three outcomes:
 2. Some plays — decide per video, using the stream metadata, and fall back.
 3. Little plays — the apps need a compatible rendition.
 
-The iPhone app implements outcome 2 today: it reads `streams`, and when no
+**Outcome 3 is built.** `GET /media/hls/{id}/index.m3u8` serves the video
+transcoded to H.264 (High@4.1, ≤1080p) with AAC audio, as HLS with fMP4
+segments — which is exactly what `AVPlayer` is happiest with. The video detail
+carries `hls_url` (always) and `hls_state`
+(`pending|running|done|failed`). See
+[*Compatible video rendition (HLS)*](api.md#compatible-video-rendition-hls) in
+api.md for the contract.
+
+How a client should use it:
+
+1. Read `streams`. If a video stream's codec is playable on this device
+   (`avc1` always; `vp09`/`av01` device-dependent) play `media_url` — the
+   original file, no server cost. `FlimmKit`'s `CodecGate` already makes this
+   decision.
+2. Only when nothing is playable, load `hls_url` into `AVPlayer` with the same
+   `AVURLAssetHTTPHeaderFieldsKey` Bearer header the other media routes take —
+   AVFoundation re-sends it on every segment request, which is why the whole
+   route is behind the one media gate.
+3. The first load may block for a few seconds while the first segment is
+   encoded, and returns **503 with `Retry-After: 5`** if it takes longer than
+   45 s. Treat that as "still preparing", show progress and retry — it is not
+   an error. `hls_state` is there so the UI can say so honestly, and
+   `POST /videos/{id}/hls` starts the transcode ahead of time (worth doing when
+   the codec gate fires on the *next* video in a queue).
+4. Audio-only stays as the cheap fallback and as the music-playlist path:
+   `audio_aac_url` (`GET /media/audio/{id}.m4a`) is the same audio as AAC in
+   MP4. `audio_url` is Opus in WebM, which AVFoundation cannot decode — never
+   use it on Apple platforms. Both are guarded the same way: the app only
+   offers a fallback when the field is present, and says a newer server is
+   needed otherwise.
+
+The iPhone app still implements **outcome 2**: it reads `streams`, and when no
 video stream is natively playable it says so by name ("This video's codec
-(vp09) can't be played on this device") instead of showing a stalled player.
-It offers audio-only as the fallback, and that fallback is real: `audio_url`
-is Opus in WebM, which AVFoundation cannot decode, so native clients use
-`audio_aac_url` (`GET /media/audio/{id}.m4a`) — the same audio as AAC in MP4,
-with full range support. It is a genuine re-encode unless the source track is
-already AAC, so the first listener waits; see *Derived media* in api.md. The
-fallback button only appears when the video detail carries `audio_aac_url`
-at all; on a server that predates the field the app says audio-only needs a
-newer server rather than trying `audio_url`, which would silently fail to
-play.
+(vp09) can't be played on this device") and offers audio-only. Wiring step 2
+above into that dead end — play the HLS rendition instead of apologising — is
+the remaining client work.
 
-The backend is already built for outcome 3. `internal/media` is a **derived
-media cache keyed by `(video, variant)`**, not an audio-only feature: it
-derives a rendition on first request, caches it on disk, serves it with full
-range support, collapses concurrent requests onto one job and evicts
-least-recently-used. Audio is simply the first variant. Adding a compatible
-video rendition means adding a variant and an endpoint beside
-`GET /media/audio/{id}.webm` — not new infrastructure. The AAC audio variant
-(`audio-aac`, `.m4a`) was added exactly that way.
-
-Be honest about the cost before choosing it: the WebM audio variant is a
+Be honest about the cost when the gate fires: the WebM audio variant is a
 stream *copy* and nearly free, the AAC one is an audio-only re-encode and
-cheap, whereas a video rendition is a real transcode. It needs a
-deliberate decision about when it runs (on demand, with the first viewer
-waiting, versus ahead of time), how much disk it may use, and what the client
-shows while it is happening.
+cheap, whereas the video rendition is a real transcode — roughly realtime per
+core, ~2–3 GB per 1080p hour on disk, one at a time by default. It is on
+demand and progressive (the viewer starts watching while it runs), but it is
+not free, which is why the client must only reach for it when the source is
+genuinely unplayable.
 
 **Network reach.** A deployment may deliberately keep the server off the public
 internet, in which case the apps only work on the local network or over a VPN.

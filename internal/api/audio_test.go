@@ -26,7 +26,7 @@ func audioServer(t *testing.T, body []byte) http.Handler {
 			}
 		}
 	}
-	cache, err := media.NewCache(dir, 0, nil)
+	cache, err := media.NewCache(dir, 0, 1, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

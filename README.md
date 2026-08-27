@@ -30,6 +30,11 @@ One container image: a Go backend with the React frontend embedded.
   subtitle hit jumps straight to that timestamp.
 - **Player** — archived and auto-generated subtitle tracks, SponsorBlock
   segment skipping, playback speed, autoplay with context-aware *Up next*.
+- **Plays what your devices can't** — the archive is full of AV1 and VP9 that
+  Apple hardware cannot decode, so Flimm derives a compatible H.264/AAC **HLS**
+  rendition on demand and streams it segment by segment: playback starts within
+  seconds instead of after the whole transcode. Audio-only renditions come the
+  same way. See [docs/api.md](docs/api.md#derived-media).
 - **Preferences** per user (autoplay, speed, subtitles, theme…).
 - **OIDC login** with any provider; media streams through the backend so
   TubeArchivist itself never has to be exposed.
@@ -101,12 +106,14 @@ is in [docs/api.md](docs/api.md).
   Google… Flimm needs a public (PKCE) client with redirect URI
   `https://<host>/auth/callback`.
 - HTTPS in front of Flimm (the media cookie is `Secure`).
-- **ffmpeg** for audio-only playback. It ships in the container image; a local
-  build needs it on `PATH` (or set `FFMPEG_PATH`). Without it everything else
-  works and only `/media/audio/*` fails. The WebM rendition browsers use is a
-  stream copy and nearly free; the `.m4a` (AAC) one native Apple clients need
-  is a real re-encode, so give the server a core to spare if they use it. See
-  [docs/api.md](docs/api.md#derived-media).
+- **ffmpeg** for derived media. It ships in the container image; a local build
+  needs it on `PATH` (or set `FFMPEG_PATH`). Without it everything else works
+  and only `/media/audio/*` and `/media/hls/*` fail. The WebM rendition
+  browsers use is a stream copy and nearly free; the `.m4a` (AAC) one native
+  Apple clients need is a real re-encode; the **HLS video rendition is a real
+  transcode**, so give the container several cores if clients use it. See
+  [docs/api.md](docs/api.md#derived-media) and
+  [docs/deploy.md](docs/deploy.md).
 
 ## Configuration
 
@@ -126,6 +133,10 @@ All configuration is via environment variables.
 | `APP_NAME` | no | default `Flimm` |
 | `PORT` | no | default `8080` |
 | `MIN_PLAY_SECONDS` | no | how long a video must play before it enters history and gets a resume position (default 15) |
+| `MEDIA_CACHE_DIR` | no | where derived renditions are cached; default a temp dir. Must be writable — an HLS rendition of a 1080p hour is ~2–3 GB |
+| `MEDIA_CACHE_MAX_BYTES` | no | cache size cap before least-recently-used eviction (default 5 GiB) |
+| `MEDIA_TRANSCODE_JOBS` | no | concurrent HLS transcodes (default 1); extra requests queue |
+| `FFMPEG_PATH` | no | ffmpeg binary; default `ffmpeg` on `PATH` |
 | `SENTRY_DSN` | no | backend error reporting |
 | `VITE_SENTRY_DSN` | no | frontend error reporting; a **build arg**, baked into the bundle at image build time (not a runtime env var) |
 | `LOG_LEVEL` | no | `debug`, `info` (default), `warn`, `error` |
