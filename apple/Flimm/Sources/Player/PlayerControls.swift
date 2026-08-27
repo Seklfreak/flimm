@@ -70,6 +70,14 @@ struct PlayerControls: View {
 
     private var optionsMenu: some View {
         Menu {
+            if model.usingCompatibleRendition {
+                // Informational, not a control: the rendition is chosen by the
+                // codec gate, never by hand.
+                Button {} label: {
+                    Label("Compatible version · up to 1080p", systemImage: "wand.and.rays")
+                }
+                .disabled(true)
+            }
             Picker("Speed", selection: speedBinding) {
                 ForEach(PlaybackSpeeds.all, id: \.self) { speed in
                     Text(Fmt.speed(speed)).tag(speed)

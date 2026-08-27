@@ -143,17 +143,10 @@ What is still missing:
   and `Flimm TV App Store` profiles). The upload needs an app record per
   platform in App Store Connect, which the API cannot create; the workflow
   stays dormant until `APP_STORE_CONNECT_KEY_ID` is set.
-- **The codec gate now has somewhere better to go.** The player reads
-  `streams`, refuses with a named codec rather than spinning, and offers
-  audio-only whenever the server reports `audio_aac_url` — not whenever the
-  archived audio codec happens to be one AVFoundation could decode directly,
-  since the server always derives a playable AAC rendition regardless of the
-  source codec. What has changed is that an unplayable video is no longer a
-  dead end: the backend serves a compatible H.264/AAC HLS rendition at
-  `hls_url`, so the gate should play *that* and keep audio-only as the cheap
-  fallback. Wiring it up is open client work, and nobody has yet run a real
-  archive against a real device to learn how often the gate fires at all.
-  See *Known complications*.
+- **A real archive on real hardware.** The codec path is built and the
+  fallback is automatic (see *Known complications*), but nobody has yet
+  pointed either app at a real archive on a real device to learn how often the
+  gate fires at all — and so how much transcoding a normal evening costs.
 - **No UI tests.** The logic worth testing was moved into `FlimmKit`, which
   has them; the views themselves are only covered by the compiler. The iPad
   layout and the whole TV app in particular have been built, linted and run
@@ -161,10 +154,6 @@ What is still missing:
   be exercised: the sidebar, the grids, the side-by-side player, and on tvOS
   the focus behaviour, the navigation markers and the interstitials have not
   been seen against real data.
-- **The iOS player still carries its own copy of the codec gate.** The shared
-  one is `FlimmKit`'s `CodecGate`, which the TV player uses and which has
-  tests; `WatchModel` has a private `CodecIssue` with identical rules that
-  should be folded into it.
 - **A Stage Manager / external display pass.** The layout follows the size
   class and so behaves, but nobody has looked at it in a resizable window or
   on a second screen.
@@ -332,34 +321,68 @@ carries `hls_url` (always) and `hls_state`
 [*Compatible video rendition (HLS)*](api.md#compatible-video-rendition-hls) in
 api.md for the contract.
 
-How a client should use it:
+**Both apps do this, and the fallback is automatic.** `FlimmKit`'s
+`CodecGate.decision(for:)` returns one of four answers, and the iOS and tvOS
+players act on the same one:
 
-1. Read `streams`. If a video stream's codec is playable on this device
-   (`avc1` always; `vp09`/`av01` device-dependent) play `media_url` — the
-   original file, no server cost. `FlimmKit`'s `CodecGate` already makes this
-   decision.
-2. Only when nothing is playable, load `hls_url` into `AVPlayer` with the same
-   `AVURLAssetHTTPHeaderFieldsKey` Bearer header the other media routes take —
-   AVFoundation re-sends it on every segment request, which is why the whole
-   route is behind the one media gate.
-3. The first load may block for a few seconds while the first segment is
-   encoded, and returns **503 with `Retry-After: 5`** if it takes longer than
-   45 s. Treat that as "still preparing", show progress and retry — it is not
-   an error. `hls_state` is there so the UI can say so honestly, and
-   `POST /videos/{id}/hls` starts the transcode ahead of time (worth doing when
-   the codec gate fires on the *next* video in a queue).
-4. Audio-only stays as the cheap fallback and as the music-playlist path:
-   `audio_aac_url` (`GET /media/audio/{id}.m4a`) is the same audio as AAC in
-   MP4. `audio_url` is Opus in WebM, which AVFoundation cannot decode — never
-   use it on Apple platforms. Both are guarded the same way: the app only
-   offers a fallback when the field is present, and says a newer server is
-   needed otherwise.
+1. `.native` — a video stream's codec is playable here (`avc1` always;
+   `vp09`/`av01` decided at runtime by `VTIsHardwareDecodeSupported`), so
+   `media_url` plays. The original file, no server cost. Also the answer when
+   the server reports no `streams` at all: unknown must not read as
+   unplayable.
+2. `.hls` — nothing decodes here, but the server offers `hls_url`. The player
+   posts `POST /videos/{id}/hls` first so the transcode starts before
+   AVFoundation opens the playlist, then loads `hls_url` into `AVPlayer` with
+   the same `AVURLAssetHTTPHeaderFieldsKey` Bearer header every other media
+   route takes. AVFoundation re-sends those headers on **every** request the
+   asset makes — the playlist, its re-reads as the EVENT playlist grows, the
+   fMP4 init segment and each media segment — which is what lets the whole
+   route sit behind the one media gate. That is not folklore:
+   `FlimmKitTests/HLSHeaderForwardingTests` builds a real fMP4 HLS stream with
+   ffmpeg, serves it from a local socket server that records every request,
+   plays it, and asserts the header on all of them. (The test skips itself
+   when ffmpeg is not installed.)
+3. `.audioOnly` / `.unplayable` — nothing decodes *and* the server predates
+   `hls_url`. Only here does the codec wall appear, naming the codec and
+   offering audio-only if `audio_aac_url` is there.
 
-The iPhone app still implements **outcome 2**: it reads `streams`, and when no
-video stream is natively playable it says so by name ("This video's codec
-(vp09) can't be played on this device") and offers audio-only. Wiring step 2
-above into that dead end — play the HLS rendition instead of apologising — is
-the remaining client work.
+What the viewer sees on the `.hls` path is a spinner and **"Preparing a
+compatible version…"** over black — on iOS in the player stage, on tvOS in the
+`AVPlayerViewController` content overlay — until the item reports
+`readyToPlay`. It stays up across the retries, because a playlist whose first
+segment does not exist yet answers **503 with `Retry-After: 5`** and `AVPlayer`
+has no notion of coming back later: the item simply fails
+(`NSURLErrorDomain -1008` wrapping `CoreMediaErrorDomain -16849`, observed on
+`AVPlayerItem.status`, *not* through
+`failedToPlayToEndTimeNotification`, which never fires for a playlist-level
+failure). The player treats that as "still preparing", waits 5 s and reopens
+the asset, for up to two minutes without playback before it finally shows the
+error. The window rolls forward while the rendition is actually playing, so a
+stumble an hour in gets its own two minutes rather than inheriting a spent
+one. Where it is cheap to say so — the iOS options menu, the tvOS Info panel —
+the UI notes that this is the compatible version, capped at 1080p.
+
+Chapters, SponsorBlock and subtitles are untouched: they are in seconds
+against the archived duration, and that duration stays authoritative because a
+growing EVENT playlist reports only what has been transcoded so far — adopting
+it would shrink the scrubber to a few seconds, so the players do not.
+
+**Seeking is the one thing the rendition genuinely limits.** Until the
+transcode has produced that far, seeking past it is *clamped*, not honoured —
+including the resume seek, which is exactly the case that matters, since a
+half-watched video is the likeliest one to be reopened. Both players re-try an
+unlanded resume on every tick until the playlist has grown far enough, and
+until it lands they report *the position being sought* as the heartbeat rather
+than the player's clock. Without that, resuming an hour-long video at 40
+minutes would post "3 minutes" a few seconds later and overwrite a good
+position with a worse one. An explicit seek by the viewer replaces the pending
+resume, so nobody is dragged back.
+
+Audio-only stays as the cheap fallback and as the music-playlist path:
+`audio_aac_url` (`GET /media/audio/{id}.m4a`) is the same audio as AAC in MP4.
+`audio_url` is Opus in WebM, which AVFoundation cannot decode — never use it on
+Apple platforms. Both are guarded the same way: the app only offers a fallback
+when the field is present, and says a newer server is needed otherwise.
 
 Be honest about the cost when the gate fires: the WebM audio variant is a
 stream *copy* and nearly free, the AAC one is an audio-only re-encode and
@@ -384,8 +407,10 @@ a side effect of caching.
 
 1. ~~`FlimmKit`: models, API client, auth, keychain.~~ **Done.**
 2. **Settle the codec question** on a real device — still open in the sense
-   that matters. The client handles all three outcomes gracefully; what is
-   unknown is which one a real archive actually produces.
+   that matters. The client handles all three outcomes gracefully, and an
+   undecodable video now falls back to the compatible rendition on its own;
+   what is unknown is which outcome a real archive actually produces, and so
+   how much transcoding it asks of the server.
 3. ~~iOS: feeds → player → history.~~ **Done**, including audio-only,
    chapters, SponsorBlock and search-to-timestamp.
 4. ~~iPad: the same views under `NavigationSplitView`.~~ **Done** — one

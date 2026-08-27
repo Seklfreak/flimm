@@ -134,20 +134,30 @@ struct WatchView: View {
     }
 
     private func stage(_ model: WatchModel) -> some View {
-        ZStack {
+        // Everything but "the video is on screen": the codec wall, the
+        // audio-only apology, an outright failure, and the wait while the
+        // server builds a compatible rendition. None of them wants the
+        // transport chrome drawn over it.
+        let blocked = model.codecIssue != nil || model.audioUnavailable || model.isPreparingCompatible
+        return ZStack {
             Color.black
             if model.codecIssue != nil {
                 CodecGateView(model: model)
             } else if model.audioUnavailable {
                 AudioUnavailableView(model: model)
-            } else if let failure = model.engine.failure {
+            } else if let failure = model.engine.failure, !model.isPreparingCompatible {
+                // While the rendition is still being made, a failed item means
+                // "not ready yet" — the model is already retrying it.
                 PlaybackFailureView(message: failure)
             } else if model.audioOnly {
                 artwork(model)
             } else {
                 PlayerSurface(engine: model.engine)
             }
-            if (model.codecIssue != nil || model.audioUnavailable) && isFullScreen {
+            if model.isPreparingCompatible {
+                PreparingCompatibleView()
+            }
+            if blocked && isFullScreen {
                 // No overlay controls on these views, and full screen hides
                 // the toolbar — so this is the only way out in landscape.
                 Button(action: close) {
@@ -160,7 +170,7 @@ struct WatchView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 .padding(8)
             }
-            if model.codecIssue == nil && !model.audioUnavailable {
+            if !blocked {
                 SubtitleOverlay(text: model.activeCue, size: model.prefs.subtitleSize)
                     .frame(maxHeight: .infinity, alignment: .bottom)
                     .padding(.bottom, controlsVisible ? 68 : 16)
@@ -304,7 +314,39 @@ enum PlayerCommand {
     ]
 }
 
+/// The wait while the server transcodes a compatible rendition.
+///
+/// It is shown from the moment the archived file is ruled out until the player
+/// reports `readyToPlay` — including across the retries a playlist that is not
+/// ready yet (`503`, `Retry-After: 5`) provokes, which is why "preparing" and
+/// not "failed" is what a viewer sees.
+struct PreparingCompatibleView: View {
+    var body: some View {
+        VStack(spacing: 12) {
+            ProgressView()
+                .tint(.white)
+                .scaleEffect(1.3)
+            Text("Preparing a compatible version…")
+                .font(.subheadline.weight(.semibold))
+            Text("""
+            This device can't decode the archived file, so the server is converting it. \
+            Playback starts as soon as the first part is ready.
+            """)
+                .font(.caption)
+                .foregroundStyle(.white.opacity(0.7))
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: 340)
+        }
+        .foregroundStyle(.white)
+        .padding(24)
+    }
+}
+
 /// "This video's codec can't be played on this device."
+///
+/// The last resort, and only on a server that predates `hls_url`: with the
+/// compatible rendition available the player uses it instead of apologising.
 struct CodecGateView: View {
     let model: WatchModel
 

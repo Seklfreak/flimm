@@ -72,6 +72,20 @@ extension APIClient {
         try await discard(.post, "/videos/\(esc(id))/watched", body: WatchedBody(watched: watched))
     }
 
+    /// Starts the compatible H.264/AAC rendition (`hls_url`) **without
+    /// waiting** for it, and reports where it stands.
+    ///
+    /// Idempotent — a running or finished rendition is not started again — so
+    /// it doubles as "how far along is it?", which is what a player retrying a
+    /// not-yet-ready playlist wants to know. Call it before opening the asset
+    /// so the transcode is already running while AVFoundation connects, and
+    /// call it ahead of time to prefetch the next video in a queue.
+    @discardableResult
+    public func startHLS(_ id: String) async throws -> HLSState {
+        let status: HLSStatus = try await send(.post, "/videos/\(esc(id))/hls")
+        return status.state
+    }
+
     /// "Start over": position → 0 and TubeArchivist progress deleted.
     public func startOver(_ id: String) async throws {
         try await discard(.delete, "/videos/\(esc(id))/progress")

@@ -56,6 +56,9 @@ final class ModelDecodingTests: XCTestCase {
         XCTAssertEqual(video.audioUrl, "/media/audio/yt-id.webm")
         XCTAssertEqual(video.audioAacURL, "/media/audio/yt-id.m4a")
         XCTAssertEqual(video.nativeAudioURL, "/media/audio/yt-id.m4a")
+        XCTAssertEqual(video.hlsURL, "/media/hls/yt-id/index.m3u8")
+        XCTAssertEqual(video.compatibleVideoURL, "/media/hls/yt-id/index.m3u8")
+        XCTAssertEqual(video.hlsState, .pending)
         XCTAssertEqual(video.height, 1080)
         XCTAssertEqual(video.channel.videoCount, 212)
         XCTAssertEqual(video.subtitles.first?.source, .user)
@@ -88,6 +91,31 @@ final class ModelDecodingTests: XCTestCase {
         XCTAssertNil(video.audioAacURL)
         XCTAssertNil(video.nativeAudioURL)
         XCTAssertEqual(video.audioUrl, "/media/audio/yt-id.webm")
+    }
+
+    /// `hls_url` arrives in a later backend release as well; a server without
+    /// it must still decode, and report no compatible rendition rather than
+    /// an empty path.
+    func testVideoDetailWithoutHLS() throws {
+        let video = try decode(Video.self, Fixtures.videoDetailWithoutHLS)
+        XCTAssertNil(video.hlsURL)
+        XCTAssertNil(video.hlsState)
+        XCTAssertNil(video.compatibleVideoURL)
+    }
+
+    /// A state the contract grows later must not fail the whole video detail.
+    func testUnknownHLSStateDecodes() throws {
+        let source = Fixtures.videoDetail.replacingOccurrences(of: "\"hls_state\": \"pending\"", with: "\"hls_state\": \"queued\"")
+        let video = try decode(Video.self, source)
+        XCTAssertEqual(video.hlsState, .unknown)
+        XCTAssertFalse(try XCTUnwrap(video.hlsState).isPreparing)
+    }
+
+    func testHLSStatePreparing() {
+        XCTAssertTrue(HLSState.pending.isPreparing)
+        XCTAssertTrue(HLSState.running.isPreparing)
+        XCTAssertFalse(HLSState.done.isPreparing)
+        XCTAssertFalse(HLSState.failed.isPreparing)
     }
 
     func testMediaStreamPlayability() {
