@@ -54,6 +54,14 @@ type Options struct {
 	// HWAccel is the hardware-transcode decision made at start-up; the zero
 	// value keeps every transcode on the CPU.
 	HWAccel media.HWAccel
+	// SegmentWait is MEDIA_SEGMENT_WAIT: how long a request for an HLS segment
+	// the transcode has not produced yet blocks before the client is told to
+	// come back. 0 uses the default.
+	SegmentWait time.Duration
+	// SeekAheadSegments is MEDIA_SEEK_AHEAD_SEGMENTS: how far ahead of the
+	// encoder a segment request has to be for the run to be re-aimed at it.
+	// 0 uses the default.
+	SeekAheadSegments int
 	// MinPlaySeconds is how long a video must be played before it is recorded;
 	// 0 uses the default.
 	MinPlaySeconds float64
@@ -86,6 +94,11 @@ type Server struct {
 	mediaCache     *media.Cache
 	ffmpegPath     string
 	hwaccel        media.HWAccel
+	// hlsJobs publishes running HLS jobs so a segment request can find the one
+	// it is waiting on, steer it, and report its progress.
+	hlsJobs           *media.HLSRegistry
+	segmentWait       time.Duration
+	seekAheadSegments int
 }
 
 func NewServer(o Options) *Server {
@@ -121,6 +134,10 @@ func NewServer(o Options) *Server {
 		mediaCache:     o.MediaCache,
 		ffmpegPath:     cmp.Or(o.FFmpegPath, "ffmpeg"),
 		hwaccel:        o.HWAccel,
+
+		hlsJobs:           media.NewHLSRegistry(),
+		segmentWait:       cmp.Or(o.SegmentWait, defaultSegmentWait),
+		seekAheadSegments: cmp.Or(o.SeekAheadSegments, media.DefaultSeekAheadSegments),
 	}
 	if o.MediaProxy != nil {
 		// Thumbnails are immutable per id; let the browser keep them a day.

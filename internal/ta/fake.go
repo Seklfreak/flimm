@@ -3,8 +3,11 @@ package ta
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
+	"net/http"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 )
@@ -484,18 +487,86 @@ func (f *Fake) FetchRange(_ context.Context, path string, start, end int64) ([]b
 	return append([]byte{}, data[start:to]...), nil
 }
 
-func (f *Fake) OpenMedia(_ context.Context, path string) (io.ReadCloser, error) {
+func (f *Fake) OpenMedia(ctx context.Context, path string) (io.ReadCloser, error) {
+	s, err := f.OpenMediaRange(ctx, path, "")
+	if err != nil {
+		return nil, err
+	}
+	return s.Body, nil
+}
+
+// OpenMediaRange serves Media with byte-range support, so a test exercises the
+// same seekable path a real transcode reads through.
+func (f *Fake) OpenMediaRange(_ context.Context, path, rangeHeader string) (*MediaStream, error) {
 	if f.OpenMediaFn != nil {
-		return f.OpenMediaFn(path)
+		body, err := f.OpenMediaFn(path)
+		if err != nil {
+			return nil, err
+		}
+		return &MediaStream{Body: body, StatusCode: http.StatusOK, ContentLength: -1, AcceptRanges: "bytes"}, nil
 	}
 	if f.Err != nil {
 		return nil, f.Err
 	}
 	f.mu.Lock()
-	defer f.mu.Unlock()
 	b, ok := f.Media[path]
+	f.mu.Unlock()
 	if !ok {
 		return nil, ErrNotFound
 	}
-	return io.NopCloser(bytes.NewReader(b)), nil
+	total := int64(len(b))
+	if rangeHeader != "" {
+		start, end, err := parseByteRange(rangeHeader, total)
+		if err != nil {
+			return nil, err
+		}
+		return &MediaStream{
+			Body:          io.NopCloser(bytes.NewReader(b[start : end+1])),
+			StatusCode:    http.StatusPartialContent,
+			ContentLength: end - start + 1,
+			ContentRange:  fmt.Sprintf("bytes %d-%d/%d", start, end, total),
+			AcceptRanges:  "bytes",
+		}, nil
+	}
+	return &MediaStream{
+		Body:          io.NopCloser(bytes.NewReader(b)),
+		StatusCode:    http.StatusOK,
+		ContentLength: total,
+		AcceptRanges:  "bytes",
+	}, nil
+}
+
+// parseByteRange understands the single-range forms ffmpeg sends:
+// `bytes=a-b`, `bytes=a-` and `bytes=-n`.
+func parseByteRange(header string, total int64) (int64, int64, error) {
+	spec, ok := strings.CutPrefix(strings.TrimSpace(header), "bytes=")
+	if !ok || strings.Contains(spec, ",") {
+		return 0, 0, fmt.Errorf("fake: unsupported range %q", header)
+	}
+	from, to, ok := strings.Cut(spec, "-")
+	if !ok {
+		return 0, 0, fmt.Errorf("fake: unsupported range %q", header)
+	}
+	if from == "" {
+		n, err := strconv.ParseInt(to, 10, 64)
+		if err != nil || n <= 0 {
+			return 0, 0, fmt.Errorf("fake: unsupported range %q", header)
+		}
+		return max(total-n, 0), total - 1, nil
+	}
+	start, err := strconv.ParseInt(from, 10, 64)
+	if err != nil || start < 0 || start >= total {
+		return 0, 0, fmt.Errorf("fake: range %q outside a %d-byte file", header, total)
+	}
+	end := total - 1
+	if to != "" {
+		if end, err = strconv.ParseInt(to, 10, 64); err != nil {
+			return 0, 0, fmt.Errorf("fake: unsupported range %q", header)
+		}
+		end = min(end, total-1)
+	}
+	if end < start {
+		return 0, 0, fmt.Errorf("fake: range %q outside a %d-byte file", header, total)
+	}
+	return start, end, nil
 }

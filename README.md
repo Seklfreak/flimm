@@ -145,6 +145,8 @@ All configuration is via environment variables.
 | `MEDIA_CACHE_DIR` | no | where derived renditions are cached; default a temp dir. Must be writable — an HLS rendition of a 1080p hour is ~2–3 GB, a 2160p HEVC one ~6–8 GB |
 | `MEDIA_CACHE_MAX_BYTES` | no | cache size cap before least-recently-used eviction (default 5 GiB) |
 | `MEDIA_TRANSCODE_JOBS` | no | concurrent HLS transcodes (default 1), counted across every video and height; extra requests queue |
+| `MEDIA_SEGMENT_WAIT` | no | seconds a request for an HLS segment the transcode has not produced yet waits before the client is told to come back (default 60) |
+| `MEDIA_SEEK_AHEAD_SEGMENTS` | no | how far ahead of the encoder (in 4-second segments) a segment request has to be before the running transcode is re-aimed at it (default 30, about two minutes) |
 | `FFMPEG_PATH` | no | ffmpeg binary; default `ffmpeg` on `PATH` |
 | `MEDIA_HWACCEL` | no | hardware transcoding: `auto` (default — Intel VAAPI when a render node is there and openable, CPU otherwise), `vaapi`, or `off`. A failed hardware attempt falls back to the CPU per video. See [docs/deploy.md](docs/deploy.md#hardware-acceleration-intel-vaapi) |
 | `MEDIA_VAAPI_DEVICE` | no | DRM render node for VAAPI; default `/dev/dri/renderD128` |

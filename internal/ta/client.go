@@ -2,6 +2,7 @@ package ta
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -56,6 +57,12 @@ type Client interface {
 
 	// OpenMedia streams a media file from TA. The caller closes the reader.
 	OpenMedia(ctx context.Context, path string) (io.ReadCloser, error)
+	// OpenMediaRange is OpenMedia honouring an HTTP Range header ("" for the
+	// whole file), returning the response's range metadata alongside the body.
+	// It backs the loopback source an HLS transcode reads through, which needs
+	// a *seekable* input to start encoding at a resume position instead of
+	// decoding its way there from 0:00. The caller closes the body.
+	OpenMediaRange(ctx context.Context, path, rangeHeader string) (*MediaStream, error)
 	// FetchRange GETs a raw file from TubeArchivist (an nginx /media/… path)
 	// with a byte Range header and returns the body. start and end are
 	// inclusive; the read is capped at maxRangeBytes whatever the response
@@ -576,14 +583,39 @@ func orEmpty[T any](s []T) []T {
 
 // FetchRange reads a byte range of a media file. Errors carry the path only,
 // never the token.
-// OpenMedia streams a media file. It exists so derivations can pipe the source
-// through ffmpeg without the API token ever reaching a command line.
+// MediaStream is an open media response together with the range metadata a
+// caller has to pass on for the stream to stay seekable.
+type MediaStream struct {
+	Body          io.ReadCloser
+	StatusCode    int
+	ContentLength int64
+	ContentRange  string
+	AcceptRanges  string
+	ContentType   string
+}
+
+// OpenMedia streams a media file whole. It exists so derivations can pipe the
+// source through ffmpeg without the API token ever reaching a command line.
 func (c *HTTP) OpenMedia(ctx context.Context, path string) (io.ReadCloser, error) {
+	s, err := c.OpenMediaRange(ctx, path, "")
+	if err != nil {
+		return nil, err
+	}
+	return s.Body, nil
+}
+
+// OpenMediaRange streams a media file, passing a Range header through and
+// reporting what came back. The token is set here and nowhere else: callers
+// get a body, never a URL they could hand to a subprocess.
+func (c *HTTP) OpenMediaRange(ctx context.Context, path, rangeHeader string) (*MediaStream, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.base+path, nil)
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("Authorization", "Token "+c.token)
+	if rangeHeader != "" {
+		req.Header.Set("Range", rangeHeader)
+	}
 	resp, err := c.stream.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrUnavailable, err)
@@ -592,11 +624,21 @@ func (c *HTTP) OpenMedia(ctx context.Context, path string) (io.ReadCloser, error
 	case resp.StatusCode == http.StatusNotFound:
 		_ = resp.Body.Close()
 		return nil, ErrNotFound
-	case resp.StatusCode != http.StatusOK:
+	case resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusPartialContent:
 		_ = resp.Body.Close()
 		return nil, fmt.Errorf("%w: GET %s: status %d", ErrUnavailable, path, resp.StatusCode)
 	}
-	return resp.Body, nil
+	return &MediaStream{
+		Body:          resp.Body,
+		StatusCode:    resp.StatusCode,
+		ContentLength: resp.ContentLength,
+		ContentRange:  resp.Header.Get("Content-Range"),
+		// TA's nginx serves the archive from disk and always accepts ranges;
+		// say so even on the response that did not carry the header, or ffmpeg
+		// treats the input as a pipe and gives up on seeking.
+		AcceptRanges: cmp.Or(resp.Header.Get("Accept-Ranges"), "bytes"),
+		ContentType:  resp.Header.Get("Content-Type"),
+	}, nil
 }
 
 func (c *HTTP) FetchRange(ctx context.Context, path string, start, end int64) ([]byte, error) {

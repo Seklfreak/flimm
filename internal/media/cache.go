@@ -33,9 +33,10 @@ import (
 type DeriveFunc func(ctx context.Context, dst string) error
 
 // DirDeriveFunc writes a multi-file rendition into dir, which already exists
-// and is empty. Unlike a DeriveFunc it is read while it runs, so it must add
-// files in an order that stays consistent (a playlist naming only segments
-// that are already there).
+// but is not necessarily empty: a job left half-finished by a killed process
+// resumes from what is in it. Unlike a DeriveFunc it is read while it runs, so
+// what it publishes has to be readable the moment it appears (the playlist is
+// written whole and by rename; each segment by rename).
 type DirDeriveFunc func(ctx context.Context, dir string) error
 
 const (

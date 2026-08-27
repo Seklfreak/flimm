@@ -73,9 +73,9 @@ resume is the default action, and `t=` only exists to jump to a subtitle hit.
   "hls_url": "/media/hls/yt-id/1080/index.m3u8", // the default compatible rendition; always present
   "hls_state": "pending|running|done|failed",  // where that rendition stands, see Derived media
   "hls_variants": [                            // every quality offered, tallest first
-    { "height": 1080, "url": "/media/hls/yt-id/1080/index.m3u8", "state": "done",    "codec": "h264" },
-    { "height": 720,  "url": "/media/hls/yt-id/720/index.m3u8",  "state": "pending", "codec": "h264" },
-    { "height": 480,  "url": "/media/hls/yt-id/480/index.m3u8",  "state": "pending", "codec": "h264" }
+    { "height": 1080, "url": "/media/hls/yt-id/1080/index.m3u8", "state": "done",    "codec": "h264", "hls_progress": 1 },
+    { "height": 720,  "url": "/media/hls/yt-id/720/index.m3u8",  "state": "running", "codec": "h264", "hls_progress": 0.37 },
+    { "height": 480,  "url": "/media/hls/yt-id/480/index.m3u8",  "state": "pending", "codec": "h264", "hls_progress": 0 }
   ],
   "youtube_url": "https://www.youtube.com/watch?v=yt-id",
   "streams": [ { "type": "video", "codec": "avc1", "width": 1920, "height": 1080, "bitrate": 4500000 },
@@ -119,6 +119,7 @@ video differ.
 | `url` | the playlist to load, `/media/hls/{id}/{height}/index.m3u8` |
 | `state` | `pending\|running\|done\|failed` for *that* height, exactly as `hls_state` |
 | `codec` | `h264` (heights up to 1080) or `hevc` (1440 and 2160) — see [Compatible video renditions (HLS)](#compatible-video-renditions-hls) |
+| `hls_progress` | how much of that rendition has been transcoded, `0`–`1`. `1` for a finished one, `0` for one nothing has asked for. It is **not** how far playback can get: the playlist is complete from the first request and segments are filled in wherever the viewer is, so this is only a number to show while preparing |
 
 `hls_url` and `hls_state` stay for clients that do not choose: they are the
 1080p entry, or the tallest one offered when the source is smaller than that.
@@ -250,7 +251,7 @@ Prefs:
 | POST | `/videos/{id}/progress` | `{ "position": 561 }` — heartbeat. Upserts watch_event; writes TA `/video/{id}/progress/`; at ≥90% (or ≤30 s remaining) marks watched. Returns `{ "position", "watched" }`. **Nothing is recorded below `MIN_PLAY_SECONDS`** unless the video completes or an event already exists — see below | Pass `?playlist=<id>` so the server can skip recording for music playlists.
 | POST | `/videos/{id}/watched` | `{ "watched": true\|false }` — writes TA `/watched/`; true completes the watch_event, false clears position and TA progress |
 | DELETE | `/videos/{id}/progress` | "Start over": position → 0, TA progress deleted, 204 |
-| POST | `/videos/{id}/hls` | starts a compatible video rendition **without waiting** and returns `{ "state": "pending\|running\|done\|failed" }`, so a client can prefetch (the next video in a playlist, say) instead of making the viewer wait at play time. `?height=` picks which rendition; without it the one `hls_url` points at. A height the video does not offer (not in `hls_variants`) is **400**. Idempotent: a running or finished rendition is not started again |
+| POST | `/videos/{id}/hls` | starts (or re-aims) a compatible video rendition **without waiting** and returns `{ "state": "pending\|running\|done\|failed", "height": 1080, "hls_progress": 0.37 }`, so a client can prefetch instead of making the viewer wait at play time. `?height=` picks which rendition; without it the one `hls_url` points at. A height the video does not offer (not in `hls_variants`) is **400**. `?from=<seconds>` is the **resume position**: the transcode starts at that point instead of at 0:00, and a job that is already running is re-aimed at it — send it before handing the playlist to a player and again after a seek. A `from` that is not a position inside the video is ignored. Idempotent: a running or finished rendition is not started again |
 
 #### Nav
 
@@ -389,9 +390,9 @@ and `feed` filter the video results in the backend.
 | `GET /media/video/{id}.mp4` | reverse-proxies TA `/media/<media_url>` with `Range`, `If-Range`, `Accept-Ranges`, `Content-Length`, `Content-Type` passthrough |
 | `GET /media/audio/{id}.webm` | audio-only stream, Opus in WebM, derived and cached on first request (see below); supports `Range` |
 | `GET /media/audio/{id}.m4a` | the same audio as AAC in MP4 (`audio/mp4`), for players that cannot decode Opus in WebM; derived and cached the same way; supports `Range` |
-| `GET /media/hls/{id}/{height}/index.m3u8` | the compatible rendition's playlist (`application/vnd.apple.mpegurl`) at that height. `{height}` must be one of 2160, 1440, 1080, 720, 480 and must be one the video offers (`hls_variants`), else **404**. Starts the transcode on the first request and **blocks until the first segment exists** (up to 45 s), then serves the playlist as it stands; 503 + `Retry-After: 5` if that wait runs out |
+| `GET /media/hls/{id}/{height}/index.m3u8` | the compatible rendition's playlist (`application/vnd.apple.mpegurl`) at that height. `{height}` must be one of 2160, 1440, 1080, 720, 480 and must be one the video offers (`hls_variants`), else **404**. Starts the transcode on the first request and returns the **complete VOD playlist immediately** — every segment of the video, `#EXT-X-ENDLIST` on the end — whatever the encoder has reached. `?from=<seconds>` is the resume position, for a client that cannot `POST` first; it changes where the transcode starts, never what the playlist says. 503 + `Retry-After: 5` only if the playlist itself cannot be produced (a video whose duration has to be probed from an unreachable source) |
 | `GET /media/hls/{id}/{height}/init.mp4` | the fMP4 initialisation segment (`video/mp4`) |
-| `GET /media/hls/{id}/{height}/seg00000.m4s` | a media segment (`video/iso.segment`); 404 until the transcode reaches it |
+| `GET /media/hls/{id}/{height}/seg00000.m4s` | a media segment (`video/iso.segment`). A segment the encoder has not reached **blocks** until it lands, up to `MEDIA_SEGMENT_WAIT` (60 s), then 503 + `Retry-After: 2`; a request far ahead of the encoder also re-aims it. 404 for a segment past the end of the video or of a rendition nothing is deriving; 502 if the transcode failed |
 | `GET /media/hls/{id}/index.m3u8`, `/init.mp4`, `/seg00000.m4s` | the same three files without a height: a **legacy alias** for the 1080p rendition, kept for clients written before the ladder. It serves that rendition's cache entry rather than one of its own. New clients use `hls_variants` |
 | `GET /media/subtitles/{id}/{lang}.vtt` | TA subtitle track |
 | `GET /media/thumb/video/{id}` | TA `/cache/videos/…` |
@@ -446,9 +447,17 @@ are described under
   none. A directory whose transcode is still running is never evicted. It is a
   cache in the strict sense: deleting it costs only the CPU to re-derive, so it
   can live on ephemeral storage.
-- Derivation reads the source from TubeArchivist over HTTP with the API token;
-  the file is piped into ffmpeg on stdin, so the token never reaches a command
-  line or a log line. Nothing is written back to TA.
+- Derivation reads the source from TubeArchivist over HTTP with the API token.
+  The audio variants are piped into ffmpeg on stdin. The HLS variants need a
+  **seekable** input — `-ss` on a pipe decodes and discards everything before
+  the seek point, which is the whole cost resuming is meant to avoid — so they
+  read through a loopback HTTP source instead: the server listens on
+  `127.0.0.1` on an ephemeral port and serves the file, with `Range`,
+  `Content-Length` and `Accept-Ranges` passed through, at `/src/<nonce>` where
+  the nonce is a 128-bit random token minted per job and invalid the moment the
+  job ends. ffmpeg is given only that URL, so the token still never reaches a
+  command line, a child environment or a log line. Nothing is written back to
+  TA.
 
 Clients choose the stream. `audio_only` on a playlist is the persisted
 intent; clients carry `audio=1` in the player URL so the choice survives
@@ -490,17 +499,39 @@ is the original file and costs the server nothing. Only when nothing is
 playable should the client load a rendition. Never use one as the default: it
 is a real transcode of someone's CPU.
 
-**Time to first frame is what it optimises.** The transcode is started by the
-first request and runs to completion whatever the client does; the playlist
-request waits only until the first segment exists (~a few seconds), then
-returns a growing `EXT-X-PLAYLIST-TYPE:EVENT` playlist with
-`Cache-Control: no-store`. The player fetches segments as it plays and
-re-reads the playlist as it grows; ffmpeg appends `#EXT-X-ENDLIST` when the
-transcode finishes, and from then on the playlist is served with a long cache
-lifetime. A segment the transcode has not reached yet is a 404 the player
-retries. If the first segment is not there within 45 s the playlist request
-returns **503 with `Retry-After: 5`** — the transcode keeps running, so a
-client that comes back finds it further along.
+**The playlist is complete from the first request, and the transcode starts
+where the viewer is.** The segment grid is fixed — 4-second segments aligned to
+the timeline — so the whole playlist follows from the video's duration and is
+written before anything is encoded: `EXT-X-PLAYLIST-TYPE:VOD`, every segment
+listed, `#EXT-X-ENDLIST` on the end. A player may therefore **seek anywhere in
+the rendition immediately**, which is what makes resuming work: without it a
+viewer resuming at 40:00 started at 0:00, because a player cannot seek past the
+end of the playlist it holds and the playlist only reached 40:00 once the
+encoder did.
+
+- **Pass `from`.** `POST /videos/{id}/hls?height=<h>&from=<seconds>` (or
+  `?from=` on the playlist) is the resume position. The first ffmpeg run
+  encodes from the segment that position falls in to the end of the video, and
+  a second run fills in the part before it. Without `from` it is one run from
+  the start, as before.
+- **A segment that is not encoded yet is a slow segment, not a missing one.**
+  The request blocks until it lands, up to `MEDIA_SEGMENT_WAIT` (60 s), then
+  answers **503 with `Retry-After: 2`**. Only a segment past the end of the
+  video is a 404; a failed transcode is a 502.
+- **A seek re-aims the encoder.** A segment request more than
+  `MEDIA_SEEK_AHEAD_SEGMENTS` (30, about two minutes) ahead of where the run
+  has got to cancels it and restarts from the requested segment, at most once
+  every 10 s. Everything already produced stays; the job then fills the
+  remaining gaps, taking the one holding the most recently requested segment
+  first and the earliest gap after that, and is finished when all segments
+  exist. Sending `from` again after a seek does the same thing without waiting
+  for a segment request to trigger it.
+- **Caching.** A running rendition's playlist is served `no-store`, because it
+  is rewritten once at the end with the segments' real durations; a finished one
+  gets a long cache lifetime. Segments are immutable and cached for a day.
+- **Progress.** `hls_variants[].hls_progress` (and the `POST` response) is the
+  fraction of the whole rendition that exists, for an honest "preparing…"
+  label. It says nothing about *where* those segments are.
 
 Costs, so nobody is surprised:
 
@@ -530,19 +561,26 @@ Costs, so nobody is surprised:
   segmentation, not a transcode, and is nearly free. The height must match
   exactly: a 1080p source is not the 720p rendition. The codecs come from TA's
   `streams` metadata, and a copy the muxer refuses falls back to a full encode
-  rather than failing the request.
+  rather than failing the request. A copy always runs over the whole video in
+  one pass and ignores `from`: a stream copy can only cut on the source's own
+  keyframes, not on the 4-second grid, and at remux speed the whole file is
+  done in the time an encode needs for the first minute.
 
 `hls_variants[].state` (and `hls_state` for the default height) reports
-`pending|running|done|failed` so a client can show "preparing…" honestly, and
-`POST /api/v1/videos/{id}/hls?height=` starts one without waiting, for a
-prefetch. A failed job removes its partial output and is retried by the next
-request — it never gets stuck "in progress". Concurrent viewers of the same
-video *at the same height* share one job; different heights are different jobs.
+`pending|running|done|failed` so a client can show "preparing…" honestly, with
+`hls_progress` next to it, and `POST /api/v1/videos/{id}/hls?height=&from=`
+starts one without waiting. A failed job removes its partial output and is
+retried by the next request — it never gets stuck "in progress". A job that a
+restart interrupted keeps what it had: the next request rescans the entry, and
+fills only the gaps. Concurrent viewers of the same video *at the same height*
+share one job — a second viewer's `from` re-aims it rather than starting a
+second transcode; different heights are different jobs.
 
 Switching quality mid-playback is a client-side matter: load the other
-variant's playlist and seek to the current time. The renditions share their
-keyframe cadence (a keyframe at least every 96 frames), so the seek lands
-close, but they are separate playlists rather than one master with several
+variant's playlist and seek to the current time, passing that time as `from` so
+the other height's transcode starts there too. Every rendition cuts on the same
+4-second grid (a keyframe is forced at every boundary), so the seek lands
+exactly, but they are separate playlists rather than one master with several
 `EXT-X-STREAM-INF` renditions — nothing here does adaptive bitrate switching,
 because that would mean transcoding every height of every video up front.
 
@@ -579,6 +617,8 @@ tested against a fake.
 | `MEDIA_CACHE_DIR` | no | where derived media is cached; default a temp dir. Must be writable; an HLS rendition of a 1080p hour is ~1.5 GB |
 | `MEDIA_CACHE_MAX_BYTES` | no | cache size cap before LRU eviction; default 5 GiB |
 | `MEDIA_TRANSCODE_JOBS` | no | concurrent HLS transcodes; default 1, extra requests queue |
+| `MEDIA_SEGMENT_WAIT` | no | seconds a request for an HLS segment the transcode has not produced yet blocks before the client is told to come back; default 60 |
+| `MEDIA_SEEK_AHEAD_SEGMENTS` | no | how far ahead of the encoder (in 4-second segments) a segment request has to be before the running transcode is re-aimed at it; default 30 (about two minutes) |
 | `FFMPEG_PATH` | no | ffmpeg binary; default `ffmpeg` on `PATH` |
 | `MEDIA_HWACCEL` | no | `auto` (default), `vaapi` or `off` — hardware transcoding for the HLS rendition; falls back to the CPU per video |
 | `MEDIA_VAAPI_DEVICE` | no | DRM render node for VAAPI; default `/dev/dri/renderD128` |

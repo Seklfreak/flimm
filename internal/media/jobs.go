@@ -83,6 +83,15 @@ func (j *dirJob) finish(err error) {
 // failure is not sticky — it is retried here — which is what keeps one bad
 // run from wedging a video forever.
 func (c *Cache) StartDir(name string, derive DirDeriveFunc) JobState {
+	return c.StartDirJob(name, nil, derive)
+}
+
+// StartDirJob is StartDir with a preparation step that runs *before* the job
+// queues for a transcode slot. An HLS job uses it to write its playlist, so a
+// client can seek in a rendition that is still waiting behind another
+// transcode — the playlist is derived from the video's duration and needs no
+// encoder to exist.
+func (c *Cache) StartDirJob(name string, prepare, derive DirDeriveFunc) JobState {
 	path := filepath.Join(c.dir, name)
 
 	c.mu.Lock()
@@ -103,7 +112,7 @@ func (c *Cache) StartDir(name string, derive DirDeriveFunc) JobState {
 	c.wg.Add(1)
 	go func() {
 		defer c.wg.Done()
-		err := c.deriveDir(path, derive)
+		err := c.deriveDir(path, prepare, derive)
 		j.finish(err)
 		if err != nil {
 			if c.log != nil {
@@ -124,28 +133,38 @@ func (c *Cache) StartDir(name string, derive DirDeriveFunc) JobState {
 	return StateRunning
 }
 
-// deriveDir runs one directory derivation: wait for a slot, build in place,
-// and mark it complete. On any failure the partial directory is removed, so
-// the next request starts clean rather than serving a truncated rendition.
-func (c *Cache) deriveDir(path string, derive DirDeriveFunc) error {
-	select {
-	case c.slots <- struct{}{}:
-	case <-c.baseCtx.Done():
-		return ErrClosed
-	}
-	defer func() { <-c.slots }()
-
+// deriveDir runs one directory derivation: prepare, wait for a slot, build in
+// place, and mark it complete. On any failure the partial directory is removed,
+// so the next request starts clean rather than serving a truncated rendition.
+func (c *Cache) deriveDir(path string, prepare, derive DirDeriveFunc) error {
 	// Detached from any request: a viewer navigating away must not abandon a
 	// transcode others are waiting on, or leave the cache holding half of one.
 	ctx, cancel := context.WithTimeout(c.baseCtx, transcodeTimeout)
 	defer cancel()
 
-	if err := os.RemoveAll(path); err != nil {
-		return fmt.Errorf("media cache: clear entry: %w", err)
-	}
+	// The entry is deliberately *not* emptied first. A directory a killed
+	// process left behind is work already paid for, and an HLS job picks up
+	// from what is in it rather than encoding it all again. Every failure path
+	// below removes the directory, so what survives to be resumed is only ever
+	// the output of a run that did not fail.
 	if err := os.MkdirAll(path, 0o750); err != nil {
 		return fmt.Errorf("media cache: create entry: %w", err)
 	}
+	if prepare != nil {
+		if err := prepare(ctx, path); err != nil {
+			_ = os.RemoveAll(path)
+			return err
+		}
+	}
+
+	select {
+	case c.slots <- struct{}{}:
+	case <-c.baseCtx.Done():
+		_ = os.RemoveAll(path)
+		return ErrClosed
+	}
+	defer func() { <-c.slots }()
+
 	if err := derive(ctx, path); err != nil {
 		_ = os.RemoveAll(path)
 		return err

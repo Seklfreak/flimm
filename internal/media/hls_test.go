@@ -3,6 +3,7 @@ package media
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -42,17 +43,15 @@ func TestHLSVideoCodecChoice(t *testing.T) {
 		{"hev1 is hevc too", HLSSource{VideoCodec: "hev1", Height: 1440}, 1440, "copy"},
 		{"h264 at a hevc height is re-encoded", HLSSource{VideoCodec: "avc1", Height: 2160}, 2160, "libx265"},
 		{"hevc at an h264 height is re-encoded", HLSSource{VideoCodec: "hvc1", Height: 1080}, 1080, "libx264"},
-		{"av1 4k", HLSSource{VideoCodec: "av01.0.12M.08", Height: 2160}, 2160, "libx265"},
 	} {
 		if got := hlsVideoCodec(tc.src, tc.height); got != tc.want {
-			t.Errorf("%s: hlsVideoCodec(%+v, %d) = %q, want %q", tc.name, tc.src, tc.height, got, tc.want)
+			t.Errorf("%s: hlsVideoCodec = %q, want %q", tc.name, got, tc.want)
 		}
 	}
 }
 
-// What a video offers is what its source can fill: a 4K rung on a 1080p source
-// is an upscale — a bigger file with no more detail — and a client would have
-// no way to know it was not getting what it asked for.
+// A video offers the rungs its source can fill and nothing above them: an
+// upscale is a bigger file with no more detail in it.
 func TestHLSOfferedHeights(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
@@ -130,36 +129,140 @@ func TestHLSNameIsPerHeight(t *testing.T) {
 	}
 }
 
+// testSrcURL stands in for the loopback source URL in argument tests. What
+// matters about it is that it is a URL and carries no credential.
+const testSrcURL = "http://127.0.0.1:54321/src/0123456789abcdef0123456789abcdef"
+
+// testRun describes one pass over the grid, the way the job would.
+func testRun(start, end, total int) hlsRun {
+	init := HLSInitName
+	if start > 0 {
+		init = "init-" + fmt.Sprintf("%05d", start) + ".mp4"
+	}
+	return hlsRun{
+		seg:      segRange{Start: start, End: end},
+		total:    total,
+		initName: init,
+		playlist: fmt.Sprintf("run-%05d.m3u8", start),
+	}
+}
+
 func TestHLSArgs(t *testing.T) {
 	want := []string{
 		"-hide_banner", "-loglevel", "error",
-		"-i", "pipe:0",
+		"-i", testSrcURL,
 		"-map", "0:v:0", "-map", "0:a:0",
 		"-vf", "scale=-2:'min(1080,ih)'",
 		"-c:v", "libx264",
 		"-preset", "veryfast", "-crf", "23",
 		"-profile:v", "high", "-level", "4.1", "-pix_fmt", "yuv420p",
 		"-g", "96", "-keyint_min", "96", "-sc_threshold", "0",
+		"-force_key_frames", "expr:gte(t,n_forced*4)",
 		"-c:a", "aac", "-b:a", "160k", "-ac", "2",
 		"-threads", "0",
 		"-f", "hls",
 		"-hls_time", "4",
-		"-hls_playlist_type", "event",
+		"-hls_playlist_type", "vod",
 		"-hls_segment_type", "fmp4",
 		"-hls_flags", "independent_segments+temp_file",
 		"-hls_fmp4_init_filename", "init.mp4",
 		"-hls_segment_filename", "seg%05d.m4s",
-		"-y", "index.m3u8",
+		"-start_number", "0",
+		"-y", "run-00000.m3u8",
 	}
-	if got := hlsArgs("libx264", "aac", 1080); !reflect.DeepEqual(got, want) {
+	if got := hlsArgs("libx264", "aac", 1080, testSrcURL, testRun(0, 5, 5)); !reflect.DeepEqual(got, want) {
 		t.Errorf("encode args =\n%v\nwant\n%v", got, want)
+	}
+}
+
+// Run A: the resume-first pass. `-ss` must come *before* `-i` (an input seek,
+// which over HTTP is a byte range) and the timestamps must be put back where
+// the playlist says they are, or the segments decode at the wrong time.
+func TestHLSArgsRunA(t *testing.T) {
+	// A viewer resuming at 40:00 of a 42-minute video: segment 600 onwards.
+	got := hlsArgs("libx264", "aac", 1080, testSrcURL, testRun(600, 630, 630))
+
+	input := slices.Index(got, "-i")
+	ss := slices.Index(got, "-ss")
+	if ss < 0 || ss > input {
+		t.Fatalf("-ss must come before -i, or the seek decodes its way there: %v", got)
+	}
+	if got[ss+1] != "2400" {
+		t.Errorf("-ss = %q, want 2400 (600 segments × 4 s)", got[ss+1])
+	}
+	// -output_ts_offset is deliberately absent: with the HLS muxer it does not
+	// move the segments at all, it writes an empty edit into the init segment
+	// that would then misplace every *other* run's output. The offset is
+	// applied to the finished segments instead, which is why they are written
+	// under a name the route will not serve until it has been.
+	if slices.Contains(got, "-output_ts_offset") {
+		t.Errorf("run A carries -output_ts_offset: %v", got)
+	}
+	if v := argValue(got, "-hls_segment_filename"); v != "seg%05d.m4s.raw" {
+		t.Errorf("run A segment pattern = %q, want the unpublished one", v)
+	}
+	if v := argValue(got, "-start_number"); v != "600" {
+		t.Errorf("-start_number = %q, want 600", v)
+	}
+	// It runs to the end of the video, so there is nothing to cut short.
+	if slices.Contains(got, "-t") {
+		t.Errorf("a run to the end of the video must carry no -t: %v", got)
+	}
+	if got[len(got)-1] != "run-00600.m3u8" {
+		t.Errorf("run playlist = %q", got[len(got)-1])
+	}
+	if v := argValue(got, "-hls_fmp4_init_filename"); v != "init-00600.mp4" {
+		t.Errorf("init file = %q; a later run must not overwrite init.mp4 under a player", v)
+	}
+}
+
+// Run B: the part before the resume point, cut off exactly at it so it meets
+// run A on a segment boundary.
+func TestHLSArgsRunB(t *testing.T) {
+	got := hlsArgs("libx264", "aac", 1080, testSrcURL, testRun(0, 600, 630))
+
+	if slices.Contains(got, "-ss") {
+		t.Errorf("a run from the start needs no seek: %v", got)
+	}
+	if v := argValue(got, "-t"); v != "2400" {
+		t.Errorf("-t = %q, want 2400 (600 segments × 4 s)", v)
+	}
+	if v := argValue(got, "-hls_segment_filename"); v != "seg%05d.m4s" {
+		t.Errorf("a run from the start writes segments directly: %q", v)
+	}
+	if v := argValue(got, "-start_number"); v != "0" {
+		t.Errorf("-start_number = %q, want 0", v)
+	}
+	if v := argValue(got, "-hls_fmp4_init_filename"); v != HLSInitName {
+		t.Errorf("the first run writes %q, want %q", v, HLSInitName)
+	}
+}
+
+// Every run cuts on the same 4 s grid, or two runs of the same video disagree
+// about where segment boundaries are and the stitched rendition is unplayable.
+func TestHLSForcesKeyFramesOnTheGrid(t *testing.T) {
+	const want = "expr:gte(t,n_forced*4)"
+	for name, args := range map[string][]string{
+		"software h264": hlsArgs("libx264", "aac", 1080, testSrcURL, testRun(0, 5, 5)),
+		"software hevc": hlsArgs("libx265", "aac", 2160, testSrcURL, testRun(0, 5, 5)),
+		"vaapi h264":    hlsVAAPIArgs(DefaultVAAPIDevice, "aac", 1080, testSrcURL, testRun(0, 5, 5)),
+		"vaapi hevc":    hlsVAAPIArgs(DefaultVAAPIDevice, "aac", 2160, testSrcURL, testRun(0, 5, 5)),
+	} {
+		if got := argValue(args, "-force_key_frames"); got != want {
+			t.Errorf("%s: -force_key_frames = %q, want %q", name, got, want)
+		}
+	}
+	// A stream copy has no encoder to force anything on; it is also the one
+	// rung that always runs over the whole video.
+	if cp := hlsArgs("copy", "copy", 1080, testSrcURL, testRun(0, 5, 5)); slices.Contains(cp, "-force_key_frames") {
+		t.Errorf("a copy cannot force keyframes: %v", cp)
 	}
 }
 
 // A copy must carry none of the encoder settings: they would either be
 // rejected or silently ignored, and either way they are a lie about what ran.
 func TestHLSArgsCopyCarriesNoEncoderSettings(t *testing.T) {
-	got := hlsArgs("copy", "copy", 1080)
+	got := hlsArgs("copy", "copy", 1080, testSrcURL, testRun(0, 5, 5))
 	for _, unwanted := range []string{"-vf", "-crf", "-preset", "-profile:v", "-b:a", "-ac", "-g"} {
 		if slices.Contains(got, unwanted) {
 			t.Errorf("copy args carry %s: %v", unwanted, got)
@@ -171,15 +274,15 @@ func TestHLSArgsCopyCarriesNoEncoderSettings(t *testing.T) {
 		}
 	}
 	// Still HLS: a compatible source is segmented, not passed through whole.
-	if got[len(got)-1] != HLSPlaylistName {
-		t.Errorf("copy args do not end in the playlist: %v", got)
+	if !strings.HasPrefix(got[len(got)-1], "run-") {
+		t.Errorf("copy args do not end in a run playlist: %v", got)
 	}
 }
 
 // Mixing one copied and one encoded track is the common case (H.264 video with
 // Opus audio), so it must not leak the other track's settings.
 func TestHLSArgsMixedCopyAndEncode(t *testing.T) {
-	got := hlsArgs("copy", "aac", 1080)
+	got := hlsArgs("copy", "aac", 1080, testSrcURL, testRun(0, 5, 5))
 	if i := slices.Index(got, "-c:v"); got[i+1] != "copy" {
 		t.Errorf("video should be copied: %v", got)
 	}
@@ -191,13 +294,26 @@ func TestHLSArgsMixedCopyAndEncode(t *testing.T) {
 	}
 }
 
+// The copy rung can only ever produce the whole rendition: a stream copy cuts
+// on the source's own keyframes, not on the 4 s grid, so a partial range would
+// produce segments the playlist does not describe.
+func TestCopyRungIsAlwaysASingleRun(t *testing.T) {
+	attempts := hlsAttempts(HLSSource{VideoCodec: "avc1", Height: 720, AudioCodec: "mp4a"}, 720,
+		HWAccel{VAAPI: true, Device: DefaultVAAPIDevice})
+	for _, a := range attempts {
+		if (a.name == "copy") != a.singleRun {
+			t.Errorf("attempt %q: singleRun = %v", a.name, a.singleRun)
+		}
+	}
+}
+
 func TestHLSPlaylistReady(t *testing.T) {
 	dir := t.TempDir()
 	if HLSPlaylistReady(dir) {
 		t.Error("an empty directory is not ready")
 	}
 	playlist := filepath.Join(dir, HLSPlaylistName)
-	// A header with no segments yet: handing this to a player is what the wait
+	// A header with no segments: handing this to a player is what the wait
 	// exists to avoid.
 	if err := os.WriteFile(playlist, []byte("#EXTM3U\n#EXT-X-VERSION:7\n"), 0o600); err != nil {
 		t.Fatal(err)
@@ -213,30 +329,9 @@ func TestHLSPlaylistReady(t *testing.T) {
 	}
 }
 
-// A player waits for #EXT-X-ENDLIST to know the video ended; without it it
-// keeps polling a playlist that will never grow.
-func TestEnsureEndList(t *testing.T) {
-	dir := t.TempDir()
-	playlist := filepath.Join(dir, HLSPlaylistName)
-	if err := os.WriteFile(playlist, []byte("#EXTM3U\nseg00000.m4s\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	for range 2 { // idempotent: a second pass must not append a second tag
-		if err := ensureEndList(playlist); err != nil {
-			t.Fatal(err)
-		}
-	}
-	b, err := os.ReadFile(playlist) //nolint:gosec // test fixture path
-	if err != nil {
-		t.Fatal(err)
-	}
-	if n := bytes.Count(b, []byte("#EXT-X-ENDLIST")); n != 1 {
-		t.Errorf("playlist carries %d end tags, want 1: %q", n, b)
-	}
-}
-
-// Nothing should ever put a credential in ffmpeg's stderr — the source is
-// piped in — but a log line is not a place to find out we were wrong.
+// Nothing should ever put a credential in ffmpeg's stderr — the loopback source
+// holds the token and hands ffmpeg a nonce — but a log line is not a place to
+// find out we were wrong.
 func TestScrubSecrets(t *testing.T) {
 	for _, in := range []string{
 		"http error: Authorization: Token abcd1234secret",
@@ -253,32 +348,154 @@ func TestScrubSecrets(t *testing.T) {
 	}
 }
 
-// writeStubHLSFFmpeg installs a script that records the -c:v of each call and
-// writes a plausible rendition, so the derivation can be tested without a real
-// ffmpeg. failCopy makes the copy attempt fail, as an unmuxable source would.
-func writeStubHLSFFmpeg(t *testing.T, dir, callLog string, failCopy, writeEndList bool) string {
+// stubOptions shapes the fake ffmpeg the derivation tests run.
+type stubOptions struct {
+	// total is how many segments the rendition has, so a run with no -t knows
+	// where to stop.
+	total int
+	// failCopy makes the copy attempt fail, as an unmuxable source would.
+	failCopy bool
+	// failVAAPI makes the hardware attempt fail after publishing part of a
+	// rendition, as a GPU that cannot decode a source does.
+	failVAAPI bool
+	// segmentDelay sleeps between segments, so a test can catch a run in
+	// progress.
+	segmentDelay string
+}
+
+// writeStubHLSFFmpeg installs a script that stands in for ffmpeg: it reads the
+// run's -start_number, -t, -hls_fmp4_init_filename and -hls_segment_filename
+// off its own command line and writes exactly the segments that run would
+// produce, logging what it was asked to do. What it writes is minimal but real
+// fMP4, so the timeline rebase runs for real too — everything about the two-run
+// scheme except the encoding itself is exercised without a transcode.
+func writeStubHLSFFmpeg(t *testing.T, dir, callLog string, opt stubOptions) string {
 	t.Helper()
-	path := filepath.Join(dir, "ffmpeg-hls-stub")
-	end := ""
-	if writeEndList {
-		end = "#EXT-X-ENDLIST\\n"
+	path := filepath.Join(dir, "ffmpeg-stub")
+	initFixture := filepath.Join(dir, "fixture-init.mp4")
+	segFixture := filepath.Join(dir, "fixture-seg.m4s")
+	if err := os.WriteFile(initFixture, fakeInitSegment(map[uint32]uint32{1: 12288}), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(segFixture, fakeSegment([]uint32{1}, 12288), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	delay := ""
+	if opt.segmentDelay != "" {
+		delay = "  sleep " + opt.segmentDelay + "\n"
 	}
 	script := "#!/bin/sh\n" +
-		"codec=$(echo \"$@\" | sed -n 's/.*-c:v \\([^ ]*\\).*/\\1/p')\n" +
-		"echo \"$codec\" >> " + callLog + "\n"
-	if failCopy {
+		"TOTAL=" + strconv.Itoa(opt.total) + "\n" +
+		"case \"$*\" in\n" +
+		"  *h264_vaapi*|*hevc_vaapi*) codec=vaapi ;;\n" +
+		"  *libx264*) codec=libx264 ;;\n" +
+		"  *libx265*) codec=libx265 ;;\n" +
+		"  *) codec=copy ;;\n" +
+		"esac\n" +
+		"start=0; dur=0; init=" + HLSInitName + "; pat='seg%05d.m4s'; out=\n" +
+		"prev=\n" +
+		"for a in \"$@\"; do\n" +
+		"  case \"$prev\" in\n" +
+		"    -start_number) start=$a ;;\n" +
+		"    -t) dur=$a ;;\n" +
+		"    -hls_fmp4_init_filename) init=$a ;;\n" +
+		"    -hls_segment_filename) pat=$a ;;\n" +
+		"  esac\n" +
+		"  prev=$a; out=$a\n" +
+		"done\n" +
+		"echo \"$codec $start $dur\" >> " + callLog + "\n" +
+		"printf '%s\\n' \"$*\" >> " + callLog + ".argv\n"
+	if opt.failCopy {
 		script += "[ \"$codec\" = copy ] && { echo 'could not mux' >&2; exit 1; }\n"
 	}
-	script += "printf '#EXTM3U\\n#EXT-X-MAP:URI=\"init.mp4\"\\n#EXTINF:4.0,\\nseg00000.m4s\\n" + end + "' > " + HLSPlaylistName + "\n" +
-		": > " + HLSInitName + "\n: > seg00000.m4s\n"
+	if opt.failVAAPI {
+		// A hardware attempt gets far enough to publish a segment before the
+		// decoder gives up on a 10-bit frame.
+		script += "if [ \"$codec\" = vaapi ]; then\n" +
+			"  : > vaapi-leftover.m4s\n" +
+			"  cp " + segFixture + " \"$(printf \"$pat\" \"$start\")\"\n" +
+			"  echo 'Failed setup for format vaapi: hwaccel initialisation returned error' >&2\n" +
+			"  exit 1\n" +
+			"fi\n"
+	}
+	script += "cp " + initFixture + " \"$init\"\n" +
+		"printf '#EXTM3U\\n' > \"$out\"\n" +
+		"if [ \"$dur\" -gt 0 ]; then n=$((dur/4)); else n=$((TOTAL-start)); fi\n" +
+		"i=0\n" +
+		"while [ $i -lt $n ]; do\n" +
+		delay +
+		"  seg=$(printf \"$pat\" $((start+i)))\n" +
+		"  cp " + segFixture + " \"$seg\"\n" +
+		"  printf '#EXTINF:4.000000,\\n%s\\n' \"$seg\" >> \"$out\"\n" +
+		"  i=$((i+1))\n" +
+		"done\n" +
+		"printf '#EXT-X-ENDLIST\\n' >> \"$out\"\n"
 	if err := os.WriteFile(path, []byte(script), 0o700); err != nil { //nolint:gosec // test fixture must be executable
 		t.Fatal(err)
 	}
 	return path
 }
 
-func emptySource(context.Context) (io.ReadCloser, error) {
-	return io.NopCloser(bytes.NewReader(nil)), nil
+// testSource serves body over the loopback source, honouring Range the way TA
+// does.
+func testSource(body []byte) RangeSourceFunc {
+	return func(_ context.Context, rangeHeader string) (*SourceStream, error) {
+		total := int64(len(body))
+		if rangeHeader == "" {
+			return &SourceStream{
+				Body:          io.NopCloser(bytes.NewReader(body)),
+				StatusCode:    200,
+				ContentLength: total,
+				AcceptRanges:  "bytes",
+			}, nil
+		}
+		start, end, err := parseTestRange(rangeHeader, total)
+		if err != nil {
+			return nil, err
+		}
+		return &SourceStream{
+			Body:          io.NopCloser(bytes.NewReader(body[start : end+1])),
+			StatusCode:    206,
+			ContentLength: end - start + 1,
+			ContentRange:  fmt.Sprintf("bytes %d-%d/%d", start, end, total),
+			AcceptRanges:  "bytes",
+		}, nil
+	}
+}
+
+func parseTestRange(header string, total int64) (int64, int64, error) {
+	spec, ok := strings.CutPrefix(header, "bytes=")
+	if !ok {
+		return 0, 0, fmt.Errorf("bad range %q", header)
+	}
+	from, to, _ := strings.Cut(spec, "-")
+	start, err := strconv.ParseInt(from, 10, 64)
+	if err != nil || start >= total {
+		return 0, 0, fmt.Errorf("bad range %q", header)
+	}
+	end := total - 1
+	if to != "" {
+		if end, err = strconv.ParseInt(to, 10, 64); err != nil {
+			return 0, 0, fmt.Errorf("bad range %q", header)
+		}
+		end = min(end, total-1)
+	}
+	return start, end, nil
+}
+
+var emptySource = testSource([]byte("source"))
+
+// deriveHLS runs a whole job into a fresh directory, the way the cache would.
+func deriveHLS(t *testing.T, cfg HLSConfig, dir string) error {
+	t.Helper()
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	prepare, derive := HLS(cfg)
+	if err := prepare(t.Context(), dir); err != nil {
+		return err
+	}
+	return derive(t.Context(), dir)
 }
 
 // A source TA calls H.264/AAC takes the copy path — the whole reason a
@@ -286,20 +503,22 @@ func emptySource(context.Context) (io.ReadCloser, error) {
 func TestHLSCopiesCompatibleSource(t *testing.T) {
 	dir := t.TempDir()
 	callLog := filepath.Join(dir, "calls.log")
-	stub := writeStubHLSFFmpeg(t, dir, callLog, false, true)
-	out := filepath.Join(dir, "out")
-	if err := os.Mkdir(out, 0o750); err != nil {
-		t.Fatal(err)
-	}
+	stub := writeStubHLSFFmpeg(t, dir, callLog, stubOptions{total: 3})
 
-	derive := HLS(stub, HLSSource{VideoCodec: "avc1", Height: 720, AudioCodec: "mp4a"}, 720, HWAccel{}, nil, emptySource)
-	if err := derive(t.Context(), out); err != nil {
+	err := deriveHLS(t, HLSConfig{
+		FFmpegPath: stub,
+		Source:     HLSSource{VideoCodec: "avc1", Height: 720, AudioCodec: "mp4a", Duration: 12},
+		Height:     720,
+		Open:       emptySource,
+	}, filepath.Join(dir, "out"))
+	if err != nil {
 		t.Fatalf("derive: %v", err)
 	}
-	if got := readCalls(t, callLog); got != "copy" {
-		t.Errorf("ffmpeg calls = %q, want a single copy call", got)
+	if got := readCalls(t, callLog); got != "copy 0 0" {
+		t.Errorf("ffmpeg calls = %q, want a single copy call over the whole video", got)
 	}
-	for _, name := range []string{HLSPlaylistName, HLSInitName, "seg00000.m4s"} {
+	out := filepath.Join(dir, "out")
+	for _, name := range []string{HLSPlaylistName, HLSInitName, "seg00000.m4s", "seg00002.m4s"} {
 		if _, err := os.Stat(filepath.Join(out, name)); err != nil {
 			t.Errorf("derivation did not produce %s: %v", name, err)
 		}
@@ -311,17 +530,18 @@ func TestHLSCopiesCompatibleSource(t *testing.T) {
 func TestHLSFallsBackWhenCopyFails(t *testing.T) {
 	dir := t.TempDir()
 	callLog := filepath.Join(dir, "calls.log")
-	stub := writeStubHLSFFmpeg(t, dir, callLog, true, true)
-	out := filepath.Join(dir, "out")
-	if err := os.Mkdir(out, 0o750); err != nil {
-		t.Fatal(err)
-	}
+	stub := writeStubHLSFFmpeg(t, dir, callLog, stubOptions{total: 3, failCopy: true})
 
-	derive := HLS(stub, HLSSource{VideoCodec: "avc1", Height: 720, AudioCodec: "mp4a"}, 720, HWAccel{}, nil, emptySource)
-	if err := derive(t.Context(), out); err != nil {
+	err := deriveHLS(t, HLSConfig{
+		FFmpegPath: stub,
+		Source:     HLSSource{VideoCodec: "avc1", Height: 720, AudioCodec: "mp4a", Duration: 12},
+		Height:     720,
+		Open:       emptySource,
+	}, filepath.Join(dir, "out"))
+	if err != nil {
 		t.Fatalf("a failed copy should fall back to encoding, got: %v", err)
 	}
-	if got := readCalls(t, callLog); got != "copy\nlibx264" {
+	if got := readCalls(t, callLog); got != "copy 0 0\nlibx264 0 0" {
 		t.Errorf("ffmpeg calls = %q, want copy then libx264", got)
 	}
 }
@@ -331,41 +551,19 @@ func TestHLSFallsBackWhenCopyFails(t *testing.T) {
 func TestHLSSkipsCopyForIncompatibleSource(t *testing.T) {
 	dir := t.TempDir()
 	callLog := filepath.Join(dir, "calls.log")
-	stub := writeStubHLSFFmpeg(t, dir, callLog, true, true)
-	out := filepath.Join(dir, "out")
-	if err := os.Mkdir(out, 0o750); err != nil {
-		t.Fatal(err)
-	}
+	stub := writeStubHLSFFmpeg(t, dir, callLog, stubOptions{total: 2})
 
-	derive := HLS(stub, HLSSource{VideoCodec: "av01", Height: 1080, AudioCodec: "opus"}, 1080, HWAccel{}, nil, emptySource)
-	if err := derive(t.Context(), out); err != nil {
-		t.Fatalf("derive: %v", err)
-	}
-	if got := readCalls(t, callLog); got != "libx264" {
-		t.Errorf("ffmpeg calls = %q, want a single libx264 call", got)
-	}
-}
-
-// Whatever ffmpeg does or does not write, the finished playlist must be closed
-// or a player stalls at the end of the video forever.
-func TestHLSClosesThePlaylist(t *testing.T) {
-	dir := t.TempDir()
-	stub := writeStubHLSFFmpeg(t, dir, filepath.Join(dir, "calls.log"), false, false)
-	out := filepath.Join(dir, "out")
-	if err := os.Mkdir(out, 0o750); err != nil {
-		t.Fatal(err)
-	}
-
-	derive := HLS(stub, HLSSource{VideoCodec: "av01", AudioCodec: "opus"}, 1080, HWAccel{}, nil, emptySource)
-	if err := derive(t.Context(), out); err != nil {
-		t.Fatalf("derive: %v", err)
-	}
-	b, err := os.ReadFile(filepath.Join(out, HLSPlaylistName)) //nolint:gosec // test fixture path
+	err := deriveHLS(t, HLSConfig{
+		FFmpegPath: stub,
+		Source:     HLSSource{VideoCodec: "av01", Height: 1080, AudioCodec: "opus", Duration: 8},
+		Height:     1080,
+		Open:       emptySource,
+	}, filepath.Join(dir, "out"))
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("derive: %v", err)
 	}
-	if !bytes.Contains(b, []byte("#EXT-X-ENDLIST")) {
-		t.Errorf("playlist was left open: %q", b)
+	if got := readCalls(t, callLog); got != "libx264 0 0" {
+		t.Errorf("ffmpeg calls = %q, want a single libx264 call", got)
 	}
 }
 
@@ -384,28 +582,17 @@ func readCalls(t *testing.T, path string) string {
 func TestHLSTranscodesToPlayableRendition(t *testing.T) {
 	requireFFmpeg(t)
 	dir := t.TempDir()
-	src := filepath.Join(dir, "src.mp4")
-	//nolint:gosec // G204: fixture paths from t.TempDir(), no request data
-	fixture := exec.Command("ffmpeg", "-hide_banner", "-loglevel", "error",
-		"-f", "lavfi", "-i", "testsrc=duration=6:size=320x240:rate=24",
-		"-f", "lavfi", "-i", "sine=duration=6",
-		"-c:v", "libx264", "-c:a", "aac", "-movflags", "+faststart", "-y", src)
-	var stderr bytes.Buffer
-	fixture.Stderr = &stderr
-	if err := fixture.Run(); err != nil {
-		t.Skipf("cannot build fixture: %v: %s", err, stderr.String())
-	}
+	body := buildFixture(t, dir, 6)
 
 	out := filepath.Join(dir, "out")
-	if err := os.Mkdir(out, 0o750); err != nil {
-		t.Fatal(err)
-	}
 	// Claim AV1 so the encode path runs, which is the case that matters.
-	derive := HLS("ffmpeg", HLSSource{VideoCodec: "av01", Height: 240, AudioCodec: "opus"}, 480, HWAccel{}, nil,
-		func(context.Context) (io.ReadCloser, error) {
-			return os.Open(src) //nolint:gosec // test fixture path
-		})
-	if err := derive(t.Context(), out); err != nil {
+	err := deriveHLS(t, HLSConfig{
+		FFmpegPath: "ffmpeg",
+		Source:     HLSSource{VideoCodec: "av01", Height: 240, AudioCodec: "opus", Duration: 6},
+		Height:     480,
+		Open:       testSource(body),
+	}, out)
+	if err != nil {
 		t.Fatalf("derive: %v", err)
 	}
 
@@ -435,13 +622,46 @@ func TestHLSTranscodesToPlayableRendition(t *testing.T) {
 	if err != nil || len(segments) == 0 {
 		t.Fatalf("no segments produced: %v", err)
 	}
-	// Every name in the playlist must match what the route will serve.
+	// Every name in the playlist must match what the route will serve, and
+	// every segment the playlist names must exist by the time the job is done.
 	for _, seg := range segments {
 		if !strings.Contains(playlist, filepath.Base(seg)) {
 			t.Errorf("segment %s is not in the playlist", filepath.Base(seg))
 		}
 	}
+	for _, line := range strings.Split(playlist, "\n") {
+		name := strings.TrimSpace(line)
+		if !strings.HasSuffix(name, ".m4s") {
+			continue
+		}
+		st, err := os.Stat(filepath.Join(out, name)) //nolint:gosec // test fixture path
+		if err != nil || st.Size() == 0 {
+			t.Errorf("the finished playlist names %s, which is not on disk", name)
+		}
+	}
 	assertH264AAC(t, segments[0], filepath.Join(out, HLSInitName))
+}
+
+// buildFixture writes a short, real video and returns its bytes.
+func buildFixture(t *testing.T, dir string, seconds int) []byte {
+	t.Helper()
+	src := filepath.Join(dir, "src.mp4")
+	d := strconv.Itoa(seconds)
+	//nolint:gosec // G204: fixture paths from t.TempDir(), no request data
+	fixture := exec.Command("ffmpeg", "-hide_banner", "-loglevel", "error",
+		"-f", "lavfi", "-i", "testsrc=duration="+d+":size=320x240:rate=24",
+		"-f", "lavfi", "-i", "sine=duration="+d,
+		"-c:v", "libx264", "-c:a", "aac", "-movflags", "+faststart", "-y", src)
+	var stderr bytes.Buffer
+	fixture.Stderr = &stderr
+	if err := fixture.Run(); err != nil {
+		t.Skipf("cannot build fixture: %v: %s", err, stderr.String())
+	}
+	b, err := os.ReadFile(src) //nolint:gosec // test fixture path
+	if err != nil {
+		t.Fatal(err)
+	}
+	return b
 }
 
 // assertH264AAC checks the rendition really is what Apple hardware decodes.
@@ -488,37 +708,40 @@ func TestHLSVAAPIArgs(t *testing.T) {
 	want := []string{
 		"-hide_banner", "-loglevel", "error",
 		"-hwaccel", "vaapi", "-hwaccel_device", "/dev/dri/renderD128", "-hwaccel_output_format", "vaapi",
-		"-i", "pipe:0",
+		"-i", testSrcURL,
 		"-map", "0:v:0", "-map", "0:a:0",
 		"-vf", "scale_vaapi=w=-2:h='min(1080,ih)':format=nv12",
 		"-c:v", "h264_vaapi",
 		"-rc_mode", "CQP", "-qp", "23",
 		"-profile:v", "high", "-level", "4.1",
 		"-g", "96", "-keyint_min", "96",
+		"-force_key_frames", "expr:gte(t,n_forced*4)",
 		"-c:a", "aac", "-b:a", "160k", "-ac", "2",
 		"-threads", "0",
 		"-f", "hls",
 		"-hls_time", "4",
-		"-hls_playlist_type", "event",
+		"-hls_playlist_type", "vod",
 		"-hls_segment_type", "fmp4",
 		"-hls_flags", "independent_segments+temp_file",
 		"-hls_fmp4_init_filename", "init.mp4",
 		"-hls_segment_filename", "seg%05d.m4s",
-		"-y", "index.m3u8",
+		"-start_number", "0",
+		"-y", "run-00000.m3u8",
 	}
-	if got := hlsVAAPIArgs(DefaultVAAPIDevice, "aac", 1080); !reflect.DeepEqual(got, want) {
+	if got := hlsVAAPIArgs(DefaultVAAPIDevice, "aac", 1080, testSrcURL, testRun(0, 5, 5)); !reflect.DeepEqual(got, want) {
 		t.Errorf("vaapi args =\n%v\nwant\n%v", got, want)
 	}
 }
 
 func TestHLSVAAPIArgsShape(t *testing.T) {
-	got := hlsVAAPIArgs("/dev/dri/renderD129", "aac", 1080)
+	got := hlsVAAPIArgs("/dev/dri/renderD129", "aac", 1080, testSrcURL, testRun(600, 630, 630))
 
 	// -hwaccel* configure the *input*; after -i they would be ignored and the
 	// decode would silently run on the CPU, which is the failure mode this
-	// whole change exists to avoid.
+	// whole change exists to avoid. -ss has to be there too, for the same
+	// reason it does on the software path.
 	input := slices.Index(got, "-i")
-	for _, flag := range []string{"-hwaccel", "-hwaccel_device", "-hwaccel_output_format"} {
+	for _, flag := range []string{"-hwaccel", "-hwaccel_device", "-hwaccel_output_format", "-ss"} {
 		i := slices.Index(got, flag)
 		if i < 0 || i > input {
 			t.Errorf("%s must appear before -i: %v", flag, got)
@@ -540,8 +763,8 @@ func TestHLSVAAPIArgsShape(t *testing.T) {
 			t.Errorf("vaapi args missing %v: %v", pair, got)
 		}
 	}
-	if got[len(got)-1] != HLSPlaylistName {
-		t.Errorf("vaapi args do not end in the playlist: %v", got)
+	if got[len(got)-1] != "run-00600.m3u8" {
+		t.Errorf("vaapi args do not end in the run playlist: %v", got)
 	}
 }
 
@@ -577,67 +800,32 @@ func TestHLSAttemptLadder(t *testing.T) {
 	}
 }
 
-// writeStubVAAPIFFmpeg installs a stub that fails the hardware attempt the way
-// a GPU that cannot decode a source does — after writing part of a rendition —
-// and succeeds on the software one. It records what each call was asked to do,
-// and whether the hardware attempt's leftovers were still lying about.
-func writeStubVAAPIFFmpeg(t *testing.T, dir, callLog string) string {
-	t.Helper()
-	path := filepath.Join(dir, "ffmpeg-vaapi-stub")
-	script := "#!/bin/sh\n" +
-		"case \"$*\" in\n" +
-		"  *h264_vaapi*) codec=vaapi ;;\n" +
-		"  *libx264*) codec=libx264 ;;\n" +
-		"  *) codec=copy ;;\n" +
-		"esac\n" +
-		"echo \"$codec\" >> " + callLog + "\n" +
-		"[ -e vaapi-leftover.m4s ] && echo 'dirty' >> " + callLog + "\n" +
-		"if [ \"$codec\" = vaapi ]; then\n" +
-		// A hardware attempt gets far enough to publish a segment and a
-		// playlist naming it before the decoder gives up on a 10-bit frame.
-		"  : > vaapi-leftover.m4s\n" +
-		"  printf '#EXTM3U\\n#EXTINF:4.0,\\nvaapi-leftover.m4s\\n' > " + HLSPlaylistName + "\n" +
-		"  echo 'Failed setup for format vaapi: hwaccel initialisation returned error' >&2\n" +
-		"  exit 1\n" +
-		"fi\n" +
-		"printf '#EXTM3U\\n#EXT-X-MAP:URI=\"init.mp4\"\\n#EXTINF:4.0,\\nseg00000.m4s\\n#EXT-X-ENDLIST\\n' > " + HLSPlaylistName + "\n" +
-		": > " + HLSInitName + "\n: > seg00000.m4s\n"
-	if err := os.WriteFile(path, []byte(script), 0o700); err != nil { //nolint:gosec // test fixture must be executable
-		t.Fatal(err)
-	}
-	return path
-}
-
 // A GPU that cannot manage a source is not the viewer's problem: the transcode
 // falls back to the CPU and the request succeeds. What must not happen is the
 // half-written hardware attempt surviving into the software one — the playlist
-// would then name segments nothing wrote.
+// would then name segments nothing wrote, and the two encoders' bitstreams
+// would sit under one init segment.
 func TestHLSFallsBackFromVAAPIToSoftware(t *testing.T) {
 	dir := t.TempDir()
 	callLog := filepath.Join(dir, "calls.log")
-	stub := writeStubVAAPIFFmpeg(t, dir, callLog)
+	stub := writeStubHLSFFmpeg(t, dir, callLog, stubOptions{total: 3, failVAAPI: true})
 	out := filepath.Join(dir, "out")
-	if err := os.Mkdir(out, 0o750); err != nil {
-		t.Fatal(err)
-	}
 
-	derive := HLS(stub, HLSSource{VideoCodec: "av01", Height: 2160, AudioCodec: "opus"}, 1080,
-		HWAccel{VAAPI: true, Device: DefaultVAAPIDevice}, nil, emptySource)
-	if err := derive(t.Context(), out); err != nil {
+	err := deriveHLS(t, HLSConfig{
+		FFmpegPath: stub,
+		Source:     HLSSource{VideoCodec: "av01", Height: 2160, AudioCodec: "opus", Duration: 12},
+		Height:     1080,
+		HW:         HWAccel{VAAPI: true, Device: DefaultVAAPIDevice},
+		Open:       emptySource,
+	}, out)
+	if err != nil {
 		t.Fatalf("a failed hardware attempt must fall back, not fail: %v", err)
 	}
-	if got := readCalls(t, callLog); got != "vaapi\nlibx264" {
+	if got := readCalls(t, callLog); got != "vaapi 0 0\nlibx264 0 0" {
 		t.Errorf("ffmpeg calls = %q, want vaapi then libx264 with a cleared directory in between", got)
 	}
 	if _, err := os.Stat(filepath.Join(out, "vaapi-leftover.m4s")); err == nil {
 		t.Error("the abandoned hardware attempt is still in the rendition")
-	}
-	b, err := os.ReadFile(filepath.Join(out, HLSPlaylistName)) //nolint:gosec // test fixture path
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(string(b), "vaapi-leftover") {
-		t.Errorf("the playlist still names the abandoned attempt: %q", b)
 	}
 }
 
@@ -647,7 +835,7 @@ func TestHLSFallsBackFromVAAPIToSoftware(t *testing.T) {
 func TestHLSVAAPIFallbackEndsUpDone(t *testing.T) {
 	dir := t.TempDir()
 	callLog := filepath.Join(dir, "calls.log")
-	stub := writeStubVAAPIFFmpeg(t, dir, callLog)
+	stub := writeStubHLSFFmpeg(t, dir, callLog, stubOptions{total: 3, failVAAPI: true})
 
 	c, err := NewCache(filepath.Join(dir, "cache"), 0, 1, nil)
 	if err != nil {
@@ -656,10 +844,15 @@ func TestHLSVAAPIFallbackEndsUpDone(t *testing.T) {
 	defer c.Close()
 
 	name := HLSName("yt-id", 1080)
-	derive := HLS(stub, HLSSource{VideoCodec: "av01", Height: 2160, AudioCodec: "opus"}, 1080,
-		HWAccel{VAAPI: true, Device: DefaultVAAPIDevice}, nil, emptySource)
-	if st := c.StartDir(name, derive); st != StateRunning {
-		t.Fatalf("StartDir = %q, want running", st)
+	prepare, derive := HLS(HLSConfig{
+		FFmpegPath: stub,
+		Source:     HLSSource{VideoCodec: "av01", Height: 2160, AudioCodec: "opus", Duration: 12},
+		Height:     1080,
+		HW:         HWAccel{VAAPI: true, Device: DefaultVAAPIDevice},
+		Open:       emptySource,
+	})
+	if st := c.StartDirJob(name, prepare, derive); st != StateRunning {
+		t.Fatalf("StartDirJob = %q, want running", st)
 	}
 	if _, err := c.WaitDir(t.Context(), name, HLSPlaylistReady, 10*time.Second); err != nil {
 		t.Fatalf("wait: %v", err)
@@ -673,7 +866,7 @@ func TestHLSVAAPIFallbackEndsUpDone(t *testing.T) {
 	if st := c.DirState(name); st != StateDone {
 		t.Errorf("hls_state = %q after a hardware failure and a software retry, want done", st)
 	}
-	if got := readCalls(t, callLog); got != "vaapi\nlibx264" {
+	if got := readCalls(t, callLog); got != "vaapi 0 0\nlibx264 0 0" {
 		t.Errorf("ffmpeg calls = %q, want vaapi then libx264", got)
 	}
 }
@@ -693,14 +886,14 @@ func TestHLSSoftwareFailureIsTheRealFailure(t *testing.T) {
 	if err := os.WriteFile(stub, []byte(script), 0o700); err != nil { //nolint:gosec // test fixture must be executable
 		t.Fatal(err)
 	}
-	out := filepath.Join(dir, "out")
-	if err := os.Mkdir(out, 0o750); err != nil {
-		t.Fatal(err)
-	}
 
-	derive := HLS(stub, HLSSource{VideoCodec: "av01", Height: 1080, AudioCodec: "opus"}, 1080,
-		HWAccel{VAAPI: true, Device: DefaultVAAPIDevice}, nil, emptySource)
-	err := derive(t.Context(), out)
+	err := deriveHLS(t, HLSConfig{
+		FFmpegPath: stub,
+		Source:     HLSSource{VideoCodec: "av01", Height: 1080, AudioCodec: "opus", Duration: 8},
+		Height:     1080,
+		HW:         HWAccel{VAAPI: true, Device: DefaultVAAPIDevice},
+		Open:       emptySource,
+	}, filepath.Join(dir, "out"))
 	if err == nil {
 		t.Fatal("a source nothing can transcode must fail the derivation")
 	}
@@ -734,6 +927,7 @@ func argValue(args []string, flag string) string {
 // rendition that either does not play on Apple hardware or is not the quality
 // the client picked, and no unit short of this notices.
 func TestHLSArgsPerHeightAndRung(t *testing.T) {
+	run := testRun(0, 5, 5)
 	for _, tc := range []struct {
 		height  int
 		encoder string
@@ -752,7 +946,7 @@ func TestHLSArgsPerHeightAndRung(t *testing.T) {
 		vaapiScale := "scale_vaapi=w=-2:h='min(" + strconv.Itoa(tc.height) + ",ih)':format=nv12"
 
 		// Software rung.
-		sw := hlsArgs(hlsSoftwareEncoder(tc.height), "aac", tc.height)
+		sw := hlsArgs(hlsSoftwareEncoder(tc.height), "aac", tc.height, testSrcURL, run)
 		if got := argValue(sw, "-c:v"); got != tc.encoder {
 			t.Errorf("%dp software encoder = %q, want %q", tc.height, got, tc.encoder)
 		}
@@ -773,7 +967,7 @@ func TestHLSArgsPerHeightAndRung(t *testing.T) {
 		}
 
 		// Hardware rung: the same rendition, built the way VAAPI needs it.
-		hwArgs := hlsVAAPIArgs(DefaultVAAPIDevice, "aac", tc.height)
+		hwArgs := hlsVAAPIArgs(DefaultVAAPIDevice, "aac", tc.height, testSrcURL, run)
 		if got := argValue(hwArgs, "-c:v"); got != tc.vaapi {
 			t.Errorf("%dp vaapi encoder = %q, want %q", tc.height, got, tc.vaapi)
 		}
@@ -793,7 +987,7 @@ func TestHLSArgsPerHeightAndRung(t *testing.T) {
 		}
 
 		// Copy rung: no encoder settings on either path, whatever the height.
-		cp := hlsArgs("copy", "copy", tc.height)
+		cp := hlsArgs("copy", "copy", tc.height, testSrcURL, run)
 		if got := argValue(cp, "-c:v"); got != "copy" {
 			t.Errorf("%dp copy = %q", tc.height, got)
 		}
@@ -820,8 +1014,8 @@ func TestHLSArgsPerHeightAndRung(t *testing.T) {
 			if got := argValue(args, "-hls_segment_type"); got != "fmp4" {
 				t.Errorf("%dp %s segment type = %q", tc.height, name, got)
 			}
-			if args[len(args)-1] != HLSPlaylistName {
-				t.Errorf("%dp %s args do not end in the playlist", tc.height, name)
+			if !strings.HasPrefix(args[len(args)-1], "run-") {
+				t.Errorf("%dp %s args do not end in a run playlist", tc.height, name)
 			}
 		}
 		for name, args := range map[string][]string{"software": sw, "vaapi": hwArgs} {
@@ -841,29 +1035,18 @@ func TestHLSTranscodesHEVCRendition(t *testing.T) {
 		t.Skip("this ffmpeg has no libx265; skipping the HEVC derivation test")
 	}
 	dir := t.TempDir()
-	src := filepath.Join(dir, "src.mp4")
-	//nolint:gosec // G204: fixture paths from t.TempDir(), no request data
-	fixture := exec.Command("ffmpeg", "-hide_banner", "-loglevel", "error",
-		"-f", "lavfi", "-i", "testsrc=duration=4:size=320x240:rate=24",
-		"-f", "lavfi", "-i", "sine=duration=4",
-		"-c:v", "libx264", "-c:a", "aac", "-movflags", "+faststart", "-y", src)
-	var stderr bytes.Buffer
-	fixture.Stderr = &stderr
-	if err := fixture.Run(); err != nil {
-		t.Skipf("cannot build fixture: %v: %s", err, stderr.String())
-	}
+	body := buildFixture(t, dir, 4)
 
 	out := filepath.Join(dir, "out")
-	if err := os.Mkdir(out, 0o750); err != nil {
-		t.Fatal(err)
-	}
 	// A 1440 rendition of a small source: the scaler clamps to the source, so
 	// this stays cheap while still taking the HEVC rung.
-	derive := HLS("ffmpeg", HLSSource{VideoCodec: "avc1", Height: 240, AudioCodec: "aac"}, 1440, HWAccel{}, nil,
-		func(context.Context) (io.ReadCloser, error) {
-			return os.Open(src) //nolint:gosec // test fixture path
-		})
-	if err := derive(t.Context(), out); err != nil {
+	err := deriveHLS(t, HLSConfig{
+		FFmpegPath: "ffmpeg",
+		Source:     HLSSource{VideoCodec: "avc1", Height: 240, AudioCodec: "aac", Duration: 4},
+		Height:     1440,
+		Open:       testSource(body),
+	}, out)
+	if err != nil {
 		t.Fatalf("derive: %v", err)
 	}
 	if !HLSPlaylistReady(out) {

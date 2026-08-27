@@ -158,6 +158,20 @@ renditions of one video over an evening.
   every video *and every height*. Raise it only if there are cores to spare:
   two transcodes sharing the same cores make both viewers wait longer than
   running them one after the other.
+- **A rendition is transcoded resume-first**, not front-to-back: the playlist
+  covers the whole video from the first request, and the encoder is pointed at
+  wherever the viewer actually is. A player asking for a segment that has not
+  been made yet waits for it — up to `MEDIA_SEGMENT_WAIT` (60 s) — rather than
+  failing, so a box that transcodes slower than realtime shows up as buffering
+  rather than as errors. Raise `MEDIA_SEGMENT_WAIT` on a slow box, or give it
+  more cores. `MEDIA_SEEK_AHEAD_SEGMENTS` (30, about two minutes) is how far
+  ahead a request has to be before the running encode is restarted at it; there
+  is rarely a reason to change it.
+- **The transcode reads the archive over a loopback HTTP source**
+  (`127.0.0.1`, ephemeral port, per-job nonce) rather than a pipe, because
+  seeking to the resume point needs a seekable input. It needs no configuration
+  and nothing off the box can reach it, but a container that blocks loopback
+  traffic to itself would break transcoding.
 - **Size the cache for it.** Roughly, per hour of video:
 
   | height | codec | disk per hour |

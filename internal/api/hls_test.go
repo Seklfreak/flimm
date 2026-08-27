@@ -40,8 +40,8 @@ func writeHLSEntry(t *testing.T, dir, id string, height int, segment []byte) {
 	if err := os.MkdirAll(entry, 0o750); err != nil {
 		t.Fatal(err)
 	}
-	playlist := "#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-PLAYLIST-TYPE:EVENT\n" +
-		"#EXT-X-MAP:URI=\"init.mp4\"\n#EXTINF:4.000000,\nseg00000.m4s\n#EXT-X-ENDLIST\n"
+	playlist := "#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-TARGETDURATION:4\n#EXT-X-PLAYLIST-TYPE:VOD\n" +
+		"#EXT-X-INDEPENDENT-SEGMENTS\n#EXT-X-MAP:URI=\"init.mp4\"\n#EXTINF:4.000,\nseg00000.m4s\n#EXT-X-ENDLIST\n"
 	for name, body := range map[string][]byte{
 		media.HLSPlaylistName: []byte(playlist),
 		media.HLSInitName:     []byte("init-bytes"),
@@ -55,6 +55,12 @@ func writeHLSEntry(t *testing.T, dir, id string, height int, segment []byte) {
 }
 
 func hlsServer(t *testing.T, dir, ffmpegPath string) http.Handler {
+	return hlsServerWith(t, dir, ffmpegPath, nil)
+}
+
+// hlsServerWith is hlsServer with the media options a test needs to change —
+// the segment wait above all, which is a minute in production.
+func hlsServerWith(t *testing.T, dir, ffmpegPath string, tweak func(*Options)) http.Handler {
 	t.Helper()
 	cache, err := media.NewCache(dir, 0, 1, nil)
 	if err != nil {
@@ -68,7 +74,7 @@ func hlsServer(t *testing.T, dir, ffmpegPath string) http.Handler {
 		Streams: []ta.Stream{{Type: "video", Codec: "av01", Height: 1080}, {Type: "audio", Codec: "opus"}},
 	}
 	client.Media = map[string][]byte{"/media/UC1/v1.mp4": []byte("source")}
-	return NewServer(Options{
+	opts := Options{
 		Querier:     newEventStore().querier(),
 		TA:          client,
 		Log:         slog.New(slog.NewTextHandler(io.Discard, nil)),
@@ -76,7 +82,12 @@ func hlsServer(t *testing.T, dir, ffmpegPath string) http.Handler {
 		MediaSecret: testSecret,
 		MediaCache:  cache,
 		FFmpegPath:  ffmpegPath,
-	}).Router()
+		SegmentWait: 2 * time.Second,
+	}
+	if tweak != nil {
+		tweak(&opts)
+	}
+	return NewServer(opts).Router()
 }
 
 func getMedia(t *testing.T, h http.Handler, path, rangeHdr string) *httptest.ResponseRecorder {
@@ -181,20 +192,65 @@ func TestHLSRequiresMediaAuth(t *testing.T) {
 func writeHangingFFmpeg(t *testing.T) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "ffmpeg-hang")
-	if err := os.WriteFile(path, []byte("#!/bin/sh\nsleep 30\n"), 0o700); err != nil { //nolint:gosec // test fixture must be executable
+	if err := os.WriteFile(path, []byte("#!/bin/sh\nexec sleep 30\n"), 0o700); err != nil { //nolint:gosec // test fixture must be executable
 		t.Fatal(err)
 	}
 	return path
 }
 
-// A rendition that is not ready in time is not an error: the client is told to
-// come back, and the transcode keeps running.
+// The whole point of the resume-first rendition: the playlist describes the
+// entire video from the very first request, before a single segment has been
+// encoded, so a player can seek straight to where the viewer left off.
+func TestHLSPlaylistIsCompleteBeforeAnySegmentExists(t *testing.T) {
+	h := hlsServer(t, t.TempDir(), writeHangingFFmpeg(t))
+
+	rec := getMedia(t, h, "/media/hls/v1/index.m3u8", "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
+	}
+	body := rec.Body.String()
+	// v1 is ten minutes long in the fixture: 150 four-second segments.
+	if n := strings.Count(body, ".m4s"); n != 150 {
+		t.Errorf("playlist names %d segments, want 150:\n%s", n, body)
+	}
+	for _, want := range []string{"#EXT-X-PLAYLIST-TYPE:VOD", "#EXT-X-TARGETDURATION:4", "#EXT-X-ENDLIST", `#EXT-X-MAP:URI="init.mp4"`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("playlist is missing %q:\n%s", want, body)
+		}
+	}
+	// It is rewritten once at the end with the real durations, so it must not
+	// be cached while the job runs.
+	if cc := rec.Header().Get("Cache-Control"); cc != "no-store" {
+		t.Errorf("Cache-Control = %q, want no-store", cc)
+	}
+}
+
+// writeHangingFFmpegAndProbe installs an ffmpeg stub whose ffprobe sibling
+// hangs too, so even working out how long the video is never finishes. It is
+// the only way the playlist itself can be late.
+func writeHangingFFmpegAndProbe(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	for _, name := range []string{"ffmpeg", "ffprobe"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("#!/bin/sh\nexec sleep 30\n"), 0o700); err != nil { //nolint:gosec // test fixture must be executable
+			t.Fatal(err)
+		}
+	}
+	return filepath.Join(dir, "ffmpeg")
+}
+
+// A playlist that cannot be produced in time is not an error: the client is
+// told to come back, and the job keeps going.
 func TestHLSPlaylistTimesOutWith503(t *testing.T) {
 	old := hlsPlaylistWait
 	hlsPlaylistWait = 100 * time.Millisecond
 	t.Cleanup(func() { hlsPlaylistWait = old })
 
-	h := hlsServer(t, t.TempDir(), writeHangingFFmpeg(t))
+	// A video TA reports no duration for, so the job has to probe the source
+	// before it can write a playlist — and the probe hangs.
+	h := hlsServerWith(t, t.TempDir(), writeHangingFFmpegAndProbe(t), func(o *Options) {
+		o.TA.(*ta.Fake).Videos["v1"].Player.Duration = 0
+	})
 	rec := getMedia(t, h, "/media/hls/v1/index.m3u8", "")
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("status = %d, want 503: %s", rec.Code, rec.Body.String())
@@ -207,12 +263,187 @@ func TestHLSPlaylistTimesOutWith503(t *testing.T) {
 	}
 }
 
-// A segment the transcode has not written yet is a 404 the player retries,
-// never a hang.
+// A segment of a finished rendition that is not there was never part of it —
+// the playlist stops at the end of the video — so it is a 404 rather than a
+// wait for something no run will produce.
 func TestHLSMissingSegmentIs404(t *testing.T) {
 	h, _ := hlsFixture(t, []byte("segment"))
 	if rec := getMedia(t, h, "/media/hls/v1/seg00042.m4s", ""); rec.Code != http.StatusNotFound {
 		t.Errorf("status = %d, want 404", rec.Code)
+	}
+}
+
+// A segment the encoder has not reached blocks rather than 404ing: the playlist
+// promised it, so the honest answer is "not yet" and not "no such thing".
+func TestHLSSegmentWaitsThenTimesOutWith503(t *testing.T) {
+	h := hlsServerWith(t, t.TempDir(), writeHangingFFmpeg(t), func(o *Options) {
+		o.SegmentWait = 300 * time.Millisecond
+	})
+	// The playlist request is what starts the job.
+	if rec := getMedia(t, h, "/media/hls/v1/index.m3u8", ""); rec.Code != http.StatusOK {
+		t.Fatalf("playlist = %d: %s", rec.Code, rec.Body.String())
+	}
+
+	start := time.Now()
+	rec := getMedia(t, h, "/media/hls/v1/seg00000.m4s", "")
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("segment = %d, want 503: %s", rec.Code, rec.Body.String())
+	}
+	if elapsed := time.Since(start); elapsed < 250*time.Millisecond {
+		t.Errorf("the request gave up after %v; it should wait out MEDIA_SEGMENT_WAIT", elapsed)
+	}
+	if ra := rec.Header().Get("Retry-After"); ra != "2" {
+		t.Errorf("Retry-After = %q, want 2", ra)
+	}
+	if cc := rec.Header().Get("Cache-Control"); cc != "no-store" {
+		t.Errorf("Cache-Control = %q, want no-store", cc)
+	}
+}
+
+// A segment past the end of the rendition is never coming, so it must not
+// occupy a connection for a minute first.
+func TestHLSSegmentPastTheEndIs404Immediately(t *testing.T) {
+	h := hlsServerWith(t, t.TempDir(), writeHangingFFmpeg(t), func(o *Options) {
+		o.SegmentWait = 10 * time.Second
+	})
+	if rec := getMedia(t, h, "/media/hls/v1/index.m3u8", ""); rec.Code != http.StatusOK {
+		t.Fatalf("playlist = %d", rec.Code)
+	}
+	start := time.Now()
+	// v1 has 150 segments.
+	if rec := getMedia(t, h, "/media/hls/v1/seg00200.m4s", ""); rec.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want 404", rec.Code)
+	}
+	if elapsed := time.Since(start); elapsed > time.Second {
+		t.Errorf("a segment past the end waited %v before 404ing", elapsed)
+	}
+}
+
+// A job that failed is a 502 on its segments, not a wait: there is nothing
+// coming.
+func TestHLSSegmentOfAFailedJobIs502(t *testing.T) {
+	failing := filepath.Join(t.TempDir(), "ffmpeg-fails")
+	if err := os.WriteFile(failing, []byte("#!/bin/sh\necho 'Invalid data found' >&2\nexit 1\n"), 0o700); err != nil { //nolint:gosec // test fixture must be executable
+		t.Fatal(err)
+	}
+	h := hlsServerWith(t, t.TempDir(), failing, func(o *Options) { o.SegmentWait = 5 * time.Second })
+	if rec := do(t, h, http.MethodPost, "/api/v1/videos/v1/hls", ""); rec.Code != http.StatusOK {
+		t.Fatalf("start = %d: %s", rec.Code, rec.Body.String())
+	}
+	waitForHLSState(t, h, "v1", string(media.StateFailed))
+
+	rec := getMedia(t, h, "/media/hls/v1/seg00000.m4s", "")
+	if rec.Code != http.StatusBadGateway {
+		t.Errorf("segment of a failed job = %d, want 502: %s", rec.Code, rec.Body.String())
+	}
+}
+
+// waitForHLSState polls the video detail until the default rendition reaches a
+// state. The job runs behind the request that started it, so the state clients
+// see lags the response by a moment.
+func waitForHLSState(t *testing.T, h http.Handler, id, want string) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if decode[VideoDetail](t, do(t, h, http.MethodGet, "/api/v1/videos/"+id, "")).HLSState == want {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("hls_state never reached %q", want)
+}
+
+// writeRecordingFFmpeg installs a stub that records its command line and stops.
+// It is enough to see *where* a job aimed its first run, which is the whole
+// contract behind `from`.
+func writeRecordingFFmpeg(t *testing.T, argvLog string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "ffmpeg-record")
+	script := "#!/bin/sh\nprintf '%s\\n' \"$*\" >> " + argvLog + "\nexit 0\n"
+	if err := os.WriteFile(path, []byte(script), 0o700); err != nil { //nolint:gosec // test fixture must be executable
+		t.Fatal(err)
+	}
+	return path
+}
+
+// readArgv waits for the stub to be called and returns its first command line.
+func readArgv(t *testing.T, path string) string {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		b, err := os.ReadFile(path) //nolint:gosec // test fixture path
+		if err == nil && len(b) > 0 {
+			line, _, _ := strings.Cut(string(b), "\n")
+			return line
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("ffmpeg was never called")
+	return ""
+}
+
+// `from` is what makes resuming instant: the first run starts at the segment
+// the viewer is on, instead of at 0:00 with the encoder grinding its way there.
+func TestPostVideoHLSStartsAtTheResumePosition(t *testing.T) {
+	argv := filepath.Join(t.TempDir(), "argv.log")
+	h := hlsServer(t, t.TempDir(), writeRecordingFFmpeg(t, argv))
+
+	// v1 is ten minutes long; 400 s into it is segment 100.
+	rec := do(t, h, http.MethodPost, "/api/v1/videos/v1/hls?from=400", "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", rec.Code, rec.Body.String())
+	}
+	line := readArgv(t, argv)
+	if !strings.Contains(line, "-ss 400 ") {
+		t.Errorf("the first run does not seek to the resume position: %s", line)
+	}
+	if !strings.Contains(line, "-start_number 100 ") {
+		t.Errorf("the first run does not number segments from the resume point: %s", line)
+	}
+	// The run's segments are written under a name the route will not serve
+	// until their timestamps have been moved onto the rendition's timeline.
+	if !strings.Contains(line, "-hls_segment_filename seg%05d.m4s.raw ") {
+		t.Errorf("the run publishes segments before rebasing them: %s", line)
+	}
+	// Run A goes to the end of the video, so it is not cut short.
+	if strings.Contains(line, "-t ") {
+		t.Errorf("run A carries a duration limit: %s", line)
+	}
+}
+
+// A client that cannot POST first passes `from` on the playlist instead, and
+// gets the same behaviour.
+func TestHLSPlaylistFromStartsAtTheResumePosition(t *testing.T) {
+	argv := filepath.Join(t.TempDir(), "argv.log")
+	h := hlsServer(t, t.TempDir(), writeRecordingFFmpeg(t, argv))
+
+	rec := getMedia(t, h, "/media/hls/v1/1080/index.m3u8?from=120", "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("playlist = %d: %s", rec.Code, rec.Body.String())
+	}
+	// The playlist is the whole video whatever `from` says — that is what lets
+	// the player seek to it.
+	if n := strings.Count(rec.Body.String(), ".m4s"); n != 150 {
+		t.Errorf("playlist names %d segments, want 150", n)
+	}
+	if line := readArgv(t, argv); !strings.Contains(line, "-ss 120 ") || !strings.Contains(line, "-start_number 30 ") {
+		t.Errorf("the transcode did not start at the resume position: %s", line)
+	}
+}
+
+// A `from` that is not a position inside the video is not an error; it means
+// "from the beginning", which is what a client that does not send one gets.
+func TestHLSIgnoresAnUnusableFrom(t *testing.T) {
+	// The last one is past the end of a ten-minute video.
+	for _, q := range []string{"?from=", "?from=abc", "?from=-30", "?from=NaN", "?from=99999"} {
+		argv := filepath.Join(t.TempDir(), "argv.log")
+		h := hlsServer(t, t.TempDir(), writeRecordingFFmpeg(t, argv))
+		if rec := do(t, h, http.MethodPost, "/api/v1/videos/v1/hls"+q, ""); rec.Code != http.StatusOK {
+			t.Fatalf("%s = %d", q, rec.Code)
+		}
+		if line := readArgv(t, argv); strings.Contains(line, "-ss ") {
+			t.Errorf("%s produced a seek: %s", q, line)
+		}
 	}
 }
 
@@ -227,8 +458,15 @@ func TestPostVideoHLSStartsWithoutWaiting(t *testing.T) {
 		if rec.Code != http.StatusOK {
 			t.Fatalf("status = %d: %s", rec.Code, rec.Body.String())
 		}
-		if got := decode[map[string]string](t, rec)["state"]; got != string(media.StateRunning) {
-			t.Errorf("state = %q, want %q", got, media.StateRunning)
+		body := decode[HLSStartResponse](t, rec)
+		if body.State != string(media.StateRunning) {
+			t.Errorf("state = %q, want %q", body.State, media.StateRunning)
+		}
+		if body.Height != media.HLSDefaultHeight {
+			t.Errorf("height = %d, want %d", body.Height, media.HLSDefaultHeight)
+		}
+		if body.Progress != 0 {
+			t.Errorf("hls_progress = %v on a job that has just started, want 0", body.Progress)
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("the prefetch endpoint waited for the transcode")
@@ -375,6 +613,121 @@ func TestHLSEndToEndWithRealFFmpeg(t *testing.T) {
 	}
 }
 
+// The whole feature through the real ffmpeg: a viewer resuming at 12 s of a
+// 20-second video. The playlist covers the whole video on the very first
+// request, and the segment they are actually on is encoded before the ones
+// before it.
+func TestHLSResumeEndToEndWithRealFFmpeg(t *testing.T) {
+	if _, err := exec.LookPath("ffmpeg"); err != nil {
+		t.Skip("ffmpeg not installed; skipping derivation test")
+	}
+	dir := t.TempDir()
+	source := filepath.Join(dir, "src.mp4")
+	//nolint:gosec // G204: fixture paths from t.TempDir(), no request data
+	fixture := exec.Command("ffmpeg", "-hide_banner", "-loglevel", "error",
+		"-f", "lavfi", "-i", "testsrc=duration=20:size=320x240:rate=24",
+		"-f", "lavfi", "-i", "sine=duration=20",
+		"-c:v", "libx264", "-c:a", "aac", "-movflags", "+faststart", "-y", source)
+	if err := fixture.Run(); err != nil {
+		t.Skipf("cannot build fixture: %v", err)
+	}
+	body, err := os.ReadFile(source) //nolint:gosec // test fixture path
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cacheDir := t.TempDir()
+	cache, err := media.NewCache(cacheDir, 0, 1, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(cache.Close)
+	client := ta.NewFake()
+	// Claimed as AV1 so the real encode path runs — a stream copy would be a
+	// single run and prove nothing about resuming.
+	client.Videos["v1"] = &ta.Video{
+		YoutubeID: "v1", Title: "Video v1", MediaURL: "/youtube/UC1/v1.mp4",
+		Player:  ta.Player{Duration: 20},
+		Streams: []ta.Stream{{Type: "video", Codec: "av01", Height: 240}, {Type: "audio", Codec: "opus"}},
+	}
+	client.Media = map[string][]byte{"/media/UC1/v1.mp4": body}
+	h := NewServer(Options{
+		Querier:     newEventStore().querier(),
+		TA:          client,
+		Log:         slog.New(slog.NewTextHandler(io.Discard, nil)),
+		AppName:     "Flimm",
+		MediaSecret: testSecret,
+		MediaCache:  cache,
+	}).Router()
+
+	// The very first request, with the resume position on it.
+	rec := getMedia(t, h, "/media/hls/v1/480/index.m3u8?from=12", "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("playlist status = %d: %s", rec.Code, rec.Body.String())
+	}
+	playlist := rec.Body.String()
+	// 20 seconds is five four-second segments, all of them there before
+	// anything has been encoded — which is what lets the player seek to 12 s.
+	if n := strings.Count(playlist, ".m4s"); n != 5 {
+		t.Fatalf("the first playlist names %d segments, want 5:\n%s", n, playlist)
+	}
+	if !strings.Contains(playlist, "#EXT-X-PLAYLIST-TYPE:VOD") || !strings.Contains(playlist, "#EXT-X-ENDLIST") {
+		t.Errorf("the first playlist is not a complete VOD list:\n%s", playlist)
+	}
+
+	// The segment at 12 s is the one the viewer needs; the request blocks until
+	// it lands rather than 404ing.
+	if seg := getMedia(t, h, "/media/hls/v1/480/seg00003.m4s", ""); seg.Code != http.StatusOK || seg.Body.Len() == 0 {
+		t.Fatalf("the resume segment = %d, %d bytes", seg.Code, seg.Body.Len())
+	}
+
+	entry := cache.Dir(media.HLSName("v1", 480))
+	deadline := time.Now().Add(120 * time.Second)
+	for time.Now().Before(deadline) && cache.DirState(media.HLSName("v1", 480)) != media.StateDone {
+		time.Sleep(20 * time.Millisecond)
+	}
+	if st := cache.DirState(media.HLSName("v1", 480)); st != media.StateDone {
+		t.Fatalf("hls_state = %q, want done", st)
+	}
+
+	// Run A came first: the segment the viewer resumed on was written before
+	// the one at the start of the video.
+	resume, err := os.Stat(filepath.Join(entry, "seg00003.m4s"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := os.Stat(filepath.Join(entry, "seg00000.m4s"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !resume.ModTime().Before(first.ModTime()) {
+		t.Errorf("seg00003 (%v) was not encoded before seg00000 (%v); the resume point did not go first",
+			resume.ModTime(), first.ModTime())
+	}
+
+	// Every segment the playlist promised is on disk and servable.
+	for i := range 5 {
+		name := media.HLSSegmentName(i)
+		seg := getMedia(t, h, "/media/hls/v1/480/"+name, "")
+		if seg.Code != http.StatusOK || seg.Body.Len() == 0 {
+			t.Errorf("segment %s = %d, %d bytes", name, seg.Code, seg.Body.Len())
+		}
+	}
+	if init := getMedia(t, h, "/media/hls/v1/480/init.mp4", ""); init.Code != http.StatusOK || init.Body.Len() == 0 {
+		t.Errorf("init segment = %d, %d bytes", init.Code, init.Body.Len())
+	}
+	final := getMedia(t, h, "/media/hls/v1/480/index.m3u8", "")
+	if cc := final.Header().Get("Cache-Control"); cc != "private, max-age=3600" {
+		t.Errorf("finished playlist Cache-Control = %q", cc)
+	}
+	detail := decode[VideoDetail](t, do(t, h, http.MethodGet, "/api/v1/videos/v1", ""))
+	for _, v := range detail.HLSVariants {
+		if v.Height == 480 && v.Progress != 1 {
+			t.Errorf("hls_progress = %v for a finished rendition, want 1", v.Progress)
+		}
+	}
+}
+
 // Each height is served from its own entry, under its own path.
 func TestHLSVariantRoutesServeEachHeight(t *testing.T) {
 	dir := t.TempDir()
@@ -434,15 +787,11 @@ func TestHLSLegacyRouteServesTheDefaultVariant(t *testing.T) {
 // other URL to fall back to — while the heights it does not offer are 404 on
 // the explicit routes.
 func TestHLSLegacyRouteWorksForASmallSource(t *testing.T) {
-	old := hlsPlaylistWait
-	hlsPlaylistWait = 100 * time.Millisecond
-	t.Cleanup(func() { hlsPlaylistWait = old })
-
 	dir := t.TempDir()
 	srv := hlsServer(t, dir, writeHangingFFmpeg(t))
 	// v1 is 1080p in the fixture; ask through the alias and the job starts.
-	if rec := getMedia(t, srv, "/media/hls/v1/index.m3u8", ""); rec.Code != http.StatusServiceUnavailable {
-		t.Fatalf("alias = %d, want 503 while the transcode runs", rec.Code)
+	if rec := getMedia(t, srv, "/media/hls/v1/index.m3u8", ""); rec.Code != http.StatusOK {
+		t.Fatalf("alias = %d, want the playlist while the transcode runs", rec.Code)
 	}
 	waitForEntry(t, dir, media.HLSName("v1", media.HLSDefaultHeight))
 }
@@ -503,8 +852,8 @@ func TestPostVideoHLSHeight(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("height=720 = %d: %s", rec.Code, rec.Body.String())
 	}
-	if got := decode[map[string]string](t, rec)["state"]; got != string(media.StateRunning) {
-		t.Errorf("state = %q, want running", got)
+	if got := decode[HLSStartResponse](t, rec); got.State != string(media.StateRunning) || got.Height != 720 {
+		t.Errorf("height=720 response = %+v, want running at 720", got)
 	}
 	waitForEntry(t, dir, media.HLSName("v1", 720))
 
@@ -543,9 +892,11 @@ func TestVideoDetailCarriesHLSVariants(t *testing.T) {
 
 	detail := decode[VideoDetail](t, do(t, srv, http.MethodGet, "/api/v1/videos/v1", ""))
 	want := []HLSVariantInfo{
-		{Height: 1080, URL: "/media/hls/v1/1080/index.m3u8", State: string(media.StatePending), Codec: "h264"},
-		{Height: 720, URL: "/media/hls/v1/720/index.m3u8", State: string(media.StateDone), Codec: "h264"},
-		{Height: 480, URL: "/media/hls/v1/480/index.m3u8", State: string(media.StatePending), Codec: "h264"},
+		{Height: 1080, URL: "/media/hls/v1/1080/index.m3u8", State: string(media.StatePending), Codec: "h264", Progress: 0},
+		// A finished rendition is 100% transcoded, whether or not its job is
+		// still around to say so.
+		{Height: 720, URL: "/media/hls/v1/720/index.m3u8", State: string(media.StateDone), Codec: "h264", Progress: 1},
+		{Height: 480, URL: "/media/hls/v1/480/index.m3u8", State: string(media.StatePending), Codec: "h264", Progress: 0},
 	}
 	if !reflect.DeepEqual(detail.HLSVariants, want) {
 		t.Errorf("hls_variants =\n%+v\nwant\n%+v", detail.HLSVariants, want)
@@ -615,7 +966,7 @@ func TestVideoDetailHLSVariantsJSONShape(t *testing.T) {
 	if !ok {
 		t.Fatalf("hls_variants[0] = %#v", raw[0])
 	}
-	for _, key := range []string{"height", "url", "state", "codec"} {
+	for _, key := range []string{"height", "url", "state", "codec", "hls_progress"} {
 		if _, ok := first[key]; !ok {
 			t.Errorf("hls_variants[0] has no %q: %#v", key, first)
 		}

@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // Config holds all runtime configuration, loaded from the environment.
@@ -49,6 +50,15 @@ type Config struct {
 	// so the default is one: extra requests queue rather than each making the
 	// others slower.
 	MediaTranscodeJobs int
+	// MediaSegmentWait is how long a request for an HLS segment the transcode
+	// has not produced yet blocks before the client is told to come back. The
+	// playlist covers the whole video from the first request, so a segment
+	// beyond the encoder is a slow segment rather than a missing one.
+	MediaSegmentWait time.Duration
+	// MediaSeekAheadSegments is how far ahead of the encoder (in 4-second
+	// segments) a segment request has to be before the running transcode is
+	// re-aimed at it. Below it, waiting is cheaper than restarting.
+	MediaSeekAheadSegments int
 	// FFmpegPath is the ffmpeg binary used for derivations.
 	FFmpegPath string
 	// MediaHWAccel selects hardware-accelerated transcoding: "auto" (the
@@ -77,26 +87,28 @@ func Load() (*Config, error) {
 	loadDotEnv("../.env")
 
 	cfg := &Config{
-		TAURL:              strings.TrimRight(os.Getenv("TA_URL"), "/"),
-		TAToken:            os.Getenv("TA_TOKEN"),
-		DatabaseURL:        os.Getenv("DATABASE_URL"),
-		Port:               getenvDefault("PORT", "8080"),
-		OIDCIssuer:         os.Getenv("OIDC_ISSUER"),
-		OIDCClientID:       os.Getenv("OIDC_CLIENT_ID"),
-		AuthDisabled:       os.Getenv("AUTH_DISABLED") == "true",
-		AdminEmails:        splitCSV(os.Getenv("ADMIN_EMAILS")),
-		MediaTokenSecret:   os.Getenv("MEDIA_TOKEN_SECRET"),
-		MinPlaySeconds:     envFloat("MIN_PLAY_SECONDS", 15),
-		MediaCacheDir:      cmp.Or(os.Getenv("MEDIA_CACHE_DIR"), filepath.Join(os.TempDir(), "flimm-media")),
-		MediaCacheMaxBytes: int64(envFloat("MEDIA_CACHE_MAX_BYTES", 5<<30)),
-		MediaTranscodeJobs: int(envFloat("MEDIA_TRANSCODE_JOBS", 1)),
-		FFmpegPath:         cmp.Or(os.Getenv("FFMPEG_PATH"), "ffmpeg"),
-		MediaHWAccel:       getenvDefault("MEDIA_HWACCEL", "auto"),
-		MediaVAAPIDevice:   os.Getenv("MEDIA_VAAPI_DEVICE"),
-		PublicURL:          strings.TrimRight(os.Getenv("PUBLIC_URL"), "/"),
-		CORSOrigins:        splitCSV(os.Getenv("CORS_ORIGINS")),
-		AppName:            getenvDefault("APP_NAME", "Flimm"),
-		LogLevel:           parseLevel(os.Getenv("LOG_LEVEL")),
+		TAURL:                  strings.TrimRight(os.Getenv("TA_URL"), "/"),
+		TAToken:                os.Getenv("TA_TOKEN"),
+		DatabaseURL:            os.Getenv("DATABASE_URL"),
+		Port:                   getenvDefault("PORT", "8080"),
+		OIDCIssuer:             os.Getenv("OIDC_ISSUER"),
+		OIDCClientID:           os.Getenv("OIDC_CLIENT_ID"),
+		AuthDisabled:           os.Getenv("AUTH_DISABLED") == "true",
+		AdminEmails:            splitCSV(os.Getenv("ADMIN_EMAILS")),
+		MediaTokenSecret:       os.Getenv("MEDIA_TOKEN_SECRET"),
+		MinPlaySeconds:         envFloat("MIN_PLAY_SECONDS", 15),
+		MediaCacheDir:          cmp.Or(os.Getenv("MEDIA_CACHE_DIR"), filepath.Join(os.TempDir(), "flimm-media")),
+		MediaCacheMaxBytes:     int64(envFloat("MEDIA_CACHE_MAX_BYTES", 5<<30)),
+		MediaTranscodeJobs:     int(envFloat("MEDIA_TRANSCODE_JOBS", 1)),
+		MediaSegmentWait:       time.Duration(envFloat("MEDIA_SEGMENT_WAIT", 60) * float64(time.Second)),
+		MediaSeekAheadSegments: int(envFloat("MEDIA_SEEK_AHEAD_SEGMENTS", 30)),
+		FFmpegPath:             cmp.Or(os.Getenv("FFMPEG_PATH"), "ffmpeg"),
+		MediaHWAccel:           getenvDefault("MEDIA_HWACCEL", "auto"),
+		MediaVAAPIDevice:       os.Getenv("MEDIA_VAAPI_DEVICE"),
+		PublicURL:              strings.TrimRight(os.Getenv("PUBLIC_URL"), "/"),
+		CORSOrigins:            splitCSV(os.Getenv("CORS_ORIGINS")),
+		AppName:                getenvDefault("APP_NAME", "Flimm"),
+		LogLevel:               parseLevel(os.Getenv("LOG_LEVEL")),
 	}
 
 	var missing []string

@@ -13,6 +13,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // HLS variants: compatible video renditions, one per quality.
@@ -29,6 +30,11 @@ import (
 // H.264 up to 1080p, HEVC above it, because a 4K x264 encode is enormous for
 // what it delivers and every Apple device that can drive a 4K panel decodes
 // HEVC in hardware.
+//
+// The rendition is *resume-first*: the segment grid is fixed and known from the
+// duration, so the playlist is complete from the first request (see
+// hlsplaylist.go) and the encoder is pointed at wherever the viewer actually
+// is (see hlsplan.go and hlsjob.go) rather than always starting at 0:00.
 const (
 	// HLSVariant is the cache key prefix; the entry is a *directory*, not a
 	// file, because a rendition is a playlist plus its segments.
@@ -47,12 +53,15 @@ const (
 	// compromise on a phone. It is also what the legacy routes without a height
 	// and `hls_url` point at.
 	HLSDefaultHeight = 1080
-	// hlsSegmentSeconds is the target segment length. Shorter segments reach
-	// the first frame sooner and cost more requests; 4 s is the usual balance
-	// and matches Apple's own recommendation (6 s max).
-	hlsSegmentSeconds = "4"
-	// hlsGOP forces a keyframe at least every 96 frames (4 s at 24 fps) so the
-	// muxer can always cut a segment where it wants to.
+	// hlsSegmentSeconds is the segment length, and with it the grid every run
+	// cuts on. Shorter segments reach the first frame sooner and cost more
+	// requests; 4 s is the usual balance and matches Apple's own recommendation
+	// (6 s max). It is a fixed number rather than a target because the whole
+	// playlist is derived from it before anything is encoded.
+	hlsSegmentSeconds = 4
+	// hlsGOP forces a keyframe at least every 96 frames (4 s at 24 fps). The
+	// segment boundaries themselves come from -force_key_frames on the 4 s
+	// grid; this is the floor underneath it.
 	hlsGOP = "96"
 	// hlsVAAPIQP is the constant quantiser for the hardware encoder, matched
 	// to the software path's crf 23 so the two renditions look alike. QP and
@@ -157,37 +166,37 @@ func HLSName(videoID string, height int) string {
 }
 
 // HLSSource is what the source file holds, as TubeArchivist reports it in the
-// video document's `streams`. It decides copy vs re-encode; it is metadata,
-// not a guarantee, which is why a failed copy falls back to encoding.
+// video document. It decides copy vs re-encode and how many segments the
+// rendition has; it is metadata, not a guarantee, which is why a failed copy
+// falls back to encoding and a missing duration falls back to a probe.
 type HLSSource struct {
 	VideoCodec string
 	Height     int
 	AudioCodec string
+	// Duration is the video's length in seconds (TA's `player.duration`), the
+	// number the whole segment grid comes from. 0 means TA did not report one,
+	// and the source is probed instead.
+	Duration float64
 }
 
-// HLS returns a DirDeriveFunc that writes index.m3u8, init.mp4 and the
-// segments of the rendition at height into dir.
-//
-// A track is copied when the source already is what this rendition would
-// encode (the same height in the height's codec, or AAC audio): segmenting a
-// stream copy is nearly free, so a compatible archive costs no more than the
-// audio variants do. Otherwise the track is encoded for real — on the GPU when
-// hw says so, and on the CPU when it does not or when the GPU turns out not to
-// manage this particular source.
-func HLS(ffmpegPath string, src HLSSource, height int, hw HWAccel, log *slog.Logger, source SourceFunc) DirDeriveFunc {
-	return func(ctx context.Context, dir string) error {
-		if err := runHLSAttempts(ctx, ffmpegPath, dir, source, hlsAttempts(src, height, hw), log); err != nil {
-			return err
-		}
-		return ensureEndList(filepath.Join(dir, HLSPlaylistName))
-	}
-}
-
-// hlsAttempt is one ffmpeg run, named so a log line and an error can say which
-// of them failed.
+// hlsAttempt is one ffmpeg configuration, named so a log line and an error can
+// say which of them failed.
 type hlsAttempt struct {
 	name string
-	args []string
+	// videoCodec and audioCodec are what this rung asks ffmpeg for.
+	videoCodec, audioCodec string
+	// vaapi routes the rung through the GPU command line.
+	vaapi bool
+	// device is the render node, for the vaapi rung.
+	device string
+	// singleRun forces one pass over the whole video regardless of what the
+	// planner wants. Only the copy rung sets it: a stream copy cannot cut on
+	// the 4 s grid (it can only cut on the source's own keyframes), so a
+	// partial range would produce segments that do not line up with the
+	// playlist. It costs nothing to ignore the plan there — a copy runs at
+	// remux speed, so the whole file is done in the time an encode needs for
+	// the first minute.
+	singleRun bool
 }
 
 // hlsAttempts is the fallback ladder, cheapest first. Each rung is strictly
@@ -207,56 +216,22 @@ func hlsAttempts(src HLSSource, height int, hw HWAccel) []hlsAttempt {
 	vc, ac := hlsVideoCodec(src, height), aacCodec(src.AudioCodec)
 	var out []hlsAttempt
 	if vc == "copy" || ac == "copy" {
-		out = append(out, hlsAttempt{name: "copy", args: hlsArgs(vc, ac, height)})
+		out = append(out, hlsAttempt{name: "copy", videoCodec: vc, audioCodec: ac, singleRun: true})
 	}
 	if hw.VAAPI {
-		out = append(out, hlsAttempt{name: "vaapi", args: hlsVAAPIArgs(hw.Device, "aac", height)})
+		out = append(out, hlsAttempt{name: "vaapi", videoCodec: "vaapi", audioCodec: "aac", vaapi: true, device: hw.Device})
 	}
 	sw := hlsSoftwareEncoder(height)
-	return append(out, hlsAttempt{name: sw, args: hlsArgs(sw, "aac", height)})
+	return append(out, hlsAttempt{name: sw, videoCodec: sw, audioCodec: "aac"})
 }
 
-// runHLSAttempts walks the ladder until one rung produces a rendition.
-//
-// Between rungs the directory is emptied: the playlist is written incrementally
-// and would otherwise carry the abandoned attempt's segments. The error it
-// finally returns leads with the *last* failure — the software encode — because
-// that is the one that means the source is unusable; the earlier failures ride
-// along as context so a broken GPU is still visible in the log.
-func runHLSAttempts(ctx context.Context, ffmpegPath, dir string, source SourceFunc, attempts []hlsAttempt, log *slog.Logger) error {
-	var (
-		lastName string
-		lastErr  error
-		earlier  []string
-	)
-	for i, a := range attempts {
-		if i > 0 {
-			if clearErr := clearDir(dir); clearErr != nil {
-				return fmt.Errorf("derive hls: %s failed (%w) and clearing the partial output failed: %w", lastName, lastErr, clearErr)
-			}
-		}
-		err := runFFmpegIn(ctx, ffmpegPath, dir, source, a.args, log)
-		if err == nil {
-			return nil
-		}
-		if ctx.Err() != nil {
-			// Cancelled or out of time: nothing to learn from another attempt,
-			// and the next one would only be killed too.
-			return fmt.Errorf("derive hls: %s: %w", a.name, err)
-		}
-		if lastErr != nil {
-			earlier = append(earlier, lastName+": "+lastErr.Error())
-		}
-		lastName, lastErr = a.name, err
-		if i+1 < len(attempts) && log != nil {
-			log.Warn("hls attempt failed, falling back",
-				"entry", filepath.Base(dir), "attempt", a.name, "next", attempts[i+1].name, "err", err)
-		}
+// args builds this rung's ffmpeg command line for one run over the segment
+// grid, reading from the loopback source URL.
+func (a hlsAttempt) args(src string, height int, run hlsRun) []string {
+	if a.vaapi {
+		return hlsVAAPIArgs(a.device, a.audioCodec, height, src, run)
 	}
-	if len(earlier) > 0 {
-		return fmt.Errorf("derive hls: %s failed: %w (earlier attempts: %s)", lastName, lastErr, strings.Join(earlier, "; "))
-	}
-	return fmt.Errorf("derive hls: %s failed: %w", lastName, lastErr)
+	return hlsArgs(a.videoCodec, a.audioCodec, height, src, run)
 }
 
 // hlsVideoCodec copies a source that already is this rendition — the same
@@ -299,19 +274,32 @@ func isHEVC(codec string) bool {
 	return name == "hvc1" || name == "hev1" || name == "hevc" || name == "h265"
 }
 
+// hlsForceKeyFrames pins a keyframe on the shared 4 s grid. Without it the
+// encoder puts keyframes wherever the picture asks for them, the muxer cuts at
+// the nearest one, and two runs of the same video disagree about where segment
+// boundaries are — which is the one thing a stitched-together rendition cannot
+// survive.
+//
+// `t` here is the run's own output time, before -output_ts_offset, so a run
+// starting at a multiple of 4 s produces boundaries on the global grid.
+var hlsForceKeyFrames = "expr:gte(t,n_forced*" + strconv.Itoa(hlsSegmentSeconds) + ")"
+
 // hlsArgs builds the ffmpeg command line. The output names are relative
 // because the command runs with the entry directory as its working directory —
 // which is also what keeps them valid as playlist URLs.
 //
-// The source is read from stdin, as the audio variants are, so the API token
-// never reaches argv or a log line. A linear transcode never seeks backwards,
-// so an unseekable input costs nothing here.
-func hlsArgs(videoCodec, audioCodec string, height int) []string {
-	args := []string{
-		"-hide_banner", "-loglevel", "error",
-		"-i", "pipe:0",
+// The source is the loopback URL, not stdin: `-ss` on a pipe decodes and throws
+// away everything before the seek point, so resuming at 40:00 would first cost
+// 40 minutes of decoding. Over HTTP it is a byte range. The URL carries a
+// one-time nonce and no credential, so the TA token still never reaches argv or
+// a log line — see loopback.go.
+func hlsArgs(videoCodec, audioCodec string, height int, src string, run hlsRun) []string {
+	args := []string{"-hide_banner", "-loglevel", "error"}
+	args = append(args, hlsSeekArgs(run)...)
+	args = append(args,
+		"-i", src,
 		"-map", "0:v:0", "-map", "0:a:0",
-	}
+	)
 	switch videoCodec {
 	case "copy":
 		args = append(args, "-c:v", "copy")
@@ -333,6 +321,7 @@ func hlsArgs(videoCodec, audioCodec string, height int) []string {
 			// decodes, from the iPhone 7 and the Apple TV 4K on.
 			"-profile:v", "main", "-tag:v", "hvc1", "-pix_fmt", "yuv420p",
 			"-g", hlsGOP, "-keyint_min", hlsGOP,
+			"-force_key_frames", hlsForceKeyFrames,
 			// x265 writes its own banner and per-frame chatter to stderr,
 			// which -loglevel does not reach. Left on, it would be the first
 			// 500 characters of any error this encoder produces — that is,
@@ -350,9 +339,10 @@ func hlsArgs(videoCodec, audioCodec string, height int) []string {
 			// decodes in hardware.
 			"-profile:v", "high", "-level", "4.1", "-pix_fmt", "yuv420p",
 			"-g", hlsGOP, "-keyint_min", hlsGOP, "-sc_threshold", "0",
+			"-force_key_frames", hlsForceKeyFrames,
 		)
 	}
-	return hlsOutputArgs(args, audioCodec)
+	return hlsOutputArgs(args, audioCodec, run)
 }
 
 // hlsScaleFilter scales to the rendition's height. -2 keeps the width even
@@ -370,6 +360,11 @@ func hlsScaleFilter(height int) string {
 // most of the win is — a round trip through system memory per frame would give
 // much of it back.
 //
+// -force_key_frames is honoured here as it is on the software path: it is
+// applied by the generic encode layer, which flags the frame as a keyframe
+// before handing it to h264_vaapi/hevc_vaapi, not by anything the fixed-function
+// encoder chooses for itself.
+//
 // Deliberately absent, next to the software path:
 //
 //   - -pix_fmt yuv420p. The pixel format is the filter's format=nv12 (4:2:0,
@@ -381,20 +376,23 @@ func hlsScaleFilter(height int) string {
 //     it here and it does nothing — VAAPI has no scene-cut detection to turn
 //     off. -g/-keyint_min already pin the GOP the segmenter needs, so it is
 //     dropped rather than carried as a lie about what ran.
-func hlsVAAPIArgs(device, audioCodec string, height int) []string {
+func hlsVAAPIArgs(device, audioCodec string, height int, src string, run hlsRun) []string {
 	args := []string{
 		"-hide_banner", "-loglevel", "error",
 		// Hardware decode, with the decoded frames left on the GPU. A source
 		// the fixed-function decoder cannot take (10-bit AV1, say) fails here,
 		// which is exactly the failure the software fallback exists for.
 		"-hwaccel", "vaapi", "-hwaccel_device", device, "-hwaccel_output_format", "vaapi",
-		"-i", "pipe:0",
+	}
+	args = append(args, hlsSeekArgs(run)...)
+	args = append(args,
+		"-i", src,
 		"-map", "0:v:0", "-map", "0:a:0",
 		// The GPU-side hlsScaleFilter. w=-2 keeps the width even and the
 		// aspect ratio; min() means a source shorter than the rung is not
 		// upscaled.
-		"-vf", "scale_vaapi=w=-2:h='min(" + strconv.Itoa(height) + ",ih)':format=nv12",
-	}
+		"-vf", "scale_vaapi=w=-2:h='min("+strconv.Itoa(height)+",ih)':format=nv12",
+	)
 	if HLSCodecForHeight(height) == HLSCodecHEVC {
 		args = append(args,
 			"-c:v", "hevc_vaapi",
@@ -421,14 +419,35 @@ func hlsVAAPIArgs(device, audioCodec string, height int) []string {
 			"-profile:v", "high", "-level", "4.1",
 		)
 	}
-	args = append(args, "-g", hlsGOP, "-keyint_min", hlsGOP)
-	return hlsOutputArgs(args, audioCodec)
+	args = append(args, "-g", hlsGOP, "-keyint_min", hlsGOP, "-force_key_frames", hlsForceKeyFrames)
+	return hlsOutputArgs(args, audioCodec, run)
 }
 
-// hlsOutputArgs appends the half both paths share: the audio track and the HLS
-// muxer. Keeping it in one place is what stops the hardware path drifting into
-// a subtly different rendition from the software one.
-func hlsOutputArgs(args []string, audioCodec string) []string {
+// hlsSeekArgs is the input-side seek: `-ss` *before* `-i`, which over HTTP is a
+// byte-range request and lands in milliseconds. After `-i` it would be an
+// output-side seek — decode everything and throw it away — which is the cost
+// this whole design exists to avoid.
+func hlsSeekArgs(run hlsRun) []string {
+	if run.startSeconds() <= 0 {
+		return nil
+	}
+	return []string{"-ss", strconv.Itoa(run.startSeconds())}
+}
+
+// hlsOutputArgs appends the half every path shares: how much of the timeline
+// the run covers, the audio track and the HLS muxer. Keeping it in one place is
+// what stops the hardware path drifting into a subtly different rendition from
+// the software one.
+//
+// Deliberately absent: -output_ts_offset. It does not move the segments — the
+// muxer still numbers its fragments from zero — it writes an empty edit into
+// the init segment instead, and that edit then applies to every segment in the
+// rendition, including the ones another run wrote. The offset is applied to the
+// finished segments instead; see hlsrebase.go.
+func hlsOutputArgs(args []string, audioCodec string, run hlsRun) []string {
+	if d := run.durationSeconds(); d > 0 {
+		args = append(args, "-t", strconv.Itoa(d))
+	}
 	args = append(args, "-c:a", audioCodec)
 	if audioCodec != "copy" {
 		args = append(args, "-b:a", "160k", "-ac", "2")
@@ -436,24 +455,35 @@ func hlsOutputArgs(args []string, audioCodec string) []string {
 	return append(args,
 		"-threads", "0",
 		"-f", "hls",
-		"-hls_time", hlsSegmentSeconds,
-		// An event playlist grows as segments land and ffmpeg appends
-		// #EXT-X-ENDLIST when it finishes, which is exactly the progressive
-		// behaviour a viewer waiting on the first segment needs.
-		"-hls_playlist_type", "event",
+		// With a forced keyframe on every 4 s boundary the muxer cuts exactly
+		// there, so no split_by_time is needed: hls_time finds a keyframe
+		// waiting for it at each boundary.
+		"-hls_time", strconv.Itoa(hlsSegmentSeconds),
+		// Each run covers a fixed stretch of a playlist Flimm writes itself
+		// (index.m3u8), so ffmpeg's own list is a by-product read only for its
+		// segment durations. vod keeps every entry in it.
+		"-hls_playlist_type", "vod",
 		"-hls_segment_type", "fmp4",
 		// temp_file publishes each segment by rename, so a player never reads
-		// one that is still being written.
+		// one that is still being written — and a cancelled run leaves a .tmp
+		// rather than a truncated segment.
 		"-hls_flags", "independent_segments+temp_file",
-		"-hls_fmp4_init_filename", HLSInitName,
-		"-hls_segment_filename", "seg%05d.m4s",
-		"-y", HLSPlaylistName,
+		"-hls_fmp4_init_filename", run.initName,
+		// A run that has to be put back on the timeline writes its segments
+		// under a name the route will not serve, and each is published once it
+		// has been. A run that starts at zero writes them directly.
+		"-hls_segment_filename", run.segmentPattern(),
+		// Segments are numbered by their place on the shared grid, not by
+		// their place in this run.
+		"-start_number", strconv.Itoa(run.seg.Start),
+		"-y", run.playlist,
 	)
 }
 
 // HLSPlaylistReady reports whether the playlist can be handed to a player:
-// it exists and names at least one segment. Serving it earlier gives the
-// player an empty playlist, which some treat as a fatal error.
+// it exists and names at least one segment. Since Flimm writes the playlist
+// itself, complete, before the first run starts, this is true within
+// milliseconds of the job starting rather than after the first segment.
 func HLSPlaylistReady(dir string) bool {
 	b, err := readPlaylist(filepath.Join(dir, HLSPlaylistName))
 	if err != nil {
@@ -462,34 +492,12 @@ func HLSPlaylistReady(dir string) bool {
 	return bytes.Contains(b, []byte(".m4s"))
 }
 
-// ensureEndList appends #EXT-X-ENDLIST when ffmpeg did not. It does with
-// -hls_playlist_type event, but a player left waiting for the tag would stall
-// forever at the end of the video, so this is not left to trust.
-func ensureEndList(playlist string) error {
-	b, err := readPlaylist(playlist)
-	if err != nil {
-		return fmt.Errorf("hls: read playlist: %w", err)
-	}
-	if bytes.Contains(b, []byte("#EXT-X-ENDLIST")) {
-		return nil
-	}
-	f, err := os.OpenFile(playlist, os.O_APPEND|os.O_WRONLY, 0o600) //nolint:gosec // path built from the cache dir
-	if err != nil {
-		return fmt.Errorf("hls: close playlist: %w", err)
-	}
-	defer f.Close()
-	if _, err := f.WriteString("#EXT-X-ENDLIST\n"); err != nil {
-		return fmt.Errorf("hls: close playlist: %w", err)
-	}
-	return nil
-}
-
 // maxPlaylistBytes caps a playlist read. An hour of 4 s segments is ~30 KB, so
 // anything near this is not a playlist.
 const maxPlaylistBytes = 4 << 20
 
 func readPlaylist(path string) ([]byte, error) {
-	f, err := os.Open(path) //nolint:gosec // path built from the cache dir and a fixed name
+	f, err := os.Open(path) //nolint:gosec // path built from the cache dir
 	if err != nil {
 		return nil, err
 	}
@@ -512,22 +520,22 @@ func clearDir(dir string) error {
 	return nil
 }
 
-// runFFmpegIn pipes the source through ffmpeg with dir as the working
-// directory, so the muxer's relative output names land inside the cache entry.
-func runFFmpegIn(ctx context.Context, ffmpegPath, dir string, source SourceFunc, args []string, log *slog.Logger) error {
-	src, err := source(ctx)
-	if err != nil {
-		return fmt.Errorf("open source: %w", err)
-	}
-	defer src.Close()
-
-	// ffmpegPath comes from configuration and every argument is a literal —
-	// no request data, and no token, reaches argv.
-	cmd := exec.CommandContext(ctx, ffmpegPath, args...) //nolint:gosec // G204: operator-supplied binary, fixed args
+// runFFmpegIn runs ffmpeg with dir as the working directory, so the muxer's
+// relative output names land inside the cache entry. Nothing is piped in: the
+// input is the loopback URL in args.
+func runFFmpegIn(ctx context.Context, ffmpegPath, dir string, args []string, log *slog.Logger) error {
+	// ffmpegPath comes from configuration and every argument is a literal, a
+	// number this package computed or a loopback URL with a random nonce — no
+	// request data, and no token, reaches argv.
+	cmd := exec.CommandContext(ctx, ffmpegPath, args...) //nolint:gosec // G204: operator-supplied binary, generated args
 	cmd.Dir = dir
-	cmd.Stdin = src
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
+	// Without this, killing a run waits for every process holding the stderr
+	// pipe to let go of it — including anything the shutting-down ffmpeg
+	// forked. Re-aiming a run cancels ffmpeg routinely now, so a job goroutine
+	// pinned on a stray child is a real way to lose a transcode slot forever.
+	cmd.WaitDelay = 10 * time.Second
 	runErr := cmd.Run()
 
 	if msg := strings.TrimSpace(stderr.String()); msg != "" && log != nil {
@@ -544,9 +552,9 @@ func runFFmpegIn(ctx context.Context, ffmpegPath, dir string, source SourceFunc,
 }
 
 // secretPattern matches the shapes a credential could take if one ever reached
-// ffmpeg's stderr. Nothing should: the source is piped in on stdin. This is the
-// second lock on the door — an error message is not a place to learn the TA
-// token from.
+// ffmpeg's stderr. Nothing should: the loopback source holds the token and
+// hands ffmpeg a nonce. This is the second lock on the door — an error message
+// is not a place to learn the TA token from.
 var secretPattern = regexp.MustCompile(`(?i)(authorization:.*|\btoken[=:]\s*\S+|\btoken\s+[A-Za-z0-9._~+/-]{8,})`)
 
 func scrubSecrets(s string) string { return secretPattern.ReplaceAllString(s, "[redacted]") }

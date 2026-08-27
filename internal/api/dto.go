@@ -79,6 +79,20 @@ type HLSVariantInfo struct {
 	URL    string `json:"url"`
 	State  string `json:"state"` // pending|running|done|failed
 	Codec  string `json:"codec"` // h264|hevc
+	// Progress is the fraction of the rendition's segments that exist, 0..1.
+	// It is not "how far playback can get": the playlist is complete from the
+	// first request and segments are filled in wherever the viewer is, so this
+	// is only how much of the whole video has been transcoded. 1 for a
+	// finished rendition, 0 for one nothing has asked for.
+	Progress float64 `json:"hls_progress"`
+}
+
+// HLSStartResponse is what POST /videos/{id}/hls answers with: which rendition
+// was started or re-aimed, and where it stands.
+type HLSStartResponse struct {
+	State    string  `json:"state"` // pending|running|done|failed
+	Height   int     `json:"height"`
+	Progress float64 `json:"hls_progress"`
 }
 
 type VideoDetail struct {

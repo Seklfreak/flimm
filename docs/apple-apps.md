@@ -26,7 +26,9 @@ What is there:
   the gitignored `Config/Secrets.xcconfig`.
 - `apple/Shared` — the app code that is genuinely platform-neutral and is
   compiled into both targets: `AppModel`, `Pager`/`PagerStore`, the `Fmt`
-  formatting helpers, the palette and the authenticated `MediaImage`. It is
+  formatting helpers, the palette, the authenticated `MediaImage` and
+  `RenditionSteering`, which keeps the server's transcode pointed where the
+  viewer is. It is
   the *only* place iOS and tvOS share view-layer code; everything else is
   written twice because a 10-foot focus-driven interface is not the phone's
   layout scaled up. Anything not UI at all belongs in `FlimmKit` instead.
@@ -273,7 +275,9 @@ exercise.
 - **Resume is the default action.** Any saved `position` on an unwatched video
   resumes; there is no threshold to reimplement and no `t=` parameter needed.
   Show where it resumed from and offer "start over"
-  (`DELETE /videos/{id}/progress`).
+  (`DELETE /videos/{id}/progress`). On the compatible-rendition path the same
+  position is also what `POST /videos/{id}/hls?from=` is given, so the server
+  encodes the part being resumed to first.
 - **Heartbeat** `POST /videos/{id}/progress` every ~10s while playing, and on
   pause, seek, background and termination. The server decides what counts as
   watched (≥90% or ≤30s remaining) and what is too brief to record at all
@@ -357,16 +361,21 @@ that ladder**, and this is how it behaves:
   The subtle case is deliberate: a **natively decodable** archive with an
   explicit `.height(720)` plays the 720p rendition, because that is a request
   for less data, not a mistake. Only `.auto` reads "playable" as "best".
-- **Start the one you will play.** `POST /videos/{id}/hls?height=<h>` runs
-  before the URL is handed to `AVPlayer` — `APIClient.startHLS(_:height:)`,
-  with the height the gate chose and no other. The server transcodes one job at
-  a time, so warming the whole ladder would only make the played rung later.
+- **Start the one you will play, where you will start playing it.**
+  `POST /videos/{id}/hls?height=<h>&from=<seconds>` runs before the URL is
+  handed to `AVPlayer` — `APIClient.startHLS(_:height:from:)`, with the height
+  the gate chose and no other, and with the resume position the server itself
+  handed over (0 for "start over"). `from` is what makes resuming instant: the
+  encoder produces that part of the video first instead of the forty minutes
+  nobody is going to watch. The server transcodes one job at a time, so warming
+  the whole ladder would only make the played rung later.
 - **A switch is a reload.** These are independent playlists, not one master
   with several `EXT-X-STREAM-INF` renditions, so `setVideoQuality(_:)` on both
-  watch models remembers the clock, starts the new height's job, swaps the
-  `AVPlayerItem` and seeks back — playback carries on where it was. A rung the
-  server has not made yet raises the same "Preparing a compatible version…"
-  overlay a fresh video does, with the same retry loop behind it.
+  watch models remembers the clock, starts the new height's job at that
+  position, swaps the `AVPlayerItem` and seeks back once it is ready —
+  playback carries on where it was. A rung the server has not made yet raises
+  the same "Preparing a compatible version…" overlay a fresh video does, with
+  the same retry loop behind it.
 - **Where the picker is.** On iOS, a *Quality* submenu in the player's options
   menu: `Auto`, then `Source · 2160p · AV1` as a disabled line naming what Auto
   plays when the archive decodes here, then a row per rung
@@ -404,9 +413,9 @@ the iOS and tvOS players act on the same one:
    `AVPlayer` with
    the same `AVURLAssetHTTPHeaderFieldsKey` Bearer header every other media
    route takes. AVFoundation re-sends those headers on **every** request the
-   asset makes — the playlist, its re-reads as the EVENT playlist grows, the
-   fMP4 init segment and each media segment — which is what lets the whole
-   route sit behind the one media gate. That is not folklore:
+   asset makes — the playlist, any re-read of it, the fMP4 init segment and
+   each media segment — which is what lets the whole route sit behind the one
+   media gate. That is not folklore:
    `FlimmKitTests/HLSHeaderForwardingTests` builds a real fMP4 HLS stream with
    ffmpeg, serves it from a local socket server that records every request,
    plays it, and asserts the header on all of them. (The test skips itself
@@ -418,9 +427,16 @@ the iOS and tvOS players act on the same one:
 What the viewer sees on the `.hls` path is a spinner and **"Preparing a
 compatible version…"** over black — on iOS in the player stage, on tvOS in the
 `AVPlayerViewController` content overlay — until the item reports
-`readyToPlay`. It stays up across the retries, because a playlist whose first
-segment does not exist yet answers **503 with `Retry-After: 5`** and `AVPlayer`
-has no notion of coming back later: the item simply fails
+`readyToPlay`. Where the server has said how far the encoder has got, the
+overlay says it too: **"Preparing a compatible version… 37%"**, from
+`HLSStatus.progress`, polled with the same idempotent `POST` every 5 s while
+the job is `running` and the player has nothing to show. It stops as soon as
+the rendition plays; `0%` is never shown, because a job that has reported
+nothing reads as stuck.
+
+The overlay also stays up across the retries, because a playlist the server
+cannot open — the job failed to start — answers **503 with `Retry-After: 5`**
+and `AVPlayer` has no notion of coming back later: the item simply fails
 (`NSURLErrorDomain -1008` wrapping `CoreMediaErrorDomain -16849`, observed on
 `AVPlayerItem.status`, *not* through
 `failedToPlayToEndTimeNotification`, which never fires for a playlist-level
@@ -432,20 +448,38 @@ one. Where it is cheap to say so — the iOS options menu, the tvOS Info panel �
 the UI names the rendition that is playing: `1080p · compatible version`.
 
 Chapters, SponsorBlock and subtitles are untouched: they are in seconds
-against the archived duration, and that duration stays authoritative because a
-growing EVENT playlist reports only what has been transcoded so far — adopting
-it would shrink the scrubber to a few seconds, so the players do not.
+against the archived duration, and the rendition agrees with it — the playlist
+is a **complete VOD one from the very first request**, every segment listed and
+`#EXT-X-ENDLIST` on the end, so the item's duration is the video's own.
 
-**Seeking is the one thing the rendition genuinely limits.** Until the
-transcode has produced that far, seeking past it is *clamped*, not honoured —
-including the resume seek, which is exactly the case that matters, since a
-half-watched video is the likeliest one to be reopened. Both players re-try an
-unlanded resume on every tick until the playlist has grown far enough, and
-until it lands they report *the position being sought* as the heartbeat rather
-than the player's clock. Without that, resuming an hour-long video at 40
-minutes would post "3 minutes" a few seconds later and overwrite a good
-position with a worse one. An explicit seek by the viewer replaces the pending
-resume, so nobody is dragged back.
+**Seeking is a normal seek.** Because the playlist is complete, `AVPlayer` will
+seek anywhere in it whatever the encoder has reached; a segment that does not
+exist yet blocks server-side (up to ~60 s) while it is made rather than 404ing,
+so the player just buffers and the existing spinner covers it. That is what
+resume rides on: the position the server handed over goes out as `from` on
+`POST /videos/{id}/hls`, so the encoder starts *there*, and the player issues
+**one** seek when the item reports `readyToPlay`, exactly as it does on the
+native path. Resuming an hour-long video at 40 minutes plays at 40 minutes.
+
+A seek the viewer makes is steered the same way: `RenditionSteering` (shared by
+both players) re-points the encoder with another `from` — debounced by a
+second, because dragging a scrubber is dozens of seeks and only where it
+settles counts, and skipped when the rendition is already `done` or the target
+is where the encoder is pointed anyway. It deliberately does **not** model what
+has been produced: the server knows which segments exist and whether the run is
+already heading for the one being asked for, and ignores a `from` it does not
+need. `progress` — `hls_progress` on the wire, on each `hls_variants` entry and
+on the `POST /videos/{id}/hls` response — is the fraction of the whole rendition
+that exists. It is a number to count up in the overlay, not one to infer a
+produced region from.
+
+None of the old compensations survive: `trustsItemDuration` is gone (there is
+one duration now), the per-tick re-seek loop that waited for an EVENT playlist
+to grow is gone, and the heartbeat reports the player's clock rather than the
+position being sought. The one guard that stays is that an item which has not
+reached `readyToPlay` has no clock at all — it reads 0 — so until it does, both
+players report the position playback is about to start from, which is the value
+the server already holds.
 
 Audio-only stays as the cheap fallback and as the music-playlist path:
 `audio_aac_url` (`GET /media/audio/{id}.m4a`) is the same audio as AAC in MP4.
