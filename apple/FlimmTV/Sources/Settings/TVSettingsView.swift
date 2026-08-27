@@ -170,8 +170,18 @@ struct TVSettingsView: View {
             LabeledContent("Server", value: session.server?.baseURL.host() ?? "—")
             LabeledContent("Server version", value: session.server?.config.version ?? "—")
             LabeledContent("App version", value: TVConfig.displayVersion)
+            if !session.requiresSignIn {
+                Text("""
+                This server runs with authentication disabled: no sign-in, and \
+                everyone who can reach it shares this account.
+                """)
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+            }
             Button("Change server") { confirmChangeServer = true }
-            Button("Sign out", role: .destructive) { confirmSignOut = true }
+            if session.requiresSignIn {
+                Button("Sign out", role: .destructive) { confirmSignOut = true }
+            }
         }
     }
 

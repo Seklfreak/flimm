@@ -22,9 +22,11 @@ public enum ServerProbeError: Error, Sendable, Equatable {
     case unreachable(String)
     /// Something answered, but it is not a Flimm backend.
     case notAFlimmServer
-    /// A Flimm backend that publishes no OIDC issuer or client id — typically
-    /// running with `AUTH_DISABLED=true`. A native client cannot sign in until
-    /// the deployment is configured.
+    /// A Flimm backend that wants authentication but publishes no OIDC issuer
+    /// or client id: half-configured, and nothing can sign in to it. A server
+    /// running deliberately open (`AUTH_DISABLED=true`, which it says so on
+    /// `/api/v1/config`) is not this — that one is connected to without a
+    /// sign-in step at all.
     case oidcNotConfigured
 
     public var errorMessage: String {
@@ -92,7 +94,7 @@ public struct ServerProbe: Sendable {
         // so an empty one means we decoded something that merely looked like
         // the right JSON.
         guard !config.appName.isEmpty else { throw ServerProbeError.notAFlimmServer }
-        guard config.hasOIDC else { throw ServerProbeError.oidcNotConfigured }
+        guard config.isUsable else { throw ServerProbeError.oidcNotConfigured }
         return FlimmServer(baseURL: baseURL, config: config)
     }
 }

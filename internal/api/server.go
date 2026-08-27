@@ -272,13 +272,31 @@ func (s *Server) Router() http.Handler {
 	return r
 }
 
+// ConfigResponse is GET /api/v1/config: everything a client needs beyond the
+// server URL.
+//
+// AuthDisabled is said out loud rather than left to be inferred from empty
+// OIDC fields, because the two cases are opposites for a client: a server
+// deliberately running without auth is one to connect to, while a server that
+// wants auth but publishes no issuer is broken and must not be.
+type ConfigResponse struct {
+	AppName      string `json:"app_name"`
+	OIDCIssuer   string `json:"oidc_issuer"`
+	OIDCClientID string `json:"oidc_client_id"`
+	Version      string `json:"version"`
+	AuthDisabled bool   `json:"auth_disabled"`
+}
+
 // getConfig is unauthenticated so native clients need only the server URL.
 func (s *Server) getConfig(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]string{
-		"app_name":       s.appName,
-		"oidc_issuer":    s.oidcIssuer,
-		"oidc_client_id": s.oidcClientID,
-		"version":        BuildVersion,
+	writeJSON(w, http.StatusOK, ConfigResponse{
+		AppName:      s.appName,
+		OIDCIssuer:   s.oidcIssuer,
+		OIDCClientID: s.oidcClientID,
+		Version:      BuildVersion,
+		// AUTH_DISABLED is exactly "there is no verifier": every request is
+		// the fixed dev user.
+		AuthDisabled: s.verifier == nil,
 	})
 }
 

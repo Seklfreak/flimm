@@ -1,0 +1,615 @@
+package faketa
+
+import (
+	"encoding/json"
+	"log/slog"
+	"net/http"
+	"os"
+	"sort"
+	"strconv"
+	"strings"
+	"sync"
+
+	"github.com/Seklfreak/flimm/internal/ta"
+)
+
+// Server answers the subset of the TubeArchivist API that Flimm calls, plus
+// the nginx-style /media/ paths its documents point at.
+//
+// Watch state lives here and only here: nothing is written to a real archive,
+// which is the point of running against this instead of a live TA.
+type Server struct {
+	catalogue *Catalogue
+	media     *Media
+	log       *slog.Logger
+
+	mu       sync.RWMutex
+	watched  map[string]bool
+	position map[string]float64
+	// custom holds playlists created through the API, in creation order.
+	custom []*ta.Playlist
+}
+
+func NewServer(catalogue *Catalogue, media *Media, log *slog.Logger) *Server {
+	return &Server{
+		catalogue: catalogue,
+		media:     media,
+		log:       log,
+		watched:   map[string]bool{},
+		position:  map[string]float64{},
+	}
+}
+
+func (s *Server) Handler() http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /api/ping/", s.ping)
+	mux.HandleFunc("GET /api/video/", s.listVideos)
+	mux.HandleFunc("GET /api/video/{id}/", s.getVideo)
+	mux.HandleFunc("GET /api/video/{id}/similar/", s.similar)
+	mux.HandleFunc("GET /api/video/{id}/comment/", s.comments)
+	mux.HandleFunc("POST /api/video/{id}/progress/", s.setProgress)
+	mux.HandleFunc("DELETE /api/video/{id}/progress/", s.deleteProgress)
+	mux.HandleFunc("POST /api/watched/", s.setWatched)
+	mux.HandleFunc("GET /api/channel/", s.listChannels)
+	mux.HandleFunc("GET /api/channel/{id}/", s.getChannel)
+	mux.HandleFunc("GET /api/playlist/", s.listPlaylists)
+	mux.HandleFunc("POST /api/playlist/custom/", s.createPlaylist)
+	mux.HandleFunc("POST /api/playlist/custom/{id}/", s.playlistAction)
+	mux.HandleFunc("GET /api/playlist/{id}/", s.getPlaylist)
+	mux.HandleFunc("DELETE /api/playlist/{id}/", s.deletePlaylist)
+	mux.HandleFunc("GET /api/search/", s.search)
+	mux.HandleFunc("GET /media/", s.serveMedia)
+	// TA's thumbnail cache, which Flimm proxies /media/thumb/* to.
+	mux.HandleFunc("GET /cache/", s.serveThumb)
+	return s.logging(mux)
+}
+
+func (s *Server) logging(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		s.log.Debug("request", "method", r.Method, "path", r.URL.Path, "query", r.URL.RawQuery)
+		next.ServeHTTP(w, r)
+	})
+}
+
+// ---- videos ----
+
+func (s *Server) ping(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]string{"response": "pong"})
+}
+
+func (s *Server) listVideos(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	videos := s.videos()
+
+	if channel := q.Get("channel"); channel != "" {
+		videos = filter(videos, func(v ta.Video) bool { return v.Channel.ChannelID == channel })
+	}
+	if playlist := q.Get("playlist"); playlist != "" {
+		ids := map[string]bool{}
+		if p := s.playlist(playlist); p != nil {
+			for _, e := range p.PlaylistEntries {
+				ids[e.YoutubeID] = true
+			}
+		}
+		videos = filter(videos, func(v ta.Video) bool { return ids[v.YoutubeID] })
+	}
+	switch q.Get("watch") {
+	case "unwatched":
+		videos = filter(videos, func(v ta.Video) bool { return !v.Player.Watched })
+	case "watched":
+		videos = filter(videos, func(v ta.Video) bool { return v.Player.Watched })
+	}
+	// TA's `type` filter is the list's own: no filter means videos only, the
+	// way the real one behaves for a channel page.
+	if kind := q.Get("type"); kind != "" {
+		videos = filter(videos, func(v ta.Video) bool { return v.VidType == kind })
+	}
+	sortVideos(videos, q.Get("sort"), q.Get("order"))
+
+	pageSize := intParam(q.Get("page_size"), 12)
+	page := intParam(q.Get("page"), 1)
+	total := len(videos)
+	start := (page - 1) * pageSize
+	end := start + pageSize
+	if start > total {
+		start = total
+	}
+	if end > total {
+		end = total
+	}
+	last := 0
+	if pageSize > 0 && total > 0 {
+		last = (total + pageSize - 1) / pageSize
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data": videos[start:end],
+		"paginate": ta.Paginate{
+			PageSize:    pageSize,
+			PageFrom:    start,
+			CurrentPage: page,
+			LastPage:    last,
+			TotalHits:   total,
+		},
+	})
+}
+
+func (s *Server) getVideo(w http.ResponseWriter, r *http.Request) {
+	v, ok := s.video(r.PathValue("id"))
+	if !ok {
+		notFound(w)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": v})
+}
+
+func (s *Server) similar(w http.ResponseWriter, r *http.Request) {
+	v, ok := s.video(r.PathValue("id"))
+	if !ok {
+		notFound(w)
+		return
+	}
+	out := filter(s.videos(), func(other ta.Video) bool {
+		return other.Channel.ChannelID == v.Channel.ChannelID && other.YoutubeID != v.YoutubeID
+	})
+	writeJSON(w, http.StatusOK, map[string]any{"data": out})
+}
+
+func (s *Server) comments(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.video(r.PathValue("id")); !ok {
+		notFound(w)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": []map[string]any{
+		{
+			"comment_id":        "c1",
+			"comment_text":      "First. Also: this archive is not real.",
+			"comment_author":    "@someone",
+			"comment_likecount": 12,
+			"comment_time_text": "2 days ago",
+		},
+		{
+			"comment_id":        "c2",
+			"comment_text":      "The timer in the picture is the actual position, which is handy for checking a seek.",
+			"comment_author":    "@someone-else",
+			"comment_likecount": 3,
+			"comment_time_text": "1 day ago",
+		},
+	}})
+}
+
+func (s *Server) setProgress(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.video(r.PathValue("id")); !ok {
+		notFound(w)
+		return
+	}
+	var body struct {
+		Position float64 `json:"position"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&body)
+	s.mu.Lock()
+	s.position[r.PathValue("id")] = body.Position
+	s.mu.Unlock()
+	writeJSON(w, http.StatusOK, map[string]any{"position": body.Position})
+}
+
+func (s *Server) deleteProgress(w http.ResponseWriter, r *http.Request) {
+	s.mu.Lock()
+	delete(s.position, r.PathValue("id"))
+	s.mu.Unlock()
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// setWatched takes a video, channel or playlist id, exactly as TA does.
+func (s *Server) setWatched(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		ID        string `json:"id"`
+		IsWatched bool   `json:"is_watched"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.ID == "" {
+		http.Error(w, `{"error":"bad request"}`, http.StatusBadRequest)
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	switch {
+	case strings.HasPrefix(body.ID, "UC"):
+		for _, v := range s.catalogue.Videos {
+			if v.Channel.ChannelID == body.ID {
+				s.watched[v.YoutubeID] = body.IsWatched
+			}
+		}
+	case strings.HasPrefix(body.ID, "PL"):
+		if p := s.playlistLocked(body.ID); p != nil {
+			for _, e := range p.PlaylistEntries {
+				s.watched[e.YoutubeID] = body.IsWatched
+			}
+		}
+	default:
+		s.watched[body.ID] = body.IsWatched
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"success": true})
+}
+
+// ---- channels and playlists ----
+
+func (s *Server) listChannels(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data":     s.catalogue.Channels,
+		"paginate": ta.Paginate{PageSize: len(s.catalogue.Channels), CurrentPage: 1, LastPage: 1, TotalHits: len(s.catalogue.Channels)},
+	})
+}
+
+func (s *Server) getChannel(w http.ResponseWriter, r *http.Request) {
+	for _, ch := range s.catalogue.Channels {
+		if ch.ChannelID == r.PathValue("id") {
+			writeJSON(w, http.StatusOK, map[string]any{"data": ch})
+			return
+		}
+	}
+	notFound(w)
+}
+
+func (s *Server) listPlaylists(w http.ResponseWriter, r *http.Request) {
+	all := s.playlists()
+	if kind := r.URL.Query().Get("playlist_type"); kind != "" {
+		all = filter(all, func(p ta.Playlist) bool { return p.PlaylistType == kind })
+	}
+	if channel := r.URL.Query().Get("channel"); channel != "" {
+		all = filter(all, func(p ta.Playlist) bool { return p.PlaylistChannelID == channel })
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data":     all,
+		"paginate": ta.Paginate{PageSize: len(all), CurrentPage: 1, LastPage: 1, TotalHits: len(all)},
+	})
+}
+
+func (s *Server) getPlaylist(w http.ResponseWriter, r *http.Request) {
+	p := s.playlist(r.PathValue("id"))
+	if p == nil {
+		notFound(w)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": p})
+}
+
+func (s *Server) createPlaylist(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		PlaylistName string `json:"playlist_name"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.PlaylistName == "" {
+		http.Error(w, `{"error":"bad request"}`, http.StatusBadRequest)
+		return
+	}
+	s.mu.Lock()
+	p := &ta.Playlist{
+		PlaylistID:     "PL-fake-custom-" + strconv.Itoa(len(s.custom)+1),
+		PlaylistName:   body.PlaylistName,
+		PlaylistType:   "custom",
+		PlaylistActive: true,
+	}
+	s.custom = append(s.custom, p)
+	s.mu.Unlock()
+	writeJSON(w, http.StatusOK, map[string]any{"data": p})
+}
+
+// playlistAction runs create|remove|up|down|top|bottom, the six TA supports.
+func (s *Server) playlistAction(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Action  string `json:"action"`
+		VideoID string `json:"video_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, `{"error":"bad request"}`, http.StatusBadRequest)
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	p := s.playlistLocked(r.PathValue("id"))
+	if p == nil {
+		notFound(w)
+		return
+	}
+	index := -1
+	for i, e := range p.PlaylistEntries {
+		if e.YoutubeID == body.VideoID {
+			index = i
+			break
+		}
+	}
+	switch body.Action {
+	case "create":
+		if index < 0 {
+			if v, ok := s.videoLocked(body.VideoID); ok {
+				p.PlaylistEntries = append(p.PlaylistEntries, ta.PlaylistEntry{
+					YoutubeID: v.YoutubeID, Title: v.Title, Uploader: v.Channel.ChannelName, Downloaded: true,
+				})
+			}
+		}
+	case "remove":
+		if index >= 0 {
+			p.PlaylistEntries = append(p.PlaylistEntries[:index], p.PlaylistEntries[index+1:]...)
+		}
+	case "up", "down", "top", "bottom":
+		if index >= 0 {
+			move(p, index, body.Action)
+		}
+	}
+	for i := range p.PlaylistEntries {
+		p.PlaylistEntries[i].Idx = i
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"success": true})
+}
+
+func move(p *ta.Playlist, index int, action string) {
+	entry := p.PlaylistEntries[index]
+	rest := append(append([]ta.PlaylistEntry{}, p.PlaylistEntries[:index]...), p.PlaylistEntries[index+1:]...)
+	target := index
+	switch action {
+	case "up":
+		target = max(0, index-1)
+	case "down":
+		target = min(len(rest), index+1)
+	case "top":
+		target = 0
+	case "bottom":
+		target = len(rest)
+	}
+	p.PlaylistEntries = append(rest[:target], append([]ta.PlaylistEntry{entry}, rest[target:]...)...)
+}
+
+func (s *Server) deletePlaylist(w http.ResponseWriter, r *http.Request) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i, p := range s.custom {
+		if p.PlaylistID == r.PathValue("id") {
+			s.custom = append(s.custom[:i], s.custom[i+1:]...)
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+	}
+	notFound(w)
+}
+
+// ---- search ----
+
+func (s *Server) search(w http.ResponseWriter, r *http.Request) {
+	query := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("query")))
+	// TA's prefixes narrow the search to one index.
+	only := ""
+	for _, prefix := range []string{"video:", "channel:", "playlist:", "full:"} {
+		if strings.HasPrefix(query, prefix) {
+			only = strings.TrimSuffix(prefix, ":")
+			query = strings.TrimSpace(strings.TrimPrefix(query, prefix))
+		}
+	}
+	out := map[string]any{
+		"video_results":    []ta.Video{},
+		"channel_results":  []ta.Channel{},
+		"playlist_results": []ta.Playlist{},
+		"fulltext_results": []ta.SubtitleHit{},
+	}
+	if query != "" {
+		if only == "" || only == "video" {
+			out["video_results"] = filter(s.videos(), func(v ta.Video) bool {
+				return strings.Contains(strings.ToLower(v.Title), query)
+			})
+		}
+		if only == "" || only == "channel" {
+			out["channel_results"] = filter(s.catalogue.Channels, func(c ta.Channel) bool {
+				return strings.Contains(strings.ToLower(c.ChannelName), query)
+			})
+		}
+		if only == "" || only == "playlist" {
+			out["playlist_results"] = filter(s.playlists(), func(p ta.Playlist) bool {
+				return strings.Contains(strings.ToLower(p.PlaylistName), query)
+			})
+		}
+		if only == "" || only == "full" {
+			out["fulltext_results"] = s.subtitleHits(query)
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"results": out})
+}
+
+// subtitleHits searches the generated WebVTT lines, which name their own
+// timestamp — so a hit that says 0:20 really is at 0:20.
+func (s *Server) subtitleHits(query string) []ta.SubtitleHit {
+	hits := []ta.SubtitleHit{}
+	for _, v := range s.videos() {
+		for start := 0.0; start < v.Player.Duration; start += 5 {
+			line := "This line starts at " + clock(start) + "."
+			if !strings.Contains(strings.ToLower(line), query) {
+				continue
+			}
+			hits = append(hits, ta.SubtitleHit{
+				YoutubeID: v.YoutubeID, Title: v.Title, SubtitleLine: line, SubtitleStart: start,
+			})
+			if len(hits) >= 20 {
+				return hits
+			}
+		}
+	}
+	return hits
+}
+
+// ---- media ----
+
+// serveMedia answers the nginx paths TA's documents point at: the video
+// files, the WebVTT tracks and the thumbnails.
+func (s *Server) serveMedia(w http.ResponseWriter, r *http.Request) {
+	name := strings.TrimPrefix(r.URL.Path, "/media/")
+	switch {
+	case strings.HasSuffix(name, ".mp4"):
+		id := strings.TrimSuffix(pathBase(name), ".mp4")
+		path := s.media.Path(id)
+		if path == "" {
+			notFound(w)
+			return
+		}
+		f, err := os.Open(path) //nolint:gosec // path comes from the generator, not the request
+		if err != nil {
+			notFound(w)
+			return
+		}
+		defer f.Close()
+		info, err := f.Stat()
+		if err != nil {
+			notFound(w)
+			return
+		}
+		w.Header().Set("Content-Type", "video/mp4")
+		// ServeContent gives us Range support, which every player needs.
+		http.ServeContent(w, r, path, info.ModTime(), f)
+	case strings.HasSuffix(name, ".vtt"):
+		id := strings.TrimSuffix(strings.TrimSuffix(pathBase(name), ".vtt"), ".en")
+		v, ok := s.video(id)
+		if !ok {
+			notFound(w)
+			return
+		}
+		w.Header().Set("Content-Type", "text/vtt; charset=utf-8")
+		_, _ = w.Write([]byte(Subtitles(v.Player.Duration)))
+	case strings.HasSuffix(name, ".jpg"):
+		w.Header().Set("Content-Type", "image/jpeg")
+		_, _ = w.Write(thumbnailJPEG(pathBase(name)))
+	default:
+		notFound(w)
+	}
+}
+
+// serveThumb answers TA's /cache/… thumbnail paths: videos sharded by the
+// first character of the id, channels with _thumb/_banner suffixes, and
+// playlists. Every one of them gets a generated card.
+func (s *Server) serveThumb(w http.ResponseWriter, r *http.Request) {
+	if !strings.HasSuffix(r.URL.Path, ".jpg") {
+		notFound(w)
+		return
+	}
+	w.Header().Set("Content-Type", "image/jpeg")
+	w.Header().Set("Cache-Control", "private, max-age=86400")
+	_, _ = w.Write(thumbnailJPEG(pathBase(r.URL.Path)))
+}
+
+func pathBase(name string) string {
+	if i := strings.LastIndex(name, "/"); i >= 0 {
+		return name[i+1:]
+	}
+	return name
+}
+
+// ---- state ----
+
+// videos returns the catalogue with the live watch state folded in, which is
+// what makes "mark seen" and resume behave like the real thing.
+func (s *Server) videos() []ta.Video {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]ta.Video, 0, len(s.catalogue.Videos))
+	for _, v := range s.catalogue.Videos {
+		out = append(out, s.applyStateLocked(v))
+	}
+	return out
+}
+
+func (s *Server) video(id string) (ta.Video, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.videoLocked(id)
+}
+
+func (s *Server) videoLocked(id string) (ta.Video, bool) {
+	for _, v := range s.catalogue.Videos {
+		if v.YoutubeID == id {
+			return s.applyStateLocked(v), true
+		}
+	}
+	return ta.Video{}, false
+}
+
+func (s *Server) applyStateLocked(v ta.Video) ta.Video {
+	v.Player.Watched = s.watched[v.YoutubeID]
+	if position, ok := s.position[v.YoutubeID]; ok && v.Player.Duration > 0 {
+		v.Player.Progress = position / v.Player.Duration
+	}
+	return v
+}
+
+func (s *Server) playlists() []ta.Playlist {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := append([]ta.Playlist{}, s.catalogue.Playlists...)
+	for _, p := range s.custom {
+		out = append(out, *p)
+	}
+	return out
+}
+
+func (s *Server) playlist(id string) *ta.Playlist {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	p := s.playlistLocked(id)
+	if p == nil {
+		return nil
+	}
+	copied := *p
+	return &copied
+}
+
+func (s *Server) playlistLocked(id string) *ta.Playlist {
+	for i := range s.catalogue.Playlists {
+		if s.catalogue.Playlists[i].PlaylistID == id {
+			return &s.catalogue.Playlists[i]
+		}
+	}
+	for _, p := range s.custom {
+		if p.PlaylistID == id {
+			return p
+		}
+	}
+	return nil
+}
+
+// ---- helpers ----
+
+func sortVideos(videos []ta.Video, field, order string) {
+	less := func(a, b ta.Video) bool { return a.Published > b.Published }
+	switch field {
+	case "duration":
+		less = func(a, b ta.Video) bool { return a.Player.Duration < b.Player.Duration }
+	case "downloaded":
+		less = func(a, b ta.Video) bool { return a.DateDownloaded > b.DateDownloaded }
+	}
+	sort.SliceStable(videos, func(i, j int) bool {
+		if order == "asc" {
+			return less(videos[j], videos[i])
+		}
+		return less(videos[i], videos[j])
+	})
+}
+
+func filter[T any](in []T, keep func(T) bool) []T {
+	out := make([]T, 0, len(in))
+	for _, v := range in {
+		if keep(v) {
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
+func intParam(raw string, fallback int) int {
+	if n, err := strconv.Atoi(raw); err == nil && n > 0 {
+		return n
+	}
+	return fallback
+}
+
+func writeJSON(w http.ResponseWriter, status int, body any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(body)
+}
+
+func notFound(w http.ResponseWriter) {
+	writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
+}

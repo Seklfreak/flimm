@@ -295,8 +295,21 @@ enum Fixtures {
     }
     """
 
+    /// A server that wants authentication but publishes no issuer: broken,
+    /// and nothing can sign in to it.
     static let serverConfigWithoutOIDC = """
     { "app_name": "Flimm", "oidc_issuer": "", "oidc_client_id": "", "version": "dev" }
+    """
+
+    /// A server running `AUTH_DISABLED=true`, which says so.
+    static let serverConfigAuthDisabled = """
+    {
+      "app_name": "Flimm",
+      "oidc_issuer": "",
+      "oidc_client_id": "",
+      "version": "dev",
+      "auth_disabled": true
+    }
     """
 
     static let progressResult = """

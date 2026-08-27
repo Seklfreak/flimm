@@ -8,23 +8,42 @@ public struct ServerConfig: Codable, Sendable, Hashable {
     public let oidcIssuer: String
     public let oidcClientId: String
     public let version: String
+    /// The server runs with `AUTH_DISABLED=true`: there is nothing to sign in
+    /// to, and every request is the same fixed user.
+    ///
+    /// The server says this outright rather than leaving it to be inferred
+    /// from empty OIDC fields, because the two cases are opposites: a server
+    /// deliberately running open is one to connect to, while a server that
+    /// wants auth but publishes no issuer is broken and must not be.
+    public let authDisabled: Bool
 
     /// `false` when the deployment runs with `AUTH_DISABLED=true`, or is
-    /// otherwise missing OIDC settings — a native client cannot sign in.
+    /// otherwise missing OIDC settings.
     public var hasOIDC: Bool {
         !oidcIssuer.isEmpty && !oidcClientId.isEmpty && issuerURL != nil
     }
+
+    /// Whether a client can use this server at all: it either has a sign-in
+    /// provider, or it has no sign-in.
+    public var isUsable: Bool { hasOIDC || authDisabled }
 
     public var issuerURL: URL? {
         guard let url = URL(string: oidcIssuer), url.scheme != nil, url.host != nil else { return nil }
         return url
     }
 
-    public init(appName: String = "Flimm", oidcIssuer: String = "", oidcClientId: String = "", version: String = "") {
+    public init(
+        appName: String = "Flimm",
+        oidcIssuer: String = "",
+        oidcClientId: String = "",
+        version: String = "",
+        authDisabled: Bool = false
+    ) {
         self.appName = appName
         self.oidcIssuer = oidcIssuer
         self.oidcClientId = oidcClientId
         self.version = version
+        self.authDisabled = authDisabled
     }
 
     public init(from decoder: any Decoder) throws {
@@ -33,6 +52,7 @@ public struct ServerConfig: Codable, Sendable, Hashable {
         oidcIssuer = try c.decode(.oidcIssuer, or: "")
         oidcClientId = try c.decode(.oidcClientId, or: "")
         version = try c.decode(.version, or: "")
+        authDisabled = try c.decode(.authDisabled, or: false)
     }
 }
 

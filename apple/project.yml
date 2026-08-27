@@ -63,6 +63,12 @@ targets:
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         UILaunchScreen: {}
         ITSAppUsesNonExemptEncryption: false
+        # A Flimm server on the same machine or LAN is a normal way to run
+        # this — `AUTH_DISABLED=true` on a laptop, or a box with no
+        # certificate. This permits cleartext to local hosts only; the public
+        # internet still has to be https.
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
         # Split View and Slide Over. The layout switches on the horizontal size
         # class, which iPad multitasking flips mid-flow, so the app has to be
         # willing to be resized at all.
@@ -127,6 +133,12 @@ targets:
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         ITSAppUsesNonExemptEncryption: false
+        # A Flimm server on the same machine or LAN is a normal way to run
+        # this — `AUTH_DISABLED=true` on a laptop, or a box with no
+        # certificate. This permits cleartext to local hosts only; the public
+        # internet still has to be https.
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
         SENTRY_DSN: $(SENTRY_DSN)
         # Music playlists play as audio only here too, and a TV keeps playing
         # them with the screen saver up.

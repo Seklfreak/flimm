@@ -47,8 +47,19 @@ final class ServerProbeTests: XCTestCase {
         await XCTAssertThrows(ServerProbeError.notAFlimmServer) { try await probe.probe("example.com") }
     }
 
-    /// A real Flimm server running with AUTH_DISABLED=true: nothing the app
-    /// can do until the deployment is configured, so say exactly that.
+    /// A server that says it runs without authentication is one to connect
+    /// to, not one to refuse: the operator turned auth off deliberately, the
+    /// web client already honours it, and there is no credential to protect.
+    func testAuthDisabledServerIsAccepted() async throws {
+        let session = StubURLProtocol.session(json: Fixtures.serverConfigAuthDisabled)
+        let server = try await ServerProbe(session: session).probe("localhost:8080")
+        XCTAssertTrue(server.config.authDisabled)
+        XCTAssertFalse(server.config.hasOIDC)
+        XCTAssertTrue(server.config.isUsable)
+    }
+
+    /// A server that wants authentication but publishes no issuer is a
+    /// different thing entirely — half-configured, and still refused.
     func testOIDCNotConfigured() async {
         let session = StubURLProtocol.session(json: Fixtures.serverConfigWithoutOIDC)
         let probe = ServerProbe(session: session)

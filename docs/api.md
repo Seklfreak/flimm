@@ -23,8 +23,16 @@ Base path: `/api/v1`. JSON, snake_case. Times are RFC 3339 UTC. IDs are strings.
   the web app calls it after login and again when a media request returns 401.
   Native clients pass the Bearer header via `AVURLAssetHTTPHeaderFieldsKey`.
 - OIDC discovery for clients: `GET /api/v1/config` (unauthenticated) returns
-  `{ "app_name", "oidc_issuer", "oidc_client_id", "version" }` so native apps
-  need only the server URL.
+  `{ "app_name", "oidc_issuer", "oidc_client_id", "version", "auth_disabled" }`
+  so native apps need only the server URL.
+- **`auth_disabled: true`** means the deployment runs with `AUTH_DISABLED=true`:
+  there is no sign-in, and every request is the same fixed dev user. A client
+  connects to such a server without an OIDC flow and sends any non-empty bearer
+  token (the value is ignored, but `/media/*` still requires the header). The
+  server says this outright rather than leaving it to be inferred from empty
+  OIDC fields, because the two cases are opposites: a server deliberately
+  running open is one to connect to, while a server that wants auth but
+  publishes no issuer is broken and a client must refuse it.
 
 ## Errors
 

@@ -33,6 +33,11 @@ public final class AuthSession {
     /// health check) can use it before sign-in.
     public private(set) var client: APIClient?
 
+    /// Whether this server has a sign-in at all. `false` for a server running
+    /// `AUTH_DISABLED=true`: there is no provider, no token and no sign-out —
+    /// the only way "back" is to leave the server.
+    public var requiresSignIn: Bool { !(server?.config.authDisabled ?? false) }
+
     private let secrets: any SecretStore
     private let defaults: UserDefaults
     private let session: URLSession
@@ -42,6 +47,9 @@ public final class AuthSession {
     private var oidc: OIDCClient?
 
     private static let serverKey = "flimm.server"
+    /// Sent as the bearer token to a server running without auth. Any
+    /// non-empty value does; this one says why it exists in a log line.
+    static let authDisabledToken = "auth-disabled"
 
     public init(
         redirectURI: URL,
@@ -82,6 +90,10 @@ public final class AuthSession {
     public func restore() async {
         if let stored = storedServer() {
             adopt(server: stored)
+            if stored.config.authDisabled {
+                state = .signedIn
+                return
+            }
             let tokens = await tokenStore.load()
             state = tokens == nil ? .signedOut : .signedIn
         } else {
@@ -96,7 +108,13 @@ public final class AuthSession {
             let probed = try await ServerProbe(session: session).probe(raw)
             storeServer(probed)
             adopt(server: probed)
-            state = await tokenStore.hasSession ? .signedIn : .signedOut
+            if probed.config.authDisabled {
+                // Nothing to sign in to: the server treats every request as
+                // its one fixed user.
+                state = .signedIn
+            } else {
+                state = await tokenStore.hasSession ? .signedIn : .signedOut
+            }
         } catch {
             lastError = (error as? ServerProbeError)?.errorMessage ?? error.localizedDescription
             throw error
@@ -110,6 +128,12 @@ public final class AuthSession {
     /// "show this code" callback without the session knowing about either.
     public func signIn(using strategy: (any Authenticating)? = nil) async throws {
         guard let server else { throw ServerProbeError.invalidURL }
+        // A server with no auth is already as signed in as it gets. Answering
+        // this rather than throwing keeps a stray "Sign in" button harmless.
+        guard !server.config.authDisabled else {
+            state = .signedIn
+            return
+        }
         guard let authenticator = strategy ?? self.authenticator else { throw OIDCError.invalidConfiguration }
         guard let issuer = server.config.issuerURL else { throw ServerProbeError.oidcNotConfigured }
         lastError = nil
@@ -135,7 +159,16 @@ public final class AuthSession {
     }
 
     /// Deliberate sign-out. Keeps the server so the next sign-in is one tap.
+    ///
+    /// On a server with no auth there is no session to drop, and leaving the
+    /// state at `signedOut` would strand the app on a sign-in screen that
+    /// cannot do anything — so the only honest sign-out there is to forget the
+    /// server. The UI calls it "Disconnect" for exactly that reason.
     public func signOut() async {
+        if server?.config.authDisabled == true {
+            await forgetServer()
+            return
+        }
         await tokenStore.clear()
         state = server == nil ? .needsServer : .signedOut
     }
@@ -154,6 +187,17 @@ public final class AuthSession {
 
     private func adopt(server: FlimmServer) {
         self.server = server
+        guard !server.config.authDisabled else {
+            // The value is ignored by a server running without auth, but it
+            // must be *sent*: /media accepts a bearer header or the signed
+            // cookie, and AVPlayer only ever carries the header.
+            self.client = APIClient(
+                baseURL: server.baseURL,
+                tokens: StaticTokenProvider(AuthSession.authDisabledToken),
+                session: session
+            )
+            return
+        }
         self.client = APIClient(baseURL: server.baseURL, tokens: tokenStore, session: session)
         // A restored session must be able to refresh its access token without
         // signing in again, so the store learns how to build its OIDC client

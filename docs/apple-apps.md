@@ -232,8 +232,17 @@ Apple build rather than extending the current one.
 The backend uses OIDC (Authorization Code + PKCE) and tells the client how to
 reach the provider, so the **server URL is the only thing a user enters**.
 
+0. **A server may have no sign-in at all.** `GET /api/v1/config` says
+   `auth_disabled: true` when the deployment runs with `AUTH_DISABLED=true`
+   (a local dev server, typically alongside `cmd/fake-ta`). There is no OIDC
+   flow to run: the app connects, `AuthSession` opens a session on a static
+   token — any non-empty value, because `/media/*` still wants the header even
+   though the server ignores what is in it — and Settings says so out loud.
+   This is *not* the same as a server that wants auth but publishes no issuer:
+   that one is half-configured and stays refused.
 1. `GET /api/v1/config` — unauthenticated. Returns `app_name`, `oidc_issuer`,
-   `oidc_client_id`, `version`. Use it to validate the URL the user typed *and*
+   `oidc_client_id`, `version`, `auth_disabled`. Use it to validate the URL the
+   user typed *and*
    to configure the auth flow. A friendly failure here is most of the setup UX.
 2. Sign in against the issuer. **On iPhone and iPad** that is
    `ASWebAuthenticationSession`, and the provider must allow a native redirect

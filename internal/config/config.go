@@ -115,7 +115,7 @@ func Load() (*Config, error) {
 		FFmpegPath:             cmp.Or(os.Getenv("FFMPEG_PATH"), "ffmpeg"),
 		MediaHWAccel:           getenvDefault("MEDIA_HWACCEL", "auto"),
 		MediaVAAPIDevice:       os.Getenv("MEDIA_VAAPI_DEVICE"),
-		SponsorblockURL:        strings.TrimRight(getenvDefault("SPONSORBLOCK_URL", sponsorblock.DefaultBaseURL), "/"),
+		SponsorblockURL:        strings.TrimRight(envOrDefault("SPONSORBLOCK_URL", sponsorblock.DefaultBaseURL), "/"),
 		SponsorblockCategories: splitCSV(os.Getenv("SPONSORBLOCK_CATEGORIES")),
 		PublicURL:              strings.TrimRight(os.Getenv("PUBLIC_URL"), "/"),
 		CORSOrigins:            splitCSV(os.Getenv("CORS_ORIGINS")),
@@ -173,6 +173,16 @@ func (c *Config) SecureCookies() bool {
 
 func getenvDefault(key, def string) string {
 	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return def
+}
+
+// envOrDefault distinguishes "unset" from "set to empty", which getenvDefault
+// cannot: `SPONSORBLOCK_URL=` is a deliberate "turn the lookup off", not a
+// missing value to fill in with the default.
+func envOrDefault(key, def string) string {
+	if v, ok := os.LookupEnv(key); ok {
 		return v
 	}
 	return def

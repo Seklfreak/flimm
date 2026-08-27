@@ -27,8 +27,14 @@ struct SettingsView: View {
         }
         .navigationTitle("Settings")
         .navigationBarTitleDisplayMode(.inline)
-        .confirmationDialog("Sign out?", isPresented: $confirmSignOut, titleVisibility: .visible) {
-            Button("Sign out", role: .destructive) { Task { await session.signOut() } }
+        .confirmationDialog(
+            session.requiresSignIn ? "Sign out?" : "Disconnect from this server?",
+            isPresented: $confirmSignOut,
+            titleVisibility: .visible
+        ) {
+            Button(session.requiresSignIn ? "Sign out" : "Disconnect", role: .destructive) {
+                Task { await session.signOut() }
+            }
         }
         .confirmationDialog("Change server?", isPresented: $confirmChangeServer, titleVisibility: .visible) {
             Button("Sign out and change server", role: .destructive) { Task { await session.forgetServer() } }
@@ -54,6 +60,11 @@ struct SettingsView: View {
     }
 
     private var accountFooter: String {
+        // Worth saying plainly: on this server anyone who can reach it is this
+        // same user, and there is nothing to sign out of.
+        guard session.requiresSignIn else {
+            return "This server runs with authentication disabled: no sign-in, and everyone who can reach it shares this account."
+        }
         guard let me = app.me else { return "" }
         return me.isAdmin ? "Administrator" : ""
     }
@@ -159,7 +170,9 @@ struct SettingsView: View {
                 LabeledContent("Email", value: email)
             }
             LabeledContent("App version", value: AppConfig.displayVersion)
-            Button("Sign out", role: .destructive) { confirmSignOut = true }
+            Button(session.requiresSignIn ? "Sign out" : "Disconnect", role: .destructive) {
+                confirmSignOut = true
+            }
         } header: {
             Text("Account")
         } footer: {

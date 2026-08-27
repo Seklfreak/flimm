@@ -247,7 +247,14 @@ func TestConfigIsPublic(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d", rec.Code)
 	}
-	if got := decode[map[string]string](t, rec); got["app_name"] != "Flimm" || got["version"] == "" {
-		t.Errorf("config = %v", got)
+	got := decode[ConfigResponse](t, rec)
+	if got.AppName != "Flimm" || got.Version == "" {
+		t.Errorf("config = %+v", got)
+	}
+	// The test server has no verifier, which is what AUTH_DISABLED is. A
+	// client reads this to know it may connect without signing in — it must
+	// never have to infer that from the OIDC fields being empty.
+	if !got.AuthDisabled {
+		t.Error("auth_disabled = false on a server with no verifier")
 	}
 }
