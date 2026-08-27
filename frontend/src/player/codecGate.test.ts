@@ -130,6 +130,16 @@ describe("supportsMime", () => {
     );
     expect(supportsNativeHLS()).toBe(true);
   });
+
+  it("does not treat Chrome's 'maybe' as native HLS when MSE is present", () => {
+    // Desktop Chrome answers canPlayType('...mpegurl') = 'maybe' but cannot
+    // actually play a playlist off video.src — it must use hls.js (MSE).
+    vi.stubGlobal("MediaSource", { isTypeSupported: () => true });
+    vi.spyOn(HTMLMediaElement.prototype, "canPlayType").mockImplementation((t: string) =>
+      t.includes("mpegurl") ? "maybe" : "probably",
+    );
+    expect(supportsNativeHLS()).toBe(false);
+  });
 });
 
 describe("detectCapabilities", () => {

@@ -97,12 +97,39 @@ export function supportsMime(mime: string): boolean {
   }
 }
 
-/** Whether HLS plays without hls.js — Safari, and iOS browsers generally. */
+/** Whether Media Source Extensions can drive hls.js here. hls.js needs MSE
+ *  (or a Managed Media Source) plus an fMP4/H.264 source buffer; where that
+ *  exists — every desktop Chrome/Firefox/Edge and desktop Safari — hls.js is
+ *  the path, because it actually plays the stream. */
+function supportsMSE(): boolean {
+  try {
+    const g = globalThis as {
+      MediaSource?: { isTypeSupported?: (t: string) => boolean };
+      ManagedMediaSource?: { isTypeSupported?: (t: string) => boolean };
+    };
+    const ms = g.MediaSource ?? g.ManagedMediaSource;
+    return ms?.isTypeSupported?.('video/mp4; codecs="avc1.42E01E,mp4a.40.2"') ?? false;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Whether to hand HLS to the `<video>` element directly instead of hls.js.
+ *
+ * Only when the browser plays HLS natively **and** cannot run hls.js — i.e.
+ * iOS, where there is no Media Source to build a stream on. Desktop Chrome
+ * reports `canPlayType('application/vnd.apple.mpegurl')` as `"maybe"` but does
+ * not actually play an HLS playlist assigned to `video.src`; it needs hls.js,
+ * so MSE support wins over the `canPlayType` hint. This mirrors hls.js's own
+ * `Hls.isSupported()`-first rule without importing it just to decide.
+ */
 export function supportsNativeHLS(): boolean {
   try {
     if (typeof document === "undefined") return false;
     const v = document.createElement("video");
-    return v.canPlayType("application/vnd.apple.mpegurl") !== "" || v.canPlayType("application/x-mpegURL") !== "";
+    const canPlay = v.canPlayType("application/vnd.apple.mpegurl") !== "" || v.canPlayType("application/x-mpegURL") !== "";
+    return canPlay && !supportsMSE();
   } catch {
     return false;
   }
