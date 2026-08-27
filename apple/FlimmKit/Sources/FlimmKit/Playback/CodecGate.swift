@@ -38,7 +38,7 @@ public enum CodecGate {
         guard !audioOnly else { return nil }
         guard let streams = video.streams, !streams.isEmpty else { return nil }
         let videoStreams = streams.filter { $0.type == .video }
-        guard !videoStreams.isEmpty, !videoStreams.contains(where: \.isNativelyPlayable) else { return nil }
+        guard !videoStreams.isEmpty, !videoStreams.contains(where: DeviceCodecs.canDecode) else { return nil }
         return Issue(videoCodec: videoStreams[0].codec, audioAvailable: video.nativeAudioURL != nil)
     }
 }
