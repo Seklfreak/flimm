@@ -2,6 +2,19 @@
 
 ## Done
 
+- **Apple TV display fixes** (2026-08-27) — a walkthrough of the whole tvOS
+  app against the local dev stack turned up five real defects, all now fixed:
+  the custom Info-panel tab rendered **with no background at all**, drawing its
+  preference rows straight onto moving video; every segmented picker truncated
+  its labels ("Uns…", "Co…", "From chann…") because each screen capped it with
+  a guessed `maxWidth`; a card's meta line lost its date to the ellipsis ("The
+  Workshop · CC EN · 5 d…"), so subtitles became a CC badge on the thumbnail
+  and the line kept the channel and the date; Settings paragraphs ran the full
+  ~1800pt of a tvOS row; and a focused row sat on top of the section header
+  above it. Fixing the pickers first introduced a sixth — a picker sized to its
+  labels squeezed "Shuffle" and "Mark all seen" into columns of single letters
+  — so the rows that mix a picker with buttons now keep their natural width.
+  See [apple-apps.md](apple-apps.md).
 - **A local dev stack: no auth, no TubeArchivist** (2026-08-27) — the whole
   product now runs on a laptop with nothing behind it. `cmd/fake-ta` stands in
   for TubeArchivist: the subset of its API Flimm calls, over a fixed catalogue

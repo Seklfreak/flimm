@@ -23,7 +23,7 @@ struct TVChannelsView: View {
                         Text("Recent").tag(ChannelSort.lastUpload)
                     }
                     .pickerStyle(.segmented)
-                    .frame(maxWidth: 620)
+                    .fixedSize()
                 }
                 .padding(.top, 20)
                 content

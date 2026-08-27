@@ -21,7 +21,13 @@ struct TVPlayerInfoPanel: View {
                 if !model.upNext.isEmpty { upNext }
             }
             .padding(50)
+            // The panel opens over playing video. Without a ground of its own
+            // the rows are drawn straight onto moving picture and cannot be
+            // read at all; AVKit does not put one behind a custom tab.
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.black.opacity(0.92))
         }
+        .background(Color.black.opacity(0.92))
     }
 
     private var header: some View {

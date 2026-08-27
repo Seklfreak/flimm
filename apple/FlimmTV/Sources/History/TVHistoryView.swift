@@ -24,7 +24,7 @@ struct TVHistoryView: View {
                         Text("Seen").tag(HistoryFilter.seen)
                     }
                     .pickerStyle(.segmented)
-                    .frame(maxWidth: 620)
+                    .fixedSize()
                 }
                 .padding(.top, 20)
                 content

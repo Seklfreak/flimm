@@ -71,6 +71,9 @@ struct TVPlayerViewController: UIViewControllerRepresentable {
             self.infoPanel = UIHostingController(rootView: TVPlayerInfoPanel(model: model))
             super.init()
             infoPanel.title = "Flimm"
+            // The panel sits over playing video, and AVKit gives a custom tab
+            // no ground of its own — without this the rows are unreadable.
+            infoPanel.view.backgroundColor = UIColor.black.withAlphaComponent(0.92)
         }
 
         /// Both properties belong to the *item*, not the controller, so they

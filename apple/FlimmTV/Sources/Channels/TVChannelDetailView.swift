@@ -74,7 +74,7 @@ struct TVChannelDetailView: View {
                 Text("Unseen").tag(ChannelView.unseen)
             }
             .pickerStyle(.segmented)
-            .frame(maxWidth: 340)
+            .fixedSize()
 
             Button {
                 Task { await shuffle() }
@@ -90,6 +90,9 @@ struct TVChannelDetailView: View {
             }
             .disabled(isMarkingSeen)
         }
+        // Same reason as the feed screen: the row keeps its natural width so
+        // the picker cannot squeeze the buttons into a column of letters.
+        .fixedSize(horizontal: true, vertical: false)
     }
 
     @ViewBuilder

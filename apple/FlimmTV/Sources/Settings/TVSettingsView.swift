@@ -19,6 +19,23 @@ struct TVSettingsView: View {
 
     private var prefs: Prefs { app.prefs }
 
+    /// A section header with room under it. A focused row on tvOS grows into
+    /// its neighbours, and a header with no gap ends up behind the white pill
+    /// of the first row.
+    private func sectionHeader(_ title: String) -> some View {
+        Text(title).padding(.bottom, 12)
+    }
+
+    /// Explanatory text, held to a readable measure. A tvOS list row is nearly
+    /// 1800pt wide; a paragraph that uses all of it is a 200-character line to
+    /// read from a sofa.
+    private func note(_ text: String) -> some View {
+        Text(text)
+            .font(.footnote)
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: 1100, alignment: .leading)
+    }
+
     var body: some View {
         List {
             playbackSection
@@ -43,26 +60,26 @@ struct TVSettingsView: View {
     // MARK: - Sections
 
     private var playbackSection: some View {
-        Section("Playback") {
+        Section {
             Toggle("Autoplay next video", isOn: bind(\.autoplay) { PrefsPatch(autoplay: $0) })
             TVOptionRow(title: "Playback speed", value: Fmt.speed(prefs.playbackSpeed)) {
                 Task { await app.updatePrefs(PrefsPatch(playbackSpeed: PlaybackSpeeds.next(after: prefs.playbackSpeed))) }
             }
             Toggle("Skip sponsor segments", isOn: bind(\.skipSponsors) { PrefsPatch(skipSponsors: $0) })
-            Text("""
+            note("""
             Sponsor, self-promotion and interaction-reminder segments are \
             skipped automatically; other SponsorBlock categories are only \
             marked on the transport bar.
             """)
-            .font(.footnote)
-            .foregroundStyle(.secondary)
+        } header: {
+            sectionHeader("Playback")
         }
     }
 
     /// The one playback setting that stays on the device: an Apple TV on
     /// ethernet wants a different answer from a phone on cellular.
     private var qualitySection: some View {
-        Section("Video quality") {
+        Section {
             NavigationLink {
                 TVChoiceList(
                     title: "Video quality",
@@ -75,20 +92,20 @@ struct TVSettingsView: View {
             } label: {
                 LabeledContent("Quality", value: VideoQuality.label(playback.videoQuality))
             }
-            Text("""
+            note("""
             Auto plays the archived file whenever this Apple TV can decode it — \
             full quality, and nothing for the server to convert — and otherwise \
             the tallest rendition this screen can show, which is 4K on a 4K TV. \
             A fixed height always plays a converted rendition, falling to the \
             nearest lower one a video offers. This setting stays on this device.
             """)
-            .font(.footnote)
-            .foregroundStyle(.secondary)
+        } header: {
+            sectionHeader("Video quality")
         }
     }
 
     private var subtitleSection: some View {
-        Section("Subtitles") {
+        Section {
             NavigationLink {
                 TVChoiceList(
                     title: "Subtitle language",
@@ -112,6 +129,8 @@ struct TVSettingsView: View {
             } label: {
                 LabeledContent("Size", value: prefs.subtitleSize.rawValue.capitalized)
             }
+        } header: {
+            sectionHeader("Subtitles")
         }
     }
 
@@ -130,7 +149,7 @@ struct TVSettingsView: View {
     }
 
     private var everythingSection: some View {
-        Section("“Everything” feed") {
+        Section {
             NavigationLink {
                 TVChoiceList(
                     title: "Sort",
@@ -148,40 +167,42 @@ struct TVSettingsView: View {
             Text("The built-in feed over every channel. Its options are preferences, not feed settings.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
+        } header: {
+            sectionHeader("“Everything” feed")
         }
     }
 
     private var librarySection: some View {
-        Section("Library") {
+        Section {
             Label("Edit feeds on your phone, iPad or the web", systemImage: "iphone")
                 .foregroundStyle(.secondary)
-            Text("""
+            note("""
             Naming a feed and picking its channels needs a keyboard and a long \
             list. Apple TV shows feeds and plays them; it doesn't edit them.
             """)
-            .font(.footnote)
-            .foregroundStyle(.secondary)
+        } header: {
+            sectionHeader("Library")
         }
     }
 
     private var accountSection: some View {
-        Section("Account") {
+        Section {
             LabeledContent("Signed in as", value: accountName)
             LabeledContent("Server", value: session.server?.baseURL.host() ?? "—")
             LabeledContent("Server version", value: session.server?.config.version ?? "—")
             LabeledContent("App version", value: TVConfig.displayVersion)
             if !session.requiresSignIn {
-                Text("""
+                note("""
                 This server runs with authentication disabled: no sign-in, and \
                 everyone who can reach it shares this account.
                 """)
-                .font(.footnote)
-                .foregroundStyle(.secondary)
             }
             Button("Change server") { confirmChangeServer = true }
             if session.requiresSignIn {
                 Button("Sign out", role: .destructive) { confirmSignOut = true }
             }
+        } header: {
+            sectionHeader("Account")
         }
     }
 

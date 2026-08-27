@@ -139,6 +139,21 @@ What is there:
     `contentOverlayView` — the tracks are authenticated sidecars an
     `AVPlayerItem` cannot fetch itself. Audio-only plays `audio_aac_url` with
     artwork in the overlay and `MPNowPlayingInfoCenter`.
+  - **Layout rules the TV enforces.** A segmented picker is sized to its
+    labels (`.fixedSize()`), never to a guessed `maxWidth` — a cap truncates
+    them ("Uns…", "Co…") as soon as a label or a locale is longer than the
+    guess — and any row mixing a picker with buttons keeps its natural width,
+    or the picker takes what it wants and squeezes the buttons into a column
+    of single letters. A card's meta line carries the channel and the date
+    only; subtitles are a **CC badge** on the thumbnail, because a third part
+    pushed the date out of a one-line label. Explanatory paragraphs are held
+    to ~1100pt: a tvOS row is nearly 1800pt wide, which is a 200-character
+    line to read from a sofa. Section headers carry bottom padding, because a
+    focused row grows and would otherwise sit on top of the header above it.
+  - **The custom Info-panel tab needs its own background.** AVKit gives it
+    none, so a `UIHostingController` full of preferences renders straight onto
+    moving video and cannot be read; the hosting view and the SwiftUI root
+    both paint an opaque ground.
   - **Read-only feeds.** No feed editor: naming a feed and picking its
     channels wants a keyboard and a long list. The screens say "Edit feeds on
     your phone" where the button would otherwise be, rather than leaving

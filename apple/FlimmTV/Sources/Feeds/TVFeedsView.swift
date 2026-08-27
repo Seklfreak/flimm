@@ -60,6 +60,10 @@ struct TVFeedsView: View {
     }
 
     private var controls: some View {
+        // The whole row keeps its natural width. Without this the HStack
+        // compresses whichever child yields first — which is how "Shuffle"
+        // ended up stacked one letter per line next to a picker that had
+        // taken the width it asked for.
         HStack(spacing: 18) {
             Picker("Show", selection: Binding(get: { view }, set: { feedView = $0 })) {
                 Text("Unseen").tag(FeedView.unseen)
@@ -67,7 +71,10 @@ struct TVFeedsView: View {
                 Text("All").tag(FeedView.all)
             }
             .pickerStyle(.segmented)
-            .frame(maxWidth: 460)
+            // Sized to its labels, never capped: a fixed width truncates them
+            // ("Uns…", "Co…") the moment a label or a locale is longer than
+            // the guess. The Spacer above absorbs whatever is left over.
+            .fixedSize()
 
             Button {
                 Task { await shuffle() }
@@ -83,6 +90,7 @@ struct TVFeedsView: View {
             }
             .disabled(isMarkingSeen || feed == nil)
         }
+        .fixedSize(horizontal: true, vertical: false)
     }
 
     @ViewBuilder

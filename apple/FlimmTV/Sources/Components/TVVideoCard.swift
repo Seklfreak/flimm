@@ -15,9 +15,17 @@ struct TVVideoThumbnail: View {
             .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             .overlay(alignment: .topLeading) { topLeading }
             .overlay(alignment: .bottomTrailing) {
-                Text(Fmt.duration(video.duration))
-                    .tvPillStyle()
-                    .padding(10)
+                HStack(spacing: 6) {
+                    // Subtitles used to be a third part of the meta line,
+                    // where it pushed the date out of a one-line label ("The
+                    // Workshop · CC EN · 5 d…"). A badge says the same thing
+                    // and costs the line nothing.
+                    if !video.subtitleLangs.isEmpty {
+                        Text("CC").tvPillStyle()
+                    }
+                    Text(Fmt.duration(video.duration)).tvPillStyle()
+                }
+                .padding(10)
             }
             .overlay(alignment: .bottom) {
                 if inProgress {
@@ -114,12 +122,7 @@ struct TVVideoCard: View {
     private var meta: String {
         var parts: [String] = []
         if showChannel { parts.append(video.channel.name) }
-        if video.watched {
-            parts.append(Fmt.seenLabel(video.lastPlayedAt))
-        } else {
-            parts.append(Fmt.ccLabel(langs: video.subtitleLangs, hasAuto: video.hasAutoSubtitles))
-            parts.append(Fmt.relativeDay(video.published))
-        }
+        parts.append(video.watched ? Fmt.seenLabel(video.lastPlayedAt) : Fmt.relativeDay(video.published))
         return parts.joined(separator: " · ")
     }
 }

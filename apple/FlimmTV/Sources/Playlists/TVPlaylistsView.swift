@@ -22,7 +22,7 @@ struct TVPlaylistsView: View {
                         Text("From channels").tag(PlaylistKind?.some(.channel))
                     }
                     .pickerStyle(.segmented)
-                    .frame(maxWidth: 620)
+                    .fixedSize()
                 }
                 .padding(.top, 20)
 
