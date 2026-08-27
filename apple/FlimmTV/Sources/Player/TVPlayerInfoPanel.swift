@@ -50,6 +50,18 @@ struct TVPlayerInfoPanel: View {
 
     private var actions: some View {
         VStack(alignment: .leading, spacing: 16) {
+            // A point of interest is offered, never taken: the remote has no
+            // scrubber worth hunting on, so this is where the TV gets it.
+            if let highlight = SponsorRules.highlightToOffer(
+                at: model.currentTime, in: model.video?.sponsorblock ?? []
+            ) {
+                Button {
+                    model.seek(to: highlight.start)
+                } label: {
+                    Label("Jump to the highlight (\(Fmt.duration(highlight.start)))", systemImage: "sparkles")
+                }
+            }
+
             if let resumed = model.resumedFrom {
                 Button {
                     Task { await model.startOver() }

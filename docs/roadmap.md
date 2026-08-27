@@ -2,6 +2,18 @@
 
 ## Done
 
+- **Jump to the highlight** (2026-08-27) — the `poi` segment the backend
+  started fetching is now something every client offers: sponsor, self-promo
+  and the rest are what a player *skips*, but a point of interest is where a
+  contributor marked "this is where the video actually starts", so it is
+  offered and never taken. It shows only while playback is still before it,
+  and regardless of `skip_sponsors` — jumping is a click, not a skip. The web
+  player and the phone/iPad draw a marker on the timeline and a pill button;
+  the Apple TV, which has no scrubber worth hunting on, carries the same jump
+  as an Info-panel action. The rule (which point, and when it is worth
+  offering) is `highlightToOffer` in `chapterMath.ts` and in FlimmKit's
+  `SponsorRules`, not three separate answers. See
+  [api.md](api.md#sponsorblock).
 - **SponsorBlock fetched first-party** (2026-08-27) — segments no longer come
   from the snapshot TubeArchivist indexed at download time. `internal/sponsorblock`
   asks the service itself (`SPONSORBLOCK_URL`, default `sponsor.ajay.app`) and
@@ -175,9 +187,8 @@
 
 ## Ideas
 
-- **SponsorBlock UI** — per-category skip settings, a manual skip button, and
-  a *Jump to the highlight* button for the `poi` segment the backend now
-  fetches (no client acts on it yet). Segments already render on the timeline.
+- **SponsorBlock UI** — per-category skip settings and a manual skip button.
+  Segments already render on the timeline, and the highlight is already a jump.
 - **DeArrow** — crowd-sourced de-clickbaited titles and thumbnails, from the
   same project and the same hash-prefix API (`/api/branding/{prefix}`). The
   thumbnail half fits Flimm better than it fits a browser extension: DeArrow

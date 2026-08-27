@@ -8,7 +8,7 @@ import { useSponsorSkip } from "./useSponsorSkip";
 import { useProgressHeartbeat } from "./useProgressHeartbeat";
 import { useRendition } from "./useRendition";
 import { Scrubber } from "./Scrubber";
-import { currentChapterIndex, nextChapterStart, prevChapterStart } from "./chapterMath";
+import { currentChapterIndex, highlightToOffer, nextChapterStart, prevChapterStart } from "./chapterMath";
 import { HLS_CONFIG, loadHls } from "./hls";
 import {
   archivePlays,
@@ -273,6 +273,7 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(function Player(
   }, [el, activeTrack, video.subtitles]);
 
   useSponsorSkip(el, video.sponsorblock, prefs.skip_sponsors);
+  const highlight = highlightToOffer(video.sponsorblock, time);
   useProgressHeartbeat(el, video.id, onWatched, playlistId);
 
   // Chapters degrade silently: an empty list or a failed request just means
@@ -532,6 +533,24 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(function Player(
             {rendition.progress !== null ? ` ${Math.round(rendition.progress * 100)}%` : ""}
           </p>
         </div>
+      )}
+
+      {/* "Jump to the highlight": a SponsorBlock point of interest is offered,
+          never taken for the viewer, and offered whatever `skip_sponsors`
+          says — this is a click, not a skip. It goes as soon as playback
+          reaches it, and does not wait for the controls: a highlight nobody
+          sees is a highlight nobody uses. */}
+      {highlight && (
+        <button
+          className="absolute right-3.5 top-3.5 flex items-center gap-1.5 rounded-full bg-[rgba(23,24,26,0.85)] py-1.5 pl-3 pr-3 text-[12px] font-bold"
+          onClick={() => seekTo(highlight.start)}
+        >
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <path d="M12 2l2.2 5.8L20 10l-5.8 2.2L12 18l-2.2-5.8L4 10l5.8-2.2z" />
+          </svg>
+          <span>Jump to the highlight</span>
+          <span className="font-semibold text-white/60">{fmtDuration(highlight.start)}</span>
+        </button>
       )}
 
       {resumedFrom !== null && (

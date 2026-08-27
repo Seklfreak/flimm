@@ -156,6 +156,37 @@ final class SponsorRulesTests: XCTestCase {
         XCTAssertEqual(ranges[0].width, 0.5, accuracy: 0.0001)
     }
 
+    func testTheHighlightIsFoundAndOfferedOnlyAhead() {
+        let withHighlight = [
+            SponsorSegment(category: "sponsor", actionType: .skip, start: 0, end: 30),
+            SponsorSegment(category: "poi_highlight", actionType: .poi, start: 90, end: 90)
+        ]
+        XCTAssertEqual(SponsorRules.highlight(in: withHighlight)?.start, 90)
+        XCTAssertNil(SponsorRules.highlight(in: segments))
+        XCTAssertEqual(SponsorRules.highlightToOffer(at: 0, in: withHighlight)?.start, 90)
+        // Inside the lead the viewer is already there, and past it there is
+        // nothing to offer.
+        XCTAssertNil(SponsorRules.highlightToOffer(at: 89.5, in: withHighlight))
+        XCTAssertNil(SponsorRules.highlightToOffer(at: 120, in: withHighlight))
+    }
+
+    func testTheEarliestHighlightWins() {
+        let several = [
+            SponsorSegment(category: "poi_highlight", actionType: .poi, start: 120, end: 120),
+            SponsorSegment(category: "poi_highlight", actionType: .poi, start: 40, end: 40)
+        ]
+        XCTAssertEqual(SponsorRules.highlight(in: several)?.start, 40)
+    }
+
+    func testPointsAreMarkersNotBands() {
+        let withHighlight = [
+            SponsorSegment(category: "sponsor", actionType: .skip, start: 0, end: 30),
+            SponsorSegment(category: "poi_highlight", actionType: .poi, start: 90, end: 90)
+        ]
+        XCTAssertEqual(SponsorRules.pointFractions(withHighlight, duration: 180), [0.5])
+        XCTAssertEqual(SponsorRules.ranges(withHighlight, duration: 180).count, 1)
+    }
+
     func testLabelsFallBackToAReadableCategory() {
         XCTAssertEqual(SponsorRules.label("selfpromo"), "Self-promo")
         XCTAssertEqual(SponsorRules.label("some_new_category"), "some new category")

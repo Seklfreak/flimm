@@ -41,6 +41,16 @@ struct ScrubberView: View {
                     .fill(Palette.accent)
                     .frame(width: width * fraction, height: 4)
 
+                // The highlight is an instant, not a band: a diamond sitting
+                // on the bar rather than a tint across it.
+                ForEach(Array(SponsorRules.pointFractions(sponsors, duration: duration).enumerated()), id: \.offset) { _, point in
+                    Rectangle()
+                        .fill(Palette.accent)
+                        .frame(width: 7, height: 7)
+                        .rotationEffect(.degrees(45))
+                        .offset(x: width * point - 3.5)
+                }
+
                 ForEach(Array(ChapterMath.markerFractions(chapters, duration: duration).enumerated()), id: \.offset) { _, mark in
                     Rectangle()
                         .fill(Color.white.opacity(0.85))

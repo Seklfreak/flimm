@@ -123,7 +123,7 @@ it would skip things nobody asked it to skip:
 |---|---|
 | `skip` | seek past it (the only one that may be skipped automatically) |
 | `mute` | keep playing, muted, for its length — the picture still matters there |
-| `poi` | a single point of interest ("the highlight"), where `start == end` |
+| `poi` | a single point of interest ("the highlight"), where `start == end` — offered as a jump, never taken automatically |
 | `full` | labels the whole video rather than a range of it |
 
 It is `skip` on the snapshot path (TA stores no action) and absent only on a
@@ -135,7 +135,10 @@ Which *categories* act automatically is a client decision, identical in every
 client: `sponsor`, `selfpromo` and `interaction` are skipped or muted, and
 every other category (`intro`, `outro`, `preview`, `music_offtopic`, `filler`,
 `exclusive_access`…) is tinted on the timeline and left alone. A `poi` or
-`full` segment is never tinted: neither marks a stretch of the timeline.
+`full` segment is never tinted: neither marks a stretch of the timeline. The
+`poi` gets a marker on the timeline and a *Jump to the highlight* control
+instead, offered only while playback is still before it and regardless of the
+`skip_sponsors` preference — jumping is a click, not a skip.
 
 `hls_url` is **always present**, whether or not the rendition exists yet;
 `hls_state` says which:

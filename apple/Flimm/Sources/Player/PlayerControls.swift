@@ -216,6 +216,12 @@ struct PlayerControls: View {
 
     private var bottomBar: some View {
         VStack(spacing: 4) {
+            if let highlight = SponsorRules.highlightToOffer(
+                at: model.engine.currentTime, in: model.video?.sponsorblock ?? []
+            ) {
+                HighlightButton(start: highlight.start) { model.seek(to: highlight.start) }
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+            }
             ScrubberView(
                 currentTime: model.engine.currentTime,
                 duration: model.engine.duration,
@@ -267,6 +273,33 @@ struct PlayerControls: View {
 
 /// "Resumed from 12:31 · Start over" — the chip the design puts in the
 /// top-left, because resume happens automatically and should be undoable.
+/// "Jump to the highlight": the one thing a SponsorBlock point of interest is
+/// for. Never automatic — a highlight is offered, never taken for the viewer —
+/// and offered whatever the skip preference says, because this is a tap, not
+/// a skip.
+struct HighlightButton: View {
+    let start: Double
+    let onJump: () -> Void
+
+    var body: some View {
+        Button(action: onJump) {
+            HStack(spacing: 6) {
+                Image(systemName: "sparkles")
+                Text("Jump to the highlight")
+                Text(Fmt.duration(start))
+                    .foregroundStyle(.white.opacity(0.7))
+            }
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(Palette.overlay, in: Capsule())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Jump to the highlight at \(Fmt.duration(start))")
+    }
+}
+
 struct ResumeToast: View {
     let position: Double
     let onStartOver: () -> Void

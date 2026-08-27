@@ -115,6 +115,34 @@ public enum SponsorRules {
         }
     }
 
+    /// How far ahead of playback the highlight has to be for jumping to it to
+    /// be worth offering. Below it the viewer is already there.
+    public static let highlightLead: Double = 1
+
+    /// The point of interest a contributor marked as the highlight — "where
+    /// the video actually starts". The earliest one, when a video somehow has
+    /// several.
+    public static func highlight(in segments: [SponsorSegment]) -> SponsorSegment? {
+        segments.filter { $0.actionType == .poi && $0.start >= 0 }.min { $0.start < $1.start }
+    }
+
+    /// The highlight worth offering at `time`: there is one, and playback has
+    /// not reached it. Nothing here is automatic — a point of interest is
+    /// never jumped to for the viewer, only offered.
+    public static func highlightToOffer(at time: Double, in segments: [SponsorSegment]) -> SponsorSegment? {
+        guard let highlight = highlight(in: segments), time < highlight.start - highlightLead else { return nil }
+        return highlight
+    }
+
+    /// Fractions of the bar for segments that mark an instant rather than a
+    /// range — the highlight. Drawn as a marker, never as a band.
+    public static func pointFractions(_ segments: [SponsorSegment], duration: Double) -> [Double] {
+        guard duration > 0 else { return [] }
+        return segments
+            .filter { $0.actionType == .poi }
+            .map { min(max($0.start / duration, 0), 1) }
+    }
+
     /// Whether a segment marks a stretch of the timeline at all. A point of
     /// interest is a single instant and a whole-video label is not a range, so
     /// neither is drawn — on the scrubber here or as a tvOS interstitial.

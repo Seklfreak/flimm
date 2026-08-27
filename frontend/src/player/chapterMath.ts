@@ -104,6 +104,35 @@ export function segmentToMute(segments: SponsorSegment[], time: number): Sponsor
   return segments.find((s) => acts(s, "mute", time, 0));
 }
 
+// ---- The highlight --------------------------------------------------------
+
+// How far ahead of playback the highlight has to be for jumping to it to be
+// worth offering. Below it the viewer is already there.
+export const HIGHLIGHT_LEAD = 1;
+
+// The point of interest a contributor marked as the highlight — "where the
+// video actually starts". The earliest one, when a video somehow has several.
+export function highlightSegment(segments: SponsorSegment[]): SponsorSegment | undefined {
+  return segments
+    .filter((s) => sponsorAction(s) === "poi" && s.start >= 0)
+    .sort((a, b) => a.start - b.start)[0];
+}
+
+// The highlight worth offering at `time`: there is one, and playback has not
+// reached it. Nothing here is automatic — a point of interest is never jumped
+// to for the viewer, only offered, whatever the skip preference says.
+export function highlightToOffer(segments: SponsorSegment[], time: number): SponsorSegment | undefined {
+  const highlight = highlightSegment(segments);
+  return highlight && time < highlight.start - HIGHLIGHT_LEAD ? highlight : undefined;
+}
+
+// Percent-of-duration positions for segments that mark an instant rather than
+// a range — the highlight. Drawn as a marker, never as a band.
+export function sponsorPointPercents(segments: SponsorSegment[], duration: number): number[] {
+  if (duration <= 0) return [];
+  return segments.filter((s) => sponsorAction(s) === "poi").map((s) => clampPct((s.start / duration) * 100));
+}
+
 // ---- Category labels ------------------------------------------------------
 
 const CATEGORY_LABELS: Record<string, string> = {

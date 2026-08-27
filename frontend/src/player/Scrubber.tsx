@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { Chapter, SponsorSegment } from "@/lib/api";
 import { fmtDuration } from "@/lib/format";
-import { chapterMarkerPercents, currentChapterIndex, sponsorCategoryLabel, sponsorRangePercents } from "./chapterMath";
+import { chapterMarkerPercents, currentChapterIndex, sponsorCategoryLabel, sponsorPointPercents, sponsorRangePercents } from "./chapterMath";
 
 export interface ScrubberProps {
   time: number;
@@ -21,6 +21,7 @@ export function Scrubber({ time, duration, chapters, sponsorblock, onSeek }: Scr
   const pct = duration > 0 ? (time / duration) * 100 : 0;
   const ticks = chapterMarkerPercents(chapters, duration);
   const sponsorRanges = sponsorRangePercents(sponsorblock, duration);
+  const sponsorPoints = sponsorPointPercents(sponsorblock, duration);
 
   const posAt = (e: { clientX: number; currentTarget: HTMLDivElement }) => {
     const r = e.currentTarget.getBoundingClientRect();
@@ -71,6 +72,14 @@ export function Scrubber({ time, duration, chapters, sponsorblock, onSeek }: Scr
       <div className="pointer-events-none h-full rounded-sm bg-accent" style={{ width: `${pct}%` }} />
       {ticks.map((p, i) => (
         <div key={i} className="pointer-events-none absolute -top-px bottom-[-1px] w-px bg-black/50" style={{ left: `${p}%` }} />
+      ))}
+      {/* The highlight is an instant, not a band: a diamond on the bar. */}
+      {sponsorPoints.map((p, i) => (
+        <div
+          key={i}
+          className="pointer-events-none absolute -top-[3px] h-[7px] w-[7px] -translate-x-1/2 rotate-45 bg-accent"
+          style={{ left: `${p}%` }}
+        />
       ))}
       <div className="pointer-events-none absolute -top-[5px] h-3.5 w-3.5 -translate-x-1/2 rounded-full bg-white" style={{ left: `${pct}%` }} />
       {hoverLabel && (

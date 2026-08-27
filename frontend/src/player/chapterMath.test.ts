@@ -4,8 +4,11 @@ import {
   currentChapterIndex,
   nextChapterStart,
   prevChapterStart,
+  highlightSegment,
+  highlightToOffer,
   segmentToMute,
   segmentToSkip,
+  sponsorPointPercents,
   sponsorAction,
   sponsorCategoryLabel,
   sponsorRangePercents,
@@ -125,6 +128,35 @@ describe("sponsor actions", () => {
       200,
     );
     expect(ranges).toEqual([{ category: "sponsor", leftPct: 0, widthPct: 50 }]);
+  });
+});
+
+describe("the highlight", () => {
+  const withHighlight = [
+    { category: "sponsor", action_type: "skip" as const, start: 0, end: 30 },
+    { category: "poi_highlight", action_type: "poi" as const, start: 90, end: 90 },
+  ];
+
+  it("finds the point of interest, and the earliest one when there are several", () => {
+    expect(highlightSegment(withHighlight)?.start).toBe(90);
+    expect(
+      highlightSegment([
+        { category: "poi_highlight", action_type: "poi", start: 120, end: 120 },
+        { category: "poi_highlight", action_type: "poi", start: 40, end: 40 },
+      ])?.start,
+    ).toBe(40);
+    expect(highlightSegment([{ category: "sponsor", action_type: "skip", start: 0, end: 30 }])).toBeUndefined();
+  });
+
+  it("is offered only while playback is still before it", () => {
+    expect(highlightToOffer(withHighlight, 0)?.start).toBe(90);
+    expect(highlightToOffer(withHighlight, 89.5)).toBeUndefined(); // inside the lead, already there
+    expect(highlightToOffer(withHighlight, 120)).toBeUndefined();
+  });
+
+  it("positions it as a marker, not a band", () => {
+    expect(sponsorPointPercents(withHighlight, 180)).toEqual([50]);
+    expect(sponsorRangePercents(withHighlight, 180).map((r) => r.category)).toEqual(["sponsor"]);
   });
 });
 

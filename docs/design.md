@@ -54,6 +54,11 @@ feeds without leaving the page.
   file carries none. Which categories act is one rule shared by every client:
   sponsor, self-promo and interaction reminders act, everything else is only
   tinted on the timeline.
+- **The highlight** — where a contributor marked "this is where the video
+  actually starts" — is a marker on the timeline and a *Jump to the highlight*
+  control while playback is still before it. It is never taken automatically,
+  and it is offered whether or not sponsor skipping is on: jumping is a
+  choice, not a skip.
 - **Quality is a per-device choice**, next to speed and subtitles: *Auto*,
   then the qualities this video offers. The archive holds whatever was
   downloaded — often AV1 or VP9, which some devices and browsers decode and

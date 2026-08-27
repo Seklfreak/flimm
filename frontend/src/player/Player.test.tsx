@@ -66,11 +66,11 @@ const prefs: Prefs = {
   theme: "system",
 };
 
-function renderPlayer(audioOnly: boolean) {
+function renderPlayer(audioOnly: boolean, video = videoDetail()) {
   mockFetch({ "GET /api/v1/videos/vid1/chapters": { source: "none", chapters: [] } });
   return renderWithProviders(
     <Player
-      video={videoDetail()}
+      video={video}
       prefs={prefs}
       audioOnly={audioOnly}
       onToggleAudioOnly={() => {}}
@@ -111,6 +111,24 @@ describe("Player audio mode", () => {
   });
 });
 
+
+describe("the SponsorBlock highlight", () => {
+  const highlight = videoDetail({
+    sponsorblock: [{ category: "poi_highlight", action_type: "poi", start: 90, end: 90 }],
+  });
+
+  it("offers a jump to the point of interest, and seeks there", () => {
+    const { container } = renderPlayer(false, highlight);
+    const button = screen.getByText("Jump to the highlight");
+    fireEvent.click(button);
+    expect(container.querySelector("video")?.currentTime).toBe(90);
+  });
+
+  it("offers nothing when the video has no point of interest", () => {
+    renderPlayer(false);
+    expect(screen.queryByText("Jump to the highlight")).toBeNull();
+  });
+});
 
 // ---- renditions and the quality picker --------------------------------------
 

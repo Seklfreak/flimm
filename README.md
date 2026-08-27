@@ -32,8 +32,9 @@ One container image: a Go backend with the React frontend embedded.
   segment skipping, playback speed, autoplay with context-aware *Up next*.
 - **SponsorBlock, fetched live** — the backend asks the SponsorBlock service
   itself rather than reading TubeArchivist's download-time snapshot, so
-  segments stay current, `mute` segments mute instead of skipping, and
-  crowd-sourced chapter names fill in for videos whose file carries none. The
+  segments stay current, `mute` segments mute instead of skipping, the
+  crowd-sourced *highlight* is one click away, and chapter names fill in for
+  videos whose file carries none. The
   lookup sends a hash prefix of the video id, never the id, and
   `SPONSORBLOCK_URL=` turns it off. See
   [docs/api.md](docs/api.md#sponsorblock).

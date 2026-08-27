@@ -300,10 +300,15 @@ exercise.
   the web client tints them on the scrubber and skips them when enabled.
   Each segment carries an `action_type`: only `skip` is seeked past, `mute` is
   muted for its length and unmuted afterwards to whatever the viewer had set,
-  and `poi`/`full` are informational (never skipped, never tinted). All of
-  that lives in `SponsorRules` and `SponsorMuteTracker` in FlimmKit — the
-  phone drives its mute through `PlayerEngine`, the TV sets `AVPlayer.isMuted`
-  directly, and neither decides anything of its own.
+  and `poi`/`full` are never skipped and never tinted. The `poi` is the
+  highlight: the phone and iPad draw it as a diamond on the scrubber and put a
+  *Jump to the highlight* pill above the transport bar, and the TV — which has
+  no scrubber worth hunting on — carries the same jump as an action in the
+  Info panel. It is offered only while playback is before it, and regardless
+  of `skip_sponsors`. All of that lives in `SponsorRules` and
+  `SponsorMuteTracker` in FlimmKit — the phone drives its mute through
+  `PlayerEngine`, the TV sets `AVPlayer.isMuted` directly, and neither decides
+  anything of its own.
 - **Audio-only** for music playlists and the codec-gate fallback: use
   `audio_aac_url` instead of `media_url` — `audio_url` is Opus in WebM and
   will not play here, and is never a substitute even when `audio_aac_url` is
