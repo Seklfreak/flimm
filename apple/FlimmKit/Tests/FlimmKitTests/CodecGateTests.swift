@@ -133,9 +133,9 @@ final class CodecGateTests: XCTestCase {
     /// source at all. Unknown `streams` counts as playable, exactly as the
     /// gate treats it.
     func testArchivePlaysMirrorsTheGate() throws {
-        XCTAssertTrue(CodecGate.archivePlays(try video(Fixtures.videoDetail)))
-        XCTAssertTrue(CodecGate.archivePlays(try video(Fixtures.videoDetailWithoutStreams)))
-        XCTAssertFalse(CodecGate.archivePlays(try video(streams: undecodable)))
+        XCTAssertTrue(CodecGate.archivePlays(try video(Fixtures.videoDetail), on: phone))
+        XCTAssertTrue(CodecGate.archivePlays(try video(Fixtures.videoDetailWithoutStreams), on: phone))
+        XCTAssertFalse(CodecGate.archivePlays(try video(streams: undecodable), on: phone))
     }
 
     // MARK: - The quality rule
