@@ -111,7 +111,10 @@ is in [docs/api.md](docs/api.md).
   and only `/media/audio/*` and `/media/hls/*` fail. The WebM rendition
   browsers use is a stream copy and nearly free; the `.m4a` (AAC) one native
   Apple clients need is a real re-encode; the **HLS video rendition is a real
-  transcode**, so give the container several cores if clients use it. See
+  transcode**, so give the container several cores if clients use it. An Intel
+  iGPU on the host takes that transcode off the CPU — optional, off unless the
+  render node is there, see
+  [docs/deploy.md](docs/deploy.md#hardware-acceleration-intel-vaapi). See also
   [docs/api.md](docs/api.md#derived-media) and
   [docs/deploy.md](docs/deploy.md).
 
@@ -137,6 +140,8 @@ All configuration is via environment variables.
 | `MEDIA_CACHE_MAX_BYTES` | no | cache size cap before least-recently-used eviction (default 5 GiB) |
 | `MEDIA_TRANSCODE_JOBS` | no | concurrent HLS transcodes (default 1); extra requests queue |
 | `FFMPEG_PATH` | no | ffmpeg binary; default `ffmpeg` on `PATH` |
+| `MEDIA_HWACCEL` | no | hardware transcoding: `auto` (default — Intel VAAPI when a render node is there and openable, CPU otherwise), `vaapi`, or `off`. A failed hardware attempt falls back to the CPU per video. See [docs/deploy.md](docs/deploy.md#hardware-acceleration-intel-vaapi) |
+| `MEDIA_VAAPI_DEVICE` | no | DRM render node for VAAPI; default `/dev/dri/renderD128` |
 | `SENTRY_DSN` | no | backend error reporting |
 | `VITE_SENTRY_DSN` | no | frontend error reporting; a **build arg**, baked into the bundle at image build time (not a runtime env var) |
 | `LOG_LEVEL` | no | `debug`, `info` (default), `warn`, `error` |

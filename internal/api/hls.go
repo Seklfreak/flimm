@@ -140,7 +140,7 @@ func (s *Server) startHLS(ctx context.Context, id string) (media.JobState, error
 		return media.StatePending, ta.ErrNotFound
 	}
 	src := taMediaPath(v.MediaURL)
-	return s.mediaCache.StartDir(media.HLSName(id), media.HLS(s.ffmpegPath, hlsSource(v), s.log,
+	return s.mediaCache.StartDir(media.HLSName(id), media.HLS(s.ffmpegPath, hlsSource(v), s.hwaccel, s.log,
 		func(ctx context.Context) (io.ReadCloser, error) { return s.ta.OpenMedia(ctx, src) })), nil
 }
 

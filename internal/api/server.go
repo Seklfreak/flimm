@@ -51,6 +51,9 @@ type Options struct {
 	MediaCache *media.Cache
 	// FFmpegPath is the ffmpeg binary used for derivations.
 	FFmpegPath string
+	// HWAccel is the hardware-transcode decision made at start-up; the zero
+	// value keeps every transcode on the CPU.
+	HWAccel media.HWAccel
 	// MinPlaySeconds is how long a video must be played before it is recorded;
 	// 0 uses the default.
 	MinPlaySeconds float64
@@ -82,6 +85,7 @@ type Server struct {
 	minPlaySeconds float64
 	mediaCache     *media.Cache
 	ffmpegPath     string
+	hwaccel        media.HWAccel
 }
 
 func NewServer(o Options) *Server {
@@ -116,6 +120,7 @@ func NewServer(o Options) *Server {
 		minPlaySeconds: cmp.Or(o.MinPlaySeconds, defaultMinPlaySeconds),
 		mediaCache:     o.MediaCache,
 		ffmpegPath:     cmp.Or(o.FFmpegPath, "ffmpeg"),
+		hwaccel:        o.HWAccel,
 	}
 	if o.MediaProxy != nil {
 		// Thumbnails are immutable per id; let the browser keep them a day.

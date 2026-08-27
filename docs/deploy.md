@@ -59,6 +59,8 @@ data:
   MEDIA_CACHE_DIR: "/cache"
   MEDIA_CACHE_MAX_BYTES: "21474836480"   # 20 GiB
   MEDIA_TRANSCODE_JOBS: "1"
+  # auto is the default and needs no GPU; see "Hardware acceleration" below.
+  MEDIA_HWACCEL: "auto"
 ```
 
 See the [configuration table](../README.md#configuration) for every variable.
@@ -134,10 +136,12 @@ own copy.
 
 The compatible video rendition (`/media/hls/…`, see
 [api.md](api.md#compatible-video-rendition-hls)) is a **real transcode**:
-software AV1 or VP9 decode feeding an x264 encode, both CPU-bound and neither
-using a GPU. On a modern server core that runs at roughly realtime, so a
-40-minute video occupies a core for tens of minutes — the viewer starts
-watching within seconds, but the job carries on behind them.
+software AV1 or VP9 decode feeding an x264 encode, both CPU-bound. On a modern
+server core that runs at roughly realtime, so a 40-minute video occupies a core
+for tens of minutes — the viewer starts watching within seconds, but the job
+carries on behind them. On a node with an Intel iGPU most of this goes away;
+see [Hardware acceleration](#hardware-acceleration-intel-vaapi) below. The
+numbers here are the CPU ones.
 
 - **Give the container several cores.** With a 1-core limit a transcode is
   slower than playback and the player stalls waiting for segments. Four cores
@@ -153,6 +157,72 @@ watching within seconds, but the job carries on behind them.
 - **Audio-only renditions are cheap** by comparison (a remux, or an audio
   re-encode) and need none of this. A deployment whose clients never hit the
   codec wall can leave the defaults alone.
+
+### Hardware acceleration (Intel VAAPI)
+
+If the node has an Intel iGPU — anything from Broadwell on; a recent desktop or
+NUC chip decodes AV1, VP9, HEVC and H.264 and encodes H.264 in fixed-function
+silicon — the transcode can run on it instead of the CPU. Expect the difference
+to be large: **a 4K AV1 hour finishes in a handful of minutes rather than the
+tens of minutes an x264 encode takes**, and the cores stay free for everything
+else. The rendition is the same H.264 High@4.1 ≤1080p either way.
+
+| Var | Default | Notes |
+|---|---|---|
+| `MEDIA_HWACCEL` | `auto` | `auto` uses the GPU when the render node exists and the process can open it, and the CPU otherwise; `vaapi` always tries it (for a device that appears after start-up); `off` never does |
+| `MEDIA_VAAPI_DEVICE` | `/dev/dri/renderD128` | the DRM render node; only worth setting on a host with more than one GPU |
+
+The decision is made once at start-up and logged on one line — grep the boot
+log for `media hardware acceleration` to see whether the GPU was found:
+
+```
+level=INFO msg="media hardware acceleration" mode=auto vaapi=true device=/dev/dri/renderD128 reason="render node is usable"
+```
+
+**Device access.** The image ships the iHD driver (`intel-media-driver`) and
+runs as **uid 1000**, which is not in the host's `render` group, so passing the
+device in is not enough on its own — the group has to be granted too. Find its
+gid on the node with `stat -c '%g' /dev/dri/renderD128` (commonly 44 `video` or
+104/993 `render`, depending on the distribution).
+
+With Docker:
+
+```
+docker run --device /dev/dri/renderD128 --group-add <render-gid> ghcr.io/…
+```
+
+In Kubernetes, with Intel's device plugin advertising the GPU:
+
+```yaml
+    spec:
+      containers:
+        - name: archive
+          resources:
+            requests:
+              cpu: 500m
+              memory: 256Mi
+              gpu.intel.com/i915: "1"
+            limits:
+              cpu: "2"          # a GPU transcode needs far fewer cores
+              memory: 1Gi
+              gpu.intel.com/i915: "1"
+      securityContext:
+        # uid 1000 is not in the node's render group; without this the render
+        # node is present and unopenable, and MEDIA_HWACCEL=auto stays on the
+        # CPU (the start-up log line says so).
+        supplementalGroups: [<render-gid>]
+```
+
+Without the device plugin, a `hostPath` volume at `/dev/dri` plus the same
+`supplementalGroups` works and is what a single-node cluster usually does.
+
+**It never becomes a hard dependency.** `auto` on a node without a GPU is
+exactly today's behaviour. And per video, a source the fixed-function decoder
+cannot take — 10-bit AV1 is the usual one — fails the hardware attempt, and
+Flimm clears the partial rendition and re-runs it in software; the viewer sees
+a slower transcode, not an error. Those fallbacks are logged at `warn` as
+`hls attempt failed, falling back`, so a GPU that has stopped working shows up
+as every video logging it rather than as broken playback.
 
 ## Ingress
 
