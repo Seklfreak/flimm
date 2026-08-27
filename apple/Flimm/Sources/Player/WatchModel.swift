@@ -100,7 +100,7 @@ final class WatchModel {
     private func applyCodecGate(_ detail: Video) {
         guard let streams = detail.streams, !streams.isEmpty else { return }
         let videoStreams = streams.filter { $0.type == .video }
-        guard !videoStreams.isEmpty, !videoStreams.contains(where: \.isNativelyPlayable) else { return }
+        guard !videoStreams.isEmpty, !videoStreams.contains(where: DeviceCodecs.canDecode) else { return }
         codecIssue = CodecIssue(videoCodec: videoStreams[0].codec, audioAvailable: detail.nativeAudioURL != nil)
         // Audio-only sidesteps a video codec this device cannot decode.
         if audioOnly { codecIssue = nil }

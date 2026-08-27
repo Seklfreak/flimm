@@ -315,10 +315,11 @@ struct CodecGateView: View {
             Text("This video's codec (\(model.codecIssue?.videoCodec ?? "unknown")) can't be played on this device")
                 .font(.subheadline.weight(.semibold))
                 .multilineTextAlignment(.center)
-            Text("The archive keeps whatever was downloaded, and AVFoundation decodes a narrower set of codecs than a browser.")
+            Text("The archive keeps whatever was downloaded, and this device has no decoder for it.")
                 .font(.caption)
                 .foregroundStyle(.white.opacity(0.7))
                 .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
             if model.codecIssue?.audioAvailable == true {
                 Button {
                     Task { await model.toggleAudioOnly() }
