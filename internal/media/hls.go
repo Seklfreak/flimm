@@ -10,18 +10,25 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 )
 
-// HLS variant: a compatible video rendition.
+// HLS variants: compatible video renditions, one per quality.
 //
 // The archive holds whatever yt-dlp downloaded, which today is usually VP9 or
-// AV1 in WebM — codecs AVFoundation cannot decode on most Apple hardware. This
-// variant transcodes the source to H.264/AAC and writes it as HLS with fMP4
-// segments, so a player can start on the first segment instead of waiting for
-// a whole file. It is a real transcode: see docs/api.md "Compatible video
-// rendition (HLS)" for the cost.
+// AV1 in WebM — codecs AVFoundation cannot decode on most Apple hardware. A
+// variant transcodes the source to a codec Apple decodes in hardware and
+// writes it as HLS with fMP4 segments, so a player can start on the first
+// segment instead of waiting for a whole file. It is a real transcode: see
+// docs/api.md "Compatible video renditions (HLS)" for the cost.
+//
+// There is one variant per offered height, each its own cache entry derived
+// independently on demand — the client picks. Height also picks the codec:
+// H.264 up to 1080p, HEVC above it, because a 4K x264 encode is enormous for
+// what it delivers and every Apple device that can drive a 4K panel decodes
+// HEVC in hardware.
 const (
 	// HLSVariant is the cache key prefix; the entry is a *directory*, not a
 	// file, because a rendition is a playlist plus its segments.
@@ -35,10 +42,11 @@ const (
 	HLSInitType     = "video/mp4"
 	HLSSegmentType  = "video/iso.segment"
 
-	// hlsMaxHeight caps the rendition. Anything taller is scaled down: a 4K
-	// x264 encode costs several times as much CPU for a rendition no Apple
-	// client asks for.
-	hlsMaxHeight = 1080
+	// HLSDefaultHeight is the rendition a client gets when it does not ask
+	// for one: the best height that is neither a 4K transcode nor a
+	// compromise on a phone. It is also what the legacy routes without a height
+	// and `hls_url` point at.
+	HLSDefaultHeight = 1080
 	// hlsSegmentSeconds is the target segment length. Shorter segments reach
 	// the first frame sooner and cost more requests; 4 s is the usual balance
 	// and matches Apple's own recommendation (6 s max).
@@ -52,10 +60,101 @@ const (
 	// enough that a viewer cannot tell which path produced what they are
 	// watching — which is the whole requirement here.
 	hlsVAAPIQP = "23"
+	// hlsVAAPIHEVCQP is the same idea for the HEVC rungs, matched to the
+	// software path's crf 26. HEVC carries the same picture at a higher
+	// quantiser than H.264 does, which is the entire reason the tall
+	// renditions use it.
+	hlsVAAPIHEVCQP = "25"
 )
 
-// HLSName is the cache entry (a directory) for a video's HLS rendition.
-func HLSName(videoID string) string { return HLSVariant + "-" + videoID }
+// The two codecs a rendition can be in, as reported to clients in
+// `hls_variants[].codec`. They are part of the API.
+const (
+	HLSCodecH264 = "h264"
+	HLSCodecHEVC = "hevc"
+)
+
+// The software encoders behind those codecs. They double as attempt names in
+// the ladder, so a log line says which encoder ran.
+const (
+	hlsSoftwareH264 = "libx264"
+	hlsSoftwareHEVC = "libx265"
+)
+
+// hlsHeights is every rendition height, tallest first. A video offers the ones
+// its source can fill; see HLSOfferedHeights.
+var hlsHeights = []int{2160, 1440, 1080, 720, 480}
+
+// HLSHeights returns the full ladder, tallest first.
+func HLSHeights() []int { return slices.Clone(hlsHeights) }
+
+// ValidHLSHeight reports whether h is one of the rendition heights. Routes use
+// it to reject anything else before it reaches the filesystem.
+func ValidHLSHeight(h int) bool { return slices.Contains(hlsHeights, h) }
+
+// HLSOfferedHeights is the ladder a video of this source height offers,
+// tallest first: every height the source can fill, so nothing is upscaled into
+// a bigger file with no more detail in it.
+//
+// An unknown source height (TA parsed no video stream) offers 1080 and below —
+// the default rendition still has to be reachable, and the scaler clamps to the
+// source anyway. A source shorter than the lowest rung still offers that rung,
+// for the same reason: the point of the variant is a playable codec, and a
+// 360p source transcoded at "480" is simply 360p H.264.
+func HLSOfferedHeights(sourceHeight int) []int {
+	limit := sourceHeight
+	if limit <= 0 {
+		limit = HLSDefaultHeight
+	}
+	var out []int
+	for _, h := range hlsHeights {
+		if h <= limit {
+			out = append(out, h)
+		}
+	}
+	if len(out) == 0 {
+		out = []int{hlsHeights[len(hlsHeights)-1]}
+	}
+	return out
+}
+
+// HLSDefaultOffered is the height `hls_url` points at: the default when the
+// video offers it, and the tallest it does offer when the source is smaller.
+func HLSDefaultOffered(sourceHeight int) int {
+	offered := HLSOfferedHeights(sourceHeight)
+	if slices.Contains(offered, HLSDefaultHeight) {
+		return HLSDefaultHeight
+	}
+	return offered[0]
+}
+
+// HLSCodecForHeight is the codec a rendition of that height is encoded in.
+// Above 1080p that is HEVC: an H.264 encode of 4K is several times the file
+// for a worse picture, and HEVC hardware decode is universal on Apple devices
+// from the iPhone 7 and the Apple TV 4K on — which is everything that can show
+// those heights anyway.
+func HLSCodecForHeight(height int) string {
+	if height > HLSDefaultHeight {
+		return HLSCodecHEVC
+	}
+	return HLSCodecH264
+}
+
+// hlsSoftwareEncoder is the CPU encoder for a height's codec — the last rung
+// of the ladder, the one that always works.
+func hlsSoftwareEncoder(height int) string {
+	if HLSCodecForHeight(height) == HLSCodecHEVC {
+		return hlsSoftwareHEVC
+	}
+	return hlsSoftwareH264
+}
+
+// HLSName is the cache entry (a directory) for one video's rendition at one
+// height. Every height is its own entry, derived, cached and evicted on its
+// own — asking for 720p must not wait on someone else's 4K job.
+func HLSName(videoID string, height int) string {
+	return HLSVariant + "-" + strconv.Itoa(height) + "-" + videoID
+}
 
 // HLSSource is what the source file holds, as TubeArchivist reports it in the
 // video document's `streams`. It decides copy vs re-encode; it is metadata,
@@ -67,17 +166,17 @@ type HLSSource struct {
 }
 
 // HLS returns a DirDeriveFunc that writes index.m3u8, init.mp4 and the
-// segments into dir.
+// segments of the rendition at height into dir.
 //
-// Both tracks are copied when the source already matches what a player wants
-// (H.264 at or below 1080p, AAC audio): segmenting a stream copy is nearly
-// free, so a compatible archive costs no more than the audio variants do.
-// Otherwise the track is encoded for real — on the GPU when hw says so, and
-// on the CPU when it does not or when the GPU turns out not to manage this
-// particular source.
-func HLS(ffmpegPath string, src HLSSource, hw HWAccel, log *slog.Logger, source SourceFunc) DirDeriveFunc {
+// A track is copied when the source already is what this rendition would
+// encode (the same height in the height's codec, or AAC audio): segmenting a
+// stream copy is nearly free, so a compatible archive costs no more than the
+// audio variants do. Otherwise the track is encoded for real — on the GPU when
+// hw says so, and on the CPU when it does not or when the GPU turns out not to
+// manage this particular source.
+func HLS(ffmpegPath string, src HLSSource, height int, hw HWAccel, log *slog.Logger, source SourceFunc) DirDeriveFunc {
 	return func(ctx context.Context, dir string) error {
-		if err := runHLSAttempts(ctx, ffmpegPath, dir, source, hlsAttempts(src, hw), log); err != nil {
+		if err := runHLSAttempts(ctx, ffmpegPath, dir, source, hlsAttempts(src, height, hw), log); err != nil {
 			return err
 		}
 		return ensureEndList(filepath.Join(dir, HLSPlaylistName))
@@ -96,23 +195,25 @@ type hlsAttempt struct {
 // the last one — a plain software encode — is the one that always works. That
 // ordering is what makes the failure of any earlier rung a non-event.
 //
-//   - copy, when TA's metadata says the tracks are already what a player
-//     wants. Metadata is not a guarantee, so a muxer that refuses it falls
-//     through rather than failing the request.
+//   - copy, when TA's metadata says the tracks are already what this rendition
+//     would produce. Metadata is not a guarantee, so a muxer that refuses it
+//     falls through rather than failing the request.
 //   - vaapi, when a GPU was resolved at start-up. It can fail for a source the
 //     fixed-function decoder does not handle (10-bit AV1, most often) or
 //     because the device went away; neither is the user's problem.
-//   - libx264. If this fails, the source really is broken.
-func hlsAttempts(src HLSSource, hw HWAccel) []hlsAttempt {
-	vc, ac := hlsVideoCodec(src), aacCodec(src.AudioCodec)
+//   - libx264 or libx265, per the height's codec. If this fails, the source
+//     really is broken.
+func hlsAttempts(src HLSSource, height int, hw HWAccel) []hlsAttempt {
+	vc, ac := hlsVideoCodec(src, height), aacCodec(src.AudioCodec)
 	var out []hlsAttempt
 	if vc == "copy" || ac == "copy" {
-		out = append(out, hlsAttempt{name: "copy", args: hlsArgs(vc, ac)})
+		out = append(out, hlsAttempt{name: "copy", args: hlsArgs(vc, ac, height)})
 	}
 	if hw.VAAPI {
-		out = append(out, hlsAttempt{name: "vaapi", args: hlsVAAPIArgs(hw.Device, "aac")})
+		out = append(out, hlsAttempt{name: "vaapi", args: hlsVAAPIArgs(hw.Device, "aac", height)})
 	}
-	return append(out, hlsAttempt{name: "libx264", args: hlsArgs("libx264", "aac")})
+	sw := hlsSoftwareEncoder(height)
+	return append(out, hlsAttempt{name: sw, args: hlsArgs(sw, "aac", height)})
 }
 
 // runHLSAttempts walks the ladder until one rung produces a rendition.
@@ -158,14 +259,26 @@ func runHLSAttempts(ctx context.Context, ffmpegPath, dir string, source SourceFu
 	return fmt.Errorf("derive hls: %s failed: %w", lastName, lastErr)
 }
 
-// hlsVideoCodec copies a source that is already what the rendition would
-// encode to, and encodes everything else. An unknown height means unknown
-// dimensions, so it is encoded (and scaled) rather than trusted.
-func hlsVideoCodec(src HLSSource) string {
-	if isH264(src.VideoCodec) && src.Height > 0 && src.Height <= hlsMaxHeight {
+// hlsVideoCodec copies a source that already is this rendition — the same
+// height, in the codec this height is encoded in — and encodes everything
+// else. The height must match exactly: a 1080p source is not the 720p
+// rendition, and copying it would hand a client a stream twice the size of the
+// one it asked for. An unknown height means unknown dimensions, so it is
+// encoded (and scaled) rather than trusted.
+func hlsVideoCodec(src HLSSource, height int) string {
+	if src.Height > 0 && src.Height == height && isSourceCodec(src.VideoCodec, HLSCodecForHeight(height)) {
 		return "copy"
 	}
-	return "libx264"
+	return hlsSoftwareEncoder(height)
+}
+
+// isSourceCodec reports whether the source track is already in the rendition's
+// codec.
+func isSourceCodec(sourceCodec, want string) bool {
+	if want == HLSCodecHEVC {
+		return isHEVC(sourceCodec)
+	}
+	return isH264(sourceCodec)
 }
 
 // isH264 recognises the ways an H.264 track is named. TA reports the ISO-BMFF
@@ -177,6 +290,15 @@ func isH264(codec string) bool {
 	return name == "avc1" || name == "h264"
 }
 
+// isHEVC recognises the ways an H.265 track is named: the ISO-BMFF sample
+// entries TA reports ("hvc1"/"hev1", sometimes with a profile suffix such as
+// "hvc1.1.6.L120.90") and ffprobe's and yt-dlp's "hevc"/"h265".
+func isHEVC(codec string) bool {
+	c := strings.ToLower(strings.TrimSpace(codec))
+	name, _, _ := strings.Cut(c, ".")
+	return name == "hvc1" || name == "hev1" || name == "hevc" || name == "h265"
+}
+
 // hlsArgs builds the ffmpeg command line. The output names are relative
 // because the command runs with the entry directory as its working directory —
 // which is also what keeps them valid as playlist URLs.
@@ -184,19 +306,42 @@ func isH264(codec string) bool {
 // The source is read from stdin, as the audio variants are, so the API token
 // never reaches argv or a log line. A linear transcode never seeks backwards,
 // so an unseekable input costs nothing here.
-func hlsArgs(videoCodec, audioCodec string) []string {
+func hlsArgs(videoCodec, audioCodec string, height int) []string {
 	args := []string{
 		"-hide_banner", "-loglevel", "error",
 		"-i", "pipe:0",
 		"-map", "0:v:0", "-map", "0:a:0",
 	}
-	if videoCodec == "copy" {
+	switch videoCodec {
+	case "copy":
 		args = append(args, "-c:v", "copy")
-	} else {
+		if HLSCodecForHeight(height) == HLSCodecHEVC {
+			// Even a copied HEVC track needs the hvc1 sample entry: ffmpeg
+			// will happily write hev1 into fMP4, and AVFoundation refuses it.
+			args = append(args, "-tag:v", "hvc1")
+		}
+	case hlsSoftwareHEVC:
 		args = append(args,
-			// -2 keeps the width even (x264 needs it) and the aspect ratio;
-			// min() means a source below the cap is never upscaled.
-			"-vf", "scale=-2:'min("+strconv.Itoa(hlsMaxHeight)+",ih)'",
+			"-vf", hlsScaleFilter(height),
+			"-c:v", hlsSoftwareHEVC,
+			// crf 26 in HEVC is roughly crf 23 in H.264 — the same picture in
+			// a smaller file, which is what makes a 4K rendition affordable at
+			// all. veryfast for the same reason as the H.264 path: this
+			// variant optimises time to first frame.
+			"-preset", "veryfast", "-crf", "26",
+			// Main (8-bit 4:2:0) with the hvc1 tag is what Apple hardware
+			// decodes, from the iPhone 7 and the Apple TV 4K on.
+			"-profile:v", "main", "-tag:v", "hvc1", "-pix_fmt", "yuv420p",
+			"-g", hlsGOP, "-keyint_min", hlsGOP,
+			// x265 writes its own banner and per-frame chatter to stderr,
+			// which -loglevel does not reach. Left on, it would be the first
+			// 500 characters of any error this encoder produces — that is,
+			// instead of the reason it failed.
+			"-x265-params", "log-level=error",
+		)
+	default:
+		args = append(args,
+			"-vf", hlsScaleFilter(height),
 			"-c:v", videoCodec,
 			// veryfast is the fastest preset that still holds quality at
 			// crf 23 — time to first frame is what this variant optimises.
@@ -208,6 +353,15 @@ func hlsArgs(videoCodec, audioCodec string) []string {
 		)
 	}
 	return hlsOutputArgs(args, audioCodec)
+}
+
+// hlsScaleFilter scales to the rendition's height. -2 keeps the width even
+// (every encoder here needs it) and the aspect ratio; min() means a source
+// shorter than the rung is never upscaled — which only happens for a source
+// whose height TA did not report, since a video offers no rung taller than
+// itself.
+func hlsScaleFilter(height int) string {
+	return "scale=-2:'min(" + strconv.Itoa(height) + ",ih)'"
 }
 
 // hlsVAAPIArgs is hlsArgs' hardware twin: the same input, the same audio and
@@ -227,7 +381,7 @@ func hlsArgs(videoCodec, audioCodec string) []string {
 //     it here and it does nothing — VAAPI has no scene-cut detection to turn
 //     off. -g/-keyint_min already pin the GOP the segmenter needs, so it is
 //     dropped rather than carried as a lie about what ran.
-func hlsVAAPIArgs(device, audioCodec string) []string {
+func hlsVAAPIArgs(device, audioCodec string, height int) []string {
 	args := []string{
 		"-hide_banner", "-loglevel", "error",
 		// Hardware decode, with the decoded frames left on the GPU. A source
@@ -236,22 +390,38 @@ func hlsVAAPIArgs(device, audioCodec string) []string {
 		"-hwaccel", "vaapi", "-hwaccel_device", device, "-hwaccel_output_format", "vaapi",
 		"-i", "pipe:0",
 		"-map", "0:v:0", "-map", "0:a:0",
-		// The GPU-side scale=-2:'min(1080,ih)'. w=-2 keeps the width even and
-		// the aspect ratio; min() means a source below the cap is not upscaled.
-		"-vf", "scale_vaapi=w=-2:h='min(" + strconv.Itoa(hlsMaxHeight) + ",ih)':format=nv12",
-		"-c:v", "h264_vaapi",
-		// Constant-quality, the closest thing to x264's crf: quality is pinned
-		// and the bitrate goes where it must, instead of a bitrate cap that
-		// would starve a busy 1080p scene. Intel's encoder is less efficient
-		// than x264 at equal quality, so a QP matching the software crf trades
-		// a somewhat larger rendition for the same picture — the right way
-		// round for a cache that is thrown away anyway.
-		"-rc_mode", "CQP", "-qp", hlsVAAPIQP,
-		// High@4.1 4:2:0, as on the software path: what every Apple device
-		// since the 4S decodes in hardware.
-		"-profile:v", "high", "-level", "4.1",
-		"-g", hlsGOP, "-keyint_min", hlsGOP,
+		// The GPU-side hlsScaleFilter. w=-2 keeps the width even and the
+		// aspect ratio; min() means a source shorter than the rung is not
+		// upscaled.
+		"-vf", "scale_vaapi=w=-2:h='min(" + strconv.Itoa(height) + ",ih)':format=nv12",
 	}
+	if HLSCodecForHeight(height) == HLSCodecHEVC {
+		args = append(args,
+			"-c:v", "hevc_vaapi",
+			// CQP as on the H.264 path, at the quantiser matching the software
+			// path's crf 26.
+			"-rc_mode", "CQP", "-qp", hlsVAAPIHEVCQP,
+			// Main 4:2:0 with the hvc1 sample entry: Apple's decoders will not
+			// touch hev1 in fMP4, and the encoder does not pick the tag.
+			"-profile:v", "main", "-tag:v", "hvc1",
+		)
+	} else {
+		args = append(args,
+			"-c:v", "h264_vaapi",
+			// Constant-quality, the closest thing to x264's crf: quality is
+			// pinned and the bitrate goes where it must, instead of a bitrate
+			// cap that would starve a busy 1080p scene. Intel's encoder is
+			// less efficient than x264 at equal quality, so a QP matching the
+			// software crf trades a somewhat larger rendition for the same
+			// picture — the right way round for a cache that is thrown away
+			// anyway.
+			"-rc_mode", "CQP", "-qp", hlsVAAPIQP,
+			// High@4.1 4:2:0, as on the software path: what every Apple device
+			// since the 4S decodes in hardware.
+			"-profile:v", "high", "-level", "4.1",
+		)
+	}
+	args = append(args, "-g", hlsGOP, "-keyint_min", hlsGOP)
 	return hlsOutputArgs(args, audioCodec)
 }
 

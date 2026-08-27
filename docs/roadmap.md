@@ -2,6 +2,18 @@
 
 ## Done
 
+- **Quality renditions** (2026-08-26) — the compatible HLS rendition is now a
+  ladder: 2160, 1440, 1080, 720 and 480, capped at what the source holds, each
+  its own cache entry derived only when a client asks for it. Above 1080p the
+  codec is HEVC (`hevc_vaapi` / `libx265`, `hvc1`-tagged so AVFoundation takes
+  it), because 4K H.264 is enormous and every Apple device that can show 4K
+  decodes HEVC in hardware; 1080p and below stay H.264. The video detail
+  carries `hls_variants` (height, url, state, codec, tallest first),
+  `/media/hls/{id}/{height}/…` serves them, `POST /videos/{id}/hls?height=`
+  prefetches one, and the old un-suffixed URLs still serve the 1080p entry for
+  clients written before the ladder. See
+  [api.md](api.md#compatible-video-renditions-hls) and
+  [deploy.md](deploy.md#transcoding-cpu-and-the-media-cache).
 - **Hardware transcoding** (2026-08-26) — the HLS rendition runs on an Intel
   iGPU through VAAPI when one is available: hardware decode, `scale_vaapi` and
   `h264_vaapi` with the frames never leaving the GPU, turning a 4K AV1 hour
@@ -19,7 +31,7 @@
   rather than after the whole encode. A source that is already H.264 ≤1080p is
   copied, not re-encoded. Video detail carries `hls_url` and `hls_state`, and
   `POST /videos/{id}/hls` prefetches. `MEDIA_TRANSCODE_JOBS` caps concurrency.
-  See [api.md](api.md#compatible-video-rendition-hls) and
+  See [api.md](api.md#compatible-video-renditions-hls) and
   [deploy.md](deploy.md#transcoding-cpu-and-the-media-cache).
 - **AAC audio variant** (2026-08-26) — `GET /media/audio/{id}.m4a` serves the
   same audio as AAC in MP4 beside the WebM/Opus one, so native Apple clients

@@ -313,13 +313,43 @@ are three outcomes:
 2. Some plays — decide per video, using the stream metadata, and fall back.
 3. Little plays — the apps need a compatible rendition.
 
-**Outcome 3 is built.** `GET /media/hls/{id}/index.m3u8` serves the video
-transcoded to H.264 (High@4.1, ≤1080p) with AAC audio, as HLS with fMP4
+**Outcome 3 is built.** `GET /media/hls/{id}/{height}/index.m3u8` serves the
+video transcoded to a codec Apple decodes, with AAC audio, as HLS with fMP4
 segments — which is exactly what `AVPlayer` is happiest with. The video detail
-carries `hls_url` (always) and `hls_state`
-(`pending|running|done|failed`). See
-[*Compatible video rendition (HLS)*](api.md#compatible-video-rendition-hls) in
+carries `hls_url` (always), `hls_state` (`pending|running|done|failed`) and
+`hls_variants`, the ladder of qualities. See
+[*Compatible video renditions (HLS)*](api.md#compatible-video-renditions-hls) in
 api.md for the contract.
+
+**Codecs and the quality picker.** `hls_variants` lists every height the video
+offers, tallest first, each with its own `url`, `state` and `codec`: `h264` at
+1080 and below, `hevc` at 1440 and 2160. Both decode in hardware on every
+device these apps target — HEVC since the iPhone 7 and the first Apple TV 4K —
+so `AVPlayer` takes either as it stands; the HEVC tracks are `hvc1`-tagged,
+which is the part AVFoundation is strict about. What the apps have to add:
+
+- **A picker, defaulting to a per-device setting.** "Preferred quality" belongs
+  in the app's own settings (not a server preference — it is a property of the
+  device and its network, and an Apple TV on ethernet wants a different answer
+  from a phone on cellular). Resolve it against `hls_variants` at play time and
+  fall to the nearest lower height when the preferred one is not offered;
+  `hls_url` is the sensible default before the user has chosen anything.
+- **Start the one you will play.** `POST /videos/{id}/hls?height=<h>` before
+  handing the URL to `AVPlayer`, exactly as the single-rendition flow does. The
+  server runs one transcode at a time, so prefetching three heights of the same
+  video only makes the first one later — never warm the whole ladder.
+- **A switch is a reload.** These are independent playlists, not one master
+  with several `EXT-X-STREAM-INF` renditions, so switching quality means
+  loading the other variant's URL and seeking to `currentTime` (start its job
+  first, then swap when its `state` reaches `running`/`done`). Expect the wait
+  a fresh transcode implies and say so in the UI rather than stalling silently.
+- **`state` is per height.** A video can be `done` at 720 and `pending` at
+  1080; show the picker's rows accordingly instead of assuming one state for
+  the video.
+- **The un-suffixed URL still works.** An older build hitting
+  `/media/hls/{id}/index.m3u8` gets the 1080p rendition; there is no rush to
+  migrate, but a client that reads `hls_variants` should use the height-qualified URLs
+  so it and the server agree on which entry is being played.
 
 **Both apps do this, and the fallback is automatic.** `FlimmKit`'s
 `CodecGate.decision(for:)` returns one of four answers, and the iOS and tvOS

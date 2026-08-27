@@ -70,8 +70,13 @@ resume is the default action, and `t=` only exists to jump to a subtitle hit.
   "media_url": "/media/video/yt-id.mp4",
   "audio_url": "/media/audio/yt-id.webm",       // Opus in WebM; derived on first request, see Derived media
   "audio_aac_url": "/media/audio/yt-id.m4a",   // the same audio as AAC in MP4, for AVFoundation
-  "hls_url": "/media/hls/yt-id/index.m3u8",    // compatible H.264/AAC rendition; always present
+  "hls_url": "/media/hls/yt-id/1080/index.m3u8", // the default compatible rendition; always present
   "hls_state": "pending|running|done|failed",  // where that rendition stands, see Derived media
+  "hls_variants": [                            // every quality offered, tallest first
+    { "height": 1080, "url": "/media/hls/yt-id/1080/index.m3u8", "state": "done",    "codec": "h264" },
+    { "height": 720,  "url": "/media/hls/yt-id/720/index.m3u8",  "state": "pending", "codec": "h264" },
+    { "height": 480,  "url": "/media/hls/yt-id/480/index.m3u8",  "state": "pending", "codec": "h264" }
+  ],
   "youtube_url": "https://www.youtube.com/watch?v=yt-id",
   "streams": [ { "type": "video", "codec": "avc1", "width": 1920, "height": 1080, "bitrate": 4500000 },
                { "type": "audio", "codec": "mp4a", "width": 0, "height": 0, "bitrate": 130000 } ],
@@ -88,7 +93,7 @@ document (never re-muxed by Flimm). Native clients use `codec` to decide
 whether `media_url` is directly playable by AVFoundation: H.264 (`avc1`) video
 with AAC (`mp4a`) audio always is; VP9 (`vp09`)/AV1 (`av01`) video or Opus
 audio support is device-dependent. When it is not playable, `hls_url` is the
-answer — see [Compatible video rendition (HLS)](#compatible-video-rendition-hls).
+answer — see [Compatible video renditions (HLS)](#compatible-video-renditions-hls).
 
 `hls_url` is **always present**, whether or not the rendition exists yet;
 `hls_state` says which:
@@ -99,6 +104,24 @@ answer — see [Compatible video rendition (HLS)](#compatible-video-rendition-hl
 | `running` | being transcoded (or queued behind another transcode) |
 | `done` | on disk; playback starts immediately |
 | `failed` | the last attempt failed; the next request tries again |
+
+`hls_variants` is the quality ladder, **tallest first**, and it is what a client
+picks from. A video offers every height at or below its source height, out of
+2160, 1440, 1080, 720 and 480 (a source whose height TA did not parse offers
+1080 and below; a source shorter than 480 still offers that one rung). Each
+entry is a rendition in its own right: its own URL, its own cache entry, its own
+`state`, derived only when something asks for it — so the states within one
+video differ.
+
+| field | means |
+|---|---|
+| `height` | the rendition's height in pixels; the width follows the source's aspect ratio |
+| `url` | the playlist to load, `/media/hls/{id}/{height}/index.m3u8` |
+| `state` | `pending\|running\|done\|failed` for *that* height, exactly as `hls_state` |
+| `codec` | `h264` (heights up to 1080) or `hevc` (1440 and 2160) — see [Compatible video renditions (HLS)](#compatible-video-renditions-hls) |
+
+`hls_url` and `hls_state` stay for clients that do not choose: they are the
+1080p entry, or the tallest one offered when the source is smaller than that.
 
 ### ChannelSummary
 ```json
@@ -227,7 +250,7 @@ Prefs:
 | POST | `/videos/{id}/progress` | `{ "position": 561 }` — heartbeat. Upserts watch_event; writes TA `/video/{id}/progress/`; at ≥90% (or ≤30 s remaining) marks watched. Returns `{ "position", "watched" }`. **Nothing is recorded below `MIN_PLAY_SECONDS`** unless the video completes or an event already exists — see below | Pass `?playlist=<id>` so the server can skip recording for music playlists.
 | POST | `/videos/{id}/watched` | `{ "watched": true\|false }` — writes TA `/watched/`; true completes the watch_event, false clears position and TA progress |
 | DELETE | `/videos/{id}/progress` | "Start over": position → 0, TA progress deleted, 204 |
-| POST | `/videos/{id}/hls` | starts the compatible video rendition **without waiting** and returns `{ "state": "pending\|running\|done\|failed" }`, so a client can prefetch (the next video in a playlist, say) instead of making the viewer wait at play time. Idempotent: a running or finished rendition is not started again |
+| POST | `/videos/{id}/hls` | starts a compatible video rendition **without waiting** and returns `{ "state": "pending\|running\|done\|failed" }`, so a client can prefetch (the next video in a playlist, say) instead of making the viewer wait at play time. `?height=` picks which rendition; without it the one `hls_url` points at. A height the video does not offer (not in `hls_variants`) is **400**. Idempotent: a running or finished rendition is not started again |
 
 #### Nav
 
@@ -366,9 +389,10 @@ and `feed` filter the video results in the backend.
 | `GET /media/video/{id}.mp4` | reverse-proxies TA `/media/<media_url>` with `Range`, `If-Range`, `Accept-Ranges`, `Content-Length`, `Content-Type` passthrough |
 | `GET /media/audio/{id}.webm` | audio-only stream, Opus in WebM, derived and cached on first request (see below); supports `Range` |
 | `GET /media/audio/{id}.m4a` | the same audio as AAC in MP4 (`audio/mp4`), for players that cannot decode Opus in WebM; derived and cached the same way; supports `Range` |
-| `GET /media/hls/{id}/index.m3u8` | the compatible H.264/AAC rendition's playlist (`application/vnd.apple.mpegurl`). Starts the transcode on the first request and **blocks until the first segment exists** (up to 45 s), then serves the playlist as it stands; 503 + `Retry-After: 5` if that wait runs out |
-| `GET /media/hls/{id}/init.mp4` | the fMP4 initialisation segment (`video/mp4`) |
-| `GET /media/hls/{id}/seg00000.m4s` | a media segment (`video/iso.segment`); 404 until the transcode reaches it |
+| `GET /media/hls/{id}/{height}/index.m3u8` | the compatible rendition's playlist (`application/vnd.apple.mpegurl`) at that height. `{height}` must be one of 2160, 1440, 1080, 720, 480 and must be one the video offers (`hls_variants`), else **404**. Starts the transcode on the first request and **blocks until the first segment exists** (up to 45 s), then serves the playlist as it stands; 503 + `Retry-After: 5` if that wait runs out |
+| `GET /media/hls/{id}/{height}/init.mp4` | the fMP4 initialisation segment (`video/mp4`) |
+| `GET /media/hls/{id}/{height}/seg00000.m4s` | a media segment (`video/iso.segment`); 404 until the transcode reaches it |
+| `GET /media/hls/{id}/index.m3u8`, `/init.mp4`, `/seg00000.m4s` | the same three files without a height: a **legacy alias** for the 1080p rendition, kept for clients written before the ladder. It serves that rendition's cache entry rather than one of its own. New clients use `hls_variants` |
 | `GET /media/subtitles/{id}/{lang}.vtt` | TA subtitle track |
 | `GET /media/thumb/video/{id}` | TA `/cache/videos/…` |
 | `GET /media/thumb/channel/{id}` and `/media/thumb/channel/{id}/banner` | TA `/cache/channels/…` |
@@ -385,15 +409,16 @@ the default MIME map for that location, so `.mp4` would otherwise arrive as
 ### Derived media
 
 TubeArchivist stores one file per video, muxed. Anything else a client needs —
-two audio renditions and a compatible video rendition — is *derived* from that
-file and cached on disk, keyed by `(video id, variant)`. An audio variant is
-one file; the HLS variant is a directory (a playlist, an init segment and the
-media segments).
+two audio renditions and the compatible video renditions — is *derived* from
+that file and cached on disk, keyed by `(video id, variant)`. An audio variant
+is one file; each HLS variant is a directory (a playlist, an init segment and
+the media segments), and there is one per offered height: `hls-1080`,
+`hls-720` and so on.
 
 There are two audio variants. They carry the same audio; they differ only in
-what can decode them, so a client picks one and never both. The video variant
-is described under [Compatible video rendition (HLS)](#compatible-video-rendition-hls)
-below.
+what can decode them, so a client picks one and never both. The video variants
+are described under
+[Compatible video renditions (HLS)](#compatible-video-renditions-hls) below.
 
 - `GET /media/audio/{id}.webm` is the `audio` variant. The archived audio is
   already Opus, so it is **remuxed, not re-encoded** (`-vn -c:a copy`): no
@@ -429,20 +454,41 @@ Clients choose the stream. `audio_only` on a playlist is the persisted
 intent; clients carry `audio=1` in the player URL so the choice survives
 next/previous, autoplay and a reload, exactly as the shuffle seed does.
 
-#### Compatible video rendition (HLS)
+#### Compatible video renditions (HLS)
 
-`GET /media/hls/{id}/index.m3u8` is the `hls` variant: the video transcoded to
-**H.264 (High@4.1, 4:2:0, capped at 1080p) with AAC audio**, delivered as HLS
-with fMP4 segments. It exists because the archive is full of AV1 and VP9, which
-AVFoundation cannot decode on most Apple hardware — the source file is simply
-unplayable there, and audio-only is a poor consolation.
+`GET /media/hls/{id}/{height}/index.m3u8` is an `hls-<height>` variant: the
+video transcoded to a codec Apple hardware decodes, with AAC audio, delivered
+as HLS with fMP4 segments. It exists because the archive is full of AV1 and
+VP9, which AVFoundation cannot decode on most Apple hardware — the source file
+is simply unplayable there, and audio-only is a poor consolation.
 
-**The client decides when to use it.** Read `streams` from the video detail:
-if a video stream's `codec` is one the device decodes (`avc1` always; `vp09`
-and `av01` are device-dependent), play `media_url` directly — it is the
-original file and costs the server nothing. Only when nothing is playable
-should the client load `hls_url`. Never use it as the default: it is a real
-transcode of someone's CPU.
+**The quality is the client's choice**, from the `hls_variants` ladder on the
+video detail. Each height is derived on its own, on demand; asking for 720p on
+a 4K video transcodes 720p and nothing else. The heights and their codecs:
+
+| height | codec | encoder (GPU / CPU) | notes |
+|---|---|---|---|
+| 2160 | HEVC | `hevc_vaapi` (CQP 25) / `libx265` (crf 26) | Main, 8-bit 4:2:0, `hvc1` |
+| 1440 | HEVC | `hevc_vaapi` (CQP 25) / `libx265` (crf 26) | Main, 8-bit 4:2:0, `hvc1` |
+| 1080 | H.264 | `h264_vaapi` (CQP 23) / `libx264` (crf 23) | High@4.1, 4:2:0 |
+| 720 | H.264 | `h264_vaapi` (CQP 23) / `libx264` (crf 23) | High@4.1, 4:2:0 |
+| 480 | H.264 | `h264_vaapi` (CQP 23) / `libx264` (crf 23) | High@4.1, 4:2:0 |
+
+**Why HEVC above 1080p.** An H.264 encode of 4K is enormous for the picture it
+delivers, and 4K H.264 is beyond what Apple's decoders are specified for
+anyway. HEVC halves the bitrate at the same quality, and **every Apple device
+since the iPhone 7 and the first Apple TV 4K decodes it in hardware** — which
+is everything that can drive a 4K panel in the first place. A client that
+cannot decode HEVC (an old device, a browser without HEVC support) picks 1080
+or below, which is what `codec` on each variant is for. HEVC tracks carry the
+`hvc1` sample entry, not `hev1`: AVFoundation refuses the other one in fMP4.
+
+**The client also decides when to use HLS at all.** Read `streams` from the
+video detail: if a video stream's `codec` is one the device decodes (`avc1`
+always; `vp09` and `av01` are device-dependent), play `media_url` directly — it
+is the original file and costs the server nothing. Only when nothing is
+playable should the client load a rendition. Never use one as the default: it
+is a real transcode of someone's CPU.
 
 **Time to first frame is what it optimises.** The transcode is started by the
 first request and runs to completion whatever the client does; the playlist
@@ -458,33 +504,47 @@ client that comes back finds it further along.
 
 Costs, so nobody is surprised:
 
-- **CPU.** Software AV1/VP9 decode plus an x264 encode is CPU-bound and runs
-  at roughly realtime per core on a modern server, so a 40-minute video takes
-  tens of minutes to finish — though watching can start almost immediately.
-  `MEDIA_TRANSCODE_JOBS` (default 1) caps how many run at once; extra requests
-  queue, because two transcodes sharing a core make both viewers wait longer.
+- **CPU.** Software AV1/VP9 decode plus an x264 (or x265) encode is CPU-bound
+  and runs at roughly realtime per core on a modern server, so a 40-minute
+  video takes tens of minutes to finish — though watching can start almost
+  immediately. `MEDIA_TRANSCODE_JOBS` (default 1) caps how many run at once
+  **across every video and every height**; extra requests queue, because two
+  transcodes sharing a core make both viewers wait longer. A client that
+  prefetches several qualities of the same video therefore serialises them —
+  ask for the one that will be played.
 - **Unless there is a GPU.** With an Intel iGPU exposed to the server
-  (`MEDIA_HWACCEL`, default `auto`) the decode, the scale and the H.264 encode
-  all run on it, and the same job takes minutes instead. Nothing about the
-  rendition or this contract changes: same H.264 High@4.1 ≤1080p, same
+  (`MEDIA_HWACCEL`, default `auto`) the decode, the scale and the encode all
+  run on it, and the same job takes minutes instead. Nothing about the
+  renditions or this contract changes: same codecs, same profiles, same
   playlist, same states. A source the hardware decoder cannot take falls back
   to the software encode by itself, so a client never sees the difference
   except in how long it waits. See
   [deploy.md](deploy.md#hardware-acceleration-intel-vaapi).
-- **Disk.** ~2–3 GB for a 1080p hour, against `MEDIA_CACHE_MAX_BYTES`. A few
-  renditions fill the default 5 GiB cap, and the least recently watched are
-  evicted.
-- **Not always.** When the source is already H.264 at or below 1080p the video
-  track is **copied** (`-c:v copy`), and AAC audio is copied too; the job is
-  then a segmentation, not a transcode, and is nearly free. The codecs come
-  from TA's `streams` metadata, and a copy the muxer refuses falls back to a
-  full encode rather than failing the request.
+- **Disk.** Roughly 1.5 GB for a 1080p hour and 1.5–2 GB for a 2160p HEVC hour (measured at the default quality settings),
+  against `MEDIA_CACHE_MAX_BYTES` — and each height a client asks for is
+  another entry. A few renditions fill the default 5 GiB cap, and the least
+  recently watched are evicted.
+- **Not always.** When the source already *is* the rendition — the same height
+  in that height's codec (H.264 up to 1080p, HEVC above it) — the video track
+  is **copied** (`-c:v copy`), and AAC audio is copied too; the job is then a
+  segmentation, not a transcode, and is nearly free. The height must match
+  exactly: a 1080p source is not the 720p rendition. The codecs come from TA's
+  `streams` metadata, and a copy the muxer refuses falls back to a full encode
+  rather than failing the request.
 
-`hls_state` on the video detail reports `pending|running|done|failed` so a
-client can show "preparing…" honestly, and `POST /api/v1/videos/{id}/hls`
-starts the job without waiting for a prefetch. A failed job removes its partial
-output and is retried by the next request — it never gets stuck "in progress".
-Concurrent viewers of the same video share one job.
+`hls_variants[].state` (and `hls_state` for the default height) reports
+`pending|running|done|failed` so a client can show "preparing…" honestly, and
+`POST /api/v1/videos/{id}/hls?height=` starts one without waiting, for a
+prefetch. A failed job removes its partial output and is retried by the next
+request — it never gets stuck "in progress". Concurrent viewers of the same
+video *at the same height* share one job; different heights are different jobs.
+
+Switching quality mid-playback is a client-side matter: load the other
+variant's playlist and seek to the current time. The renditions share their
+keyframe cadence (a keyframe at least every 96 frames), so the seek lands
+close, but they are separate playlists rather than one master with several
+`EXT-X-STREAM-INF` renditions — nothing here does adaptive bitrate switching,
+because that would mean transcoding every height of every video up front.
 
 ## Backend ↔ TubeArchivist mapping
 

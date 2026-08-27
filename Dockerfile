@@ -28,13 +28,14 @@ RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X main.version=${APP_VERSI
 
 FROM alpine:3.24
 # ffmpeg derives every alternative rendition: the audio-only ones (a remux) and
-# the compatible H.264/AAC HLS one (a real transcode). Alpine's ffmpeg carries
-# what that needs — libx264 to encode, libdav1d and libvpx to decode the AV1
-# and VP9 the archive holds, and the hls muxer.
+# the compatible HLS ones (a real transcode). Alpine's ffmpeg carries what that
+# needs — libx264 and libx265 to encode (H.264 up to 1080p, HEVC above it),
+# libdav1d and libvpx to decode the AV1 and VP9 the archive holds, and the hls
+# muxer.
 #
 # intel-media-driver is the VAAPI driver (iHD) for Intel graphics from Broadwell
 # on: with a /dev/dri render node passed into the container, the HLS transcode
-# decodes and encodes on the iGPU instead of the CPU. It costs ~43 MB in the
+# decodes and encodes (h264_vaapi, hevc_vaapi) on the iGPU instead of the CPU. It costs ~43 MB in the
 # image (143 MB → 186 MB) and nothing at runtime on a host without a GPU —
 # MEDIA_HWACCEL=auto finds no render node and stays on the CPU. libva is the
 # API it plugs into; the legacy i965 driver is deliberately not installed, as

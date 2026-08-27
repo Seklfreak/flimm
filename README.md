@@ -31,10 +31,15 @@ One container image: a Go backend with the React frontend embedded.
 - **Player** — archived and auto-generated subtitle tracks, SponsorBlock
   segment skipping, playback speed, autoplay with context-aware *Up next*.
 - **Plays what your devices can't** — the archive is full of AV1 and VP9 that
-  Apple hardware cannot decode, so Flimm derives a compatible H.264/AAC **HLS**
-  rendition on demand and streams it segment by segment: playback starts within
-  seconds instead of after the whole transcode. Audio-only renditions come the
-  same way. See [docs/api.md](docs/api.md#derived-media).
+  Apple hardware cannot decode, so Flimm derives a compatible **HLS** rendition
+  on demand and streams it segment by segment: playback starts within seconds
+  instead of after the whole transcode. Audio-only renditions come the same
+  way. See [docs/api.md](docs/api.md#derived-media).
+- **Pick a quality** — up to five renditions per video (2160, 1440, 1080, 720,
+  480, capped at what the source holds): H.264 up to 1080p, HEVC above it, so
+  4K plays on anything from an iPhone 7 or an Apple TV 4K on. Each height is
+  derived only when a client asks for it. See
+  [docs/api.md](docs/api.md#compatible-video-renditions-hls).
 - **Preferences** per user (autoplay, speed, subtitles, theme…).
 - **OIDC login** with any provider; media streams through the backend so
   TubeArchivist itself never has to be exposed.
@@ -110,9 +115,10 @@ is in [docs/api.md](docs/api.md).
   needs it on `PATH` (or set `FFMPEG_PATH`). Without it everything else works
   and only `/media/audio/*` and `/media/hls/*` fail. The WebM rendition
   browsers use is a stream copy and nearly free; the `.m4a` (AAC) one native
-  Apple clients need is a real re-encode; the **HLS video rendition is a real
-  transcode**, so give the container several cores if clients use it. An Intel
-  iGPU on the host takes that transcode off the CPU — optional, off unless the
+  Apple clients need is a real re-encode; the **HLS video renditions are a real
+  transcode** (x264, or x265 above 1080p), so give the container several cores
+  if clients use them. An Intel iGPU on the host takes that transcode off the
+  CPU — optional, off unless the
   render node is there, see
   [docs/deploy.md](docs/deploy.md#hardware-acceleration-intel-vaapi). See also
   [docs/api.md](docs/api.md#derived-media) and
@@ -136,9 +142,9 @@ All configuration is via environment variables.
 | `APP_NAME` | no | default `Flimm` |
 | `PORT` | no | default `8080` |
 | `MIN_PLAY_SECONDS` | no | how long a video must play before it enters history and gets a resume position (default 15) |
-| `MEDIA_CACHE_DIR` | no | where derived renditions are cached; default a temp dir. Must be writable — an HLS rendition of a 1080p hour is ~2–3 GB |
+| `MEDIA_CACHE_DIR` | no | where derived renditions are cached; default a temp dir. Must be writable — an HLS rendition of a 1080p hour is ~2–3 GB, a 2160p HEVC one ~6–8 GB |
 | `MEDIA_CACHE_MAX_BYTES` | no | cache size cap before least-recently-used eviction (default 5 GiB) |
-| `MEDIA_TRANSCODE_JOBS` | no | concurrent HLS transcodes (default 1); extra requests queue |
+| `MEDIA_TRANSCODE_JOBS` | no | concurrent HLS transcodes (default 1), counted across every video and height; extra requests queue |
 | `FFMPEG_PATH` | no | ffmpeg binary; default `ffmpeg` on `PATH` |
 | `MEDIA_HWACCEL` | no | hardware transcoding: `auto` (default — Intel VAAPI when a render node is there and openable, CPU otherwise), `vaapi`, or `off`. A failed hardware attempt falls back to the CPU per video. See [docs/deploy.md](docs/deploy.md#hardware-acceleration-intel-vaapi) |
 | `MEDIA_VAAPI_DEVICE` | no | DRM render node for VAAPI; default `/dev/dri/renderD128` |

@@ -70,6 +70,17 @@ type StreamInfo struct {
 	Bitrate int    `json:"bitrate"`
 }
 
+// HLSVariantInfo is one offered quality of the compatible video rendition.
+// Codec is `h264` up to 1080p and `hevc` above it (which every Apple device
+// since the iPhone 7 and the Apple TV 4K decodes in hardware); a client that
+// cannot decode HEVC picks a height of 1080 or below.
+type HLSVariantInfo struct {
+	Height int    `json:"height"`
+	URL    string `json:"url"`
+	State  string `json:"state"` // pending|running|done|failed
+	Codec  string `json:"codec"` // h264|hevc
+}
+
 type VideoDetail struct {
 	VideoSummary
 	Description string `json:"description"`
@@ -81,12 +92,17 @@ type VideoDetail struct {
 	// decode Opus in WebM (AVFoundation); a re-encode unless the source is
 	// already AAC.
 	AudioAACURL string `json:"audio_aac_url"`
-	// HLSURL is the compatible video rendition: H.264/AAC as HLS, derived on
-	// first request. Always present — HLSState says whether it is ready.
+	// HLSURL is the default compatible video rendition (1080p, or the tallest
+	// the source can fill when it is smaller), derived on first request.
+	// Always present — HLSState says whether it is ready. Clients that pick a
+	// quality use HLSVariants instead.
 	HLSURL string `json:"hls_url"`
 	// HLSState is pending|running|done|failed for that rendition. Pending
 	// means nobody has asked for it yet.
-	HLSState     string             `json:"hls_state"`
+	HLSState string `json:"hls_state"`
+	// HLSVariants is every quality this video offers, tallest first. Each is
+	// derived independently on first request, so their states differ.
+	HLSVariants  []HLSVariantInfo   `json:"hls_variants"`
 	YoutubeURL   string             `json:"youtube_url"`
 	Streams      []StreamInfo       `json:"streams"`
 	Subtitles    []SubtitleTrack    `json:"subtitles"`
