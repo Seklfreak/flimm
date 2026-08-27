@@ -39,6 +39,13 @@
         "node/**"
       ],
       "groupName": "node"
+    },
+    {
+      "matchPackageNames": [
+        "hls.js"
+      ],
+      "allowedVersions": "<1.7.0",
+      "description": "hls.js 1.7.x interstitials scheduler stalls before the first fragment on our fMP4 VOD renditions; hold at 1.6.x until fixed upstream."
     }
   ],
   "customManagers": [
