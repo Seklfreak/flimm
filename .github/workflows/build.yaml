@@ -1,8 +1,8 @@
 name: Build and Push Image
 
 # Version-tagged builds only: triggered by the Release workflow (dispatch with
-# a version) or by pushing a v*.*.* tag by hand. The homelab cluster is
-# amd64-only, so no multi-arch/QEMU.
+# a version) or by pushing a v*.*.* tag by hand. amd64 only: the derived
+# media pipeline is tuned for Intel VAAPI, and QEMU multi-arch builds are slow.
 on:
   push:
     tags: ["v*.*.*"]
@@ -18,9 +18,7 @@ env:
 
 jobs:
   build:
-    # Self-hosted runner in the homelab cluster. Only private repos may use
-    # this — see docs/self-hosted-runners.md in the homelab repo.
-    runs-on: homelab
+    runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
@@ -61,18 +59,13 @@ jobs:
           tags: |
             ${{ env.IMAGE }}:${{ env.APP_VERSION }}
             ${{ env.IMAGE }}:latest
-          # buildx cache in the cluster's MinIO rather than GitHub's cache
-          # service, which cost seconds-to-a-minute per build over the WAN.
-          # Credentials are passed explicitly instead of via AWS_* env — the
-          # docs do not say whether the daemon or the client resolves the
-          # credential chain, and buildkit is a separate container here.
-          cache-from: type=s3,region=us-east-1,bucket=buildkit-cache,endpoint_url=http://minio.minio.svc.cluster.local:9000,use_path_style=true,name=flimm,access_key_id=${{ secrets.MINIO_CACHE_ACCESS_KEY_ID }},secret_access_key=${{ secrets.MINIO_CACHE_SECRET_ACCESS_KEY }}
-          cache-to: type=s3,region=us-east-1,bucket=buildkit-cache,endpoint_url=http://minio.minio.svc.cluster.local:9000,use_path_style=true,name=flimm,mode=max,access_key_id=${{ secrets.MINIO_CACHE_ACCESS_KEY_ID }},secret_access_key=${{ secrets.MINIO_CACHE_SECRET_ACCESS_KEY }}
+          cache-from: type=gha,scope=flimm
+          cache-to: type=gha,mode=max,scope=flimm
 
       # Sourcemaps exist only to make Sentry stack traces readable: they are
       # built "hidden" (no sourceMappingURL comment) and deleted before the Go
       # binary embeds the frontend, so they are never served. Re-running the
-      # frontend stage is a cache hit against the same MinIO buildkit cache.
+      # frontend stage is a cache hit against the same buildkit cache.
       - name: Export frontend sourcemaps
         if: env.SENTRY_AUTH_TOKEN != ''
         env:
@@ -81,7 +74,7 @@ jobs:
           docker buildx build --target frontend \
             --build-arg APP_VERSION="$APP_VERSION" \
             --build-arg VITE_SENTRY_DSN="$VITE_SENTRY_DSN" \
-            --cache-from type=s3,region=us-east-1,bucket=buildkit-cache,endpoint_url=http://minio.minio.svc.cluster.local:9000,use_path_style=true,name=flimm,access_key_id=${{ secrets.MINIO_CACHE_ACCESS_KEY_ID }},secret_access_key=${{ secrets.MINIO_CACHE_SECRET_ACCESS_KEY }} \
+            --cache-from type=gha,scope=flimm \
             --output type=local,dest=./fe-stage .
           ls -la ./fe-stage/app/frontend/dist/assets/ | head
 
