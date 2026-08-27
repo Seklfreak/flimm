@@ -92,7 +92,7 @@ final class TVWatchModel {
     /// ``QualityPreference/auto`` mean "the source, at full quality".
     var archivePlaysNatively: Bool {
         guard let video else { return false }
-        return CodecGate.archivePlays(video)
+        return CodecGate.archivePlays(video, on: .current)
     }
     var hasContext: Bool { context.source != nil }
     var canGoNext: Bool { nav?.next != nil || !upNext.isEmpty }

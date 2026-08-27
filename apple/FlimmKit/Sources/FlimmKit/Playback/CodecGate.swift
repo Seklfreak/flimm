@@ -97,7 +97,7 @@ public enum CodecGate {
         guard let streams = video.streams, !streams.isEmpty else { return .native }
         let videoStreams = streams.filter { $0.type == .video }
         guard !videoStreams.isEmpty else { return .native }
-        let archivePlays = videoStreams.contains(where: DeviceCodecs.canDecode)
+        let archivePlays = videoStreams.contains(where: device.canDecode)
         if archivePlays, preference == .auto { return .native }
         // An explicit pick at or above the source's own height buys nothing
         // over the archive when the archive plays — skip the transcode.
@@ -118,11 +118,11 @@ public enum CodecGate {
     /// ``QualityPreference/auto`` mean "the source, at full quality, for free".
     /// A video the server reports no `streams` for counts as playable: unknown
     /// must not read as unplayable.
-    public static func archivePlays(_ video: Video) -> Bool {
+    public static func archivePlays(_ video: Video, on device: DeviceCapabilities) -> Bool {
         guard let streams = video.streams, !streams.isEmpty else { return true }
         let videoStreams = streams.filter { $0.type == .video }
         guard !videoStreams.isEmpty else { return true }
-        return videoStreams.contains(where: DeviceCodecs.canDecode)
+        return videoStreams.contains(where: device.canDecode)
     }
 
     /// Which rung to play, out of the ones this device can decode at all.
