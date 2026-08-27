@@ -358,8 +358,19 @@ func waitForHLSState(t *testing.T, h http.Handler, id, want string) {
 // contract behind `from`.
 func writeRecordingFFmpeg(t *testing.T, argvLog string) string {
 	t.Helper()
+	return writeRecordingFFmpegHold(t, argvLog, 0)
+}
+
+// writeRecordingFFmpegHold is writeRecordingFFmpeg for a stub that must still
+// be running when the test looks: it logs its argv, then holds for `hold`
+// seconds before exiting. A stub that exits at once produces no segments, and
+// the run fails a few milliseconds later — on a fast machine before the
+// request under test has even read the playlist, which is a race, not a
+// result.
+func writeRecordingFFmpegHold(t *testing.T, argvLog string, hold int) string {
+	t.Helper()
 	path := filepath.Join(t.TempDir(), "ffmpeg-record")
-	script := "#!/bin/sh\nprintf '%s\\n' \"$*\" >> " + argvLog + "\nexit 0\n"
+	script := "#!/bin/sh\nprintf '%s\\n' \"$*\" >> " + argvLog + "\nsleep " + strconv.Itoa(hold) + "\nexit 0\n"
 	if err := os.WriteFile(path, []byte(script), 0o700); err != nil { //nolint:gosec // test fixture must be executable
 		t.Fatal(err)
 	}
@@ -415,7 +426,7 @@ func TestPostVideoHLSStartsAtTheResumePosition(t *testing.T) {
 // gets the same behaviour.
 func TestHLSPlaylistFromStartsAtTheResumePosition(t *testing.T) {
 	argv := filepath.Join(t.TempDir(), "argv.log")
-	h := hlsServer(t, t.TempDir(), writeRecordingFFmpeg(t, argv))
+	h := hlsServer(t, t.TempDir(), writeRecordingFFmpegHold(t, argv, 3))
 
 	rec := getMedia(t, h, "/media/hls/v1/1080/index.m3u8?from=120", "")
 	if rec.Code != http.StatusOK {
