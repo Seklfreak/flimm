@@ -155,7 +155,20 @@ public final class AuthSession {
     private func adopt(server: FlimmServer) {
         self.server = server
         self.client = APIClient(baseURL: server.baseURL, tokens: tokenStore, session: session)
+        // A restored session must be able to refresh its access token without
+        // signing in again, so the store learns how to build its OIDC client
+        // lazily — discovery runs on the first refresh, not at launch, and a
+        // failure there is a transient error rather than a sign-out.
+        let issuer = server.config.issuerURL
+        let clientID = server.config.oidcClientId
+        let redirectURI = redirectURI
+        let session = session
         Task { [tokenStore, weak self] in
+            await tokenStore.configure(clientProvider: {
+                guard let issuer else { throw ServerProbeError.oidcNotConfigured }
+                let configuration = try await OIDCClient.discover(issuer: issuer, session: session)
+                return OIDCClient(configuration: configuration, clientID: clientID, redirectURI: redirectURI, session: session)
+            })
             await tokenStore.onSignOut { [weak self] in
                 await self?.handleDefinitiveSignOut()
             }

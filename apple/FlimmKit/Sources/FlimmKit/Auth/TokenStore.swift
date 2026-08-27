@@ -12,6 +12,10 @@ public actor TokenStore: TokenProvider {
     private let store: any SecretStore
     private let key: String
     private var client: OIDCClient?
+    /// Builds the client on first need — discovery against the issuer — so a
+    /// session restored from the Keychain can refresh without having signed
+    /// in during this process. `signIn` still hands over a ready client.
+    private var clientProvider: (@Sendable () async throws -> OIDCClient)?
     private var tokens: OIDCTokens?
     private var signOut: SignOutHandler?
     /// Concurrent 401s must produce one refresh, not one each.
@@ -47,6 +51,24 @@ public actor TokenStore: TokenProvider {
         self.client = client
     }
 
+    /// How to obtain a client when none has been handed over yet. Replacing
+    /// the provider drops a client built by the previous one.
+    public func configure(clientProvider: (@Sendable () async throws -> OIDCClient)?) {
+        self.clientProvider = clientProvider
+        self.client = nil
+    }
+
+    /// The configured client, or one built by the provider. Throws when the
+    /// provider fails (typically discovery with the network down), which the
+    /// API client reports as transient — never as a sign-out.
+    private func resolveClient() async throws -> OIDCClient? {
+        if let client { return client }
+        guard let clientProvider else { return nil }
+        let built = try await clientProvider()
+        client = built
+        return built
+    }
+
     public func onSignOut(_ handler: SignOutHandler?) {
         self.signOut = handler
     }
@@ -68,7 +90,8 @@ public actor TokenStore: TokenProvider {
     }
 
     private func renew() async throws -> OIDCTokens? {
-        guard let refreshToken = tokens?.refreshToken, let client else { return nil }
+        guard let refreshToken = tokens?.refreshToken else { return nil }
+        guard let client = try await resolveClient() else { return nil }
 
         if let inFlight { return try await inFlight.value }
 
