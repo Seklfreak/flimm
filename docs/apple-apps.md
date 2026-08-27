@@ -276,8 +276,9 @@ exercise.
   resumes; there is no threshold to reimplement and no `t=` parameter needed.
   Show where it resumed from and offer "start over"
   (`DELETE /videos/{id}/progress`). On the compatible-rendition path the same
-  position is also what `POST /videos/{id}/hls?from=` is given, so the server
-  encodes the part being resumed to first.
+  position is also what `POST /videos/{id}/hls?from=` is given **and** what goes
+  on the `master.m3u8?from=` URL handed to the player, so the server encodes the
+  part being resumed to first and the player starts there via `#EXT-X-START`.
 - **Heartbeat** `POST /videos/{id}/progress` every ~10s while playing, and on
   pause, seek, background and termination. The server decides what counts as
   watched (≥90% or ≤30s remaining) and what is too brief to record at all
@@ -383,12 +384,25 @@ that ladder**, and this is how it behaves:
   encoder produces that part of the video first instead of the forty minutes
   nobody is going to watch. The server transcodes one job at a time, so warming
   the whole ladder would only make the played rung later.
+- **Also pass `from` on the URL you hand the player.** The resume position must
+  go on the **master/playlist URL** too — `…/master.m3u8?from=<resume position>`
+  — not only in the `POST`. That is what adds the `#EXT-X-START` the player
+  needs: without it `AVPlayer` fetches segment 0 first to lay out the timeline
+  before it honours the seek to the resume point, and segment 0 is the segment
+  the resume-first transcode produces **last**, so playback stalls waiting for a
+  segment that will not exist for minutes. With `?from=` the player starts at the
+  resume point and fetches that segment first — the one produced first. (A
+  follow-up client change wires this through; the contract is that the URL, not
+  only the `POST`, carries `from`.)
 - **A switch is a reload.** Each height is its own independent playlist (a
   single-variant master over its own media playlist), not one master listing
   every height for the player to switch between, so `setVideoQuality(_:)` on both
   watch models remembers the clock, starts the new height's job at that
-  position, swaps the `AVPlayerItem` and seeks back once it is ready —
-  playback carries on where it was. A rung the server has not made yet raises
+  position, swaps the `AVPlayerItem` for `…/master.m3u8?from=<currentTime>` and
+  seeks back once it is ready — playback carries on where it was. Passing
+  `?from=` on the switched-to URL matters for the same reason resume does: the
+  new rendition's segment 0 is transcoded last, so the `#EXT-X-START` is what
+  makes the switch land at the current position instead of at 0:00. A rung the server has not made yet raises
   the same "Preparing a compatible version…" overlay a fresh video does, with
   the same retry loop behind it.
 - **Where the picker is.** On iOS, a *Quality* submenu in the player's options

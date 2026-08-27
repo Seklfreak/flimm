@@ -2,6 +2,19 @@
 
 ## Done
 
+- **Instant resume via `#EXT-X-START`** (2026-08-27) — `?from=<seconds>` on the
+  playlist/master URL now also moves the *player's* start position to the resume
+  point: the media playlist gains an `#EXT-X-START:TIME-OFFSET=<seconds>,
+  PRECISE=YES` and the master carries the query through to its
+  `index.m3u8?from=<seconds>` variant. Without it a resuming player fetched
+  segment 0 first (to lay out the timeline before honouring the seek), but the
+  resume-first transcode produces segment 0 **last**, so playback blocked on a
+  segment that would not exist for minutes — the observed "forever" before a
+  long resume, and quality switches landing at 0:00. The segment list is
+  unchanged (still the complete VOD list); a `from` outside `(0, duration)` adds
+  no tag, and any `from`-specific playlist/master is served `no-store`. Clients
+  pass `?from=` on the URL they hand the player, not only in the `POST`. See
+  [api.md](api.md#compatible-video-renditions-hls).
 - **HLS multivariant playlist for hls.js** (2026-08-27) — `hls_url` and every
   `hls_variants[].url` now point at `/media/hls/{id}/{height}/master.m3u8`, a
   one-entry master playlist carrying `#EXT-X-STREAM-INF` with `BANDWIDTH`,

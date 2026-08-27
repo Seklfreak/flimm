@@ -182,3 +182,36 @@ func TestWriteHLSPlaylistPublishesWhole(t *testing.T) {
 		}
 	}
 }
+
+// InsertHLSStart adds an EXT-X-START to the header for a resume position inside
+// the video, and leaves the playlist alone for one that is not — so a player
+// begins at the resume point (and fetches that segment, produced first) rather
+// than blocking on segment 0, which the resume-first transcode produces last.
+func TestInsertHLSStart(t *testing.T) {
+	// A 1500 s video: 375 four-second segments.
+	playlist := buildHLSPlaylist(375, 1500, nil)
+
+	got := string(InsertHLSStart(playlist, 1408))
+	if !strings.Contains(got, "#EXT-X-START:TIME-OFFSET=1408.000,PRECISE=YES\n") {
+		t.Errorf("resume playlist missing EXT-X-START:\n%s", got[:200])
+	}
+	// The tag sits in the header, after PLAYLIST-TYPE and before the first
+	// segment — not somewhere in the segment list.
+	typeAt := strings.Index(got, "#EXT-X-PLAYLIST-TYPE")
+	startAt := strings.Index(got, "#EXT-X-START:")
+	firstSeg := strings.Index(got, "#EXTINF:")
+	if typeAt >= startAt || startAt >= firstSeg {
+		t.Errorf("EXT-X-START is not in the header: type=%d start=%d seg=%d", typeAt, startAt, firstSeg)
+	}
+	// The segment list is untouched: still every segment and the same ENDLIST.
+	if a, b := strings.Count(got, ".m4s"), strings.Count(string(playlist), ".m4s"); a != b {
+		t.Errorf("segment count changed: %d vs %d", a, b)
+	}
+
+	// Out of range (0, duration), or non-positive: no tag, playlist unchanged.
+	for _, from := range []float64{0, -30, 1500, 2000} {
+		if out := InsertHLSStart(playlist, from); string(out) != string(playlist) {
+			t.Errorf("from=%v changed the playlist", from)
+		}
+	}
+}

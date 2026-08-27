@@ -390,8 +390,8 @@ and `feed` filter the video results in the backend.
 | `GET /media/video/{id}.mp4` | reverse-proxies TA `/media/<media_url>` with `Range`, `If-Range`, `Accept-Ranges`, `Content-Length`, `Content-Type` passthrough |
 | `GET /media/audio/{id}.webm` | audio-only stream, Opus in WebM, derived and cached on first request (see below); supports `Range` |
 | `GET /media/audio/{id}.m4a` | the same audio as AAC in MP4 (`audio/mp4`), for players that cannot decode Opus in WebM; derived and cached the same way; supports `Range` |
-| `GET /media/hls/{id}/{height}/master.m3u8` | the compatible rendition's **multivariant (master) playlist** (`application/vnd.apple.mpegurl`) at that height — the URL `hls_url` and `hls_variants[].url` point at. It is a one-entry master carrying an `#EXT-X-STREAM-INF` with `BANDWIDTH`, `CODECS` (e.g. `avc1.640829,mp4a.40.2`) and, when known, `RESOLUTION`, and a single relative variant URI of `index.m3u8`. It exists because **hls.js** will not schedule fMP4 fragments from a codec-less media playlist; a master naming the codecs makes it, and native `AVPlayer`/Safari take it just as happily. `{height}` must be one of 2160, 1440, 1080, 720, 480 and one the video offers (`hls_variants`), else **404**. It starts the transcode like the media-playlist route. The `CODECS` string is parsed from the init segment the job produces (truthful even for a copied source); before the first init lands it is the height's fixed-encoder default (served `no-store` until the real one is known) |
-| `GET /media/hls/{id}/{height}/index.m3u8` | the compatible rendition's **media** playlist (`application/vnd.apple.mpegurl`) at that height — what the master references, and what native players and the byte-range path load directly. Same `{height}` rules and **404**. Starts the transcode on the first request and returns the **complete VOD playlist immediately** — every segment of the video, `#EXT-X-ENDLIST` on the end — whatever the encoder has reached. `?from=<seconds>` is the resume position, for a client that cannot `POST` first; it changes where the transcode starts, never what the playlist says. 503 + `Retry-After: 5` only if the playlist itself cannot be produced (a video whose duration has to be probed from an unreachable source) |
+| `GET /media/hls/{id}/{height}/master.m3u8` | the compatible rendition's **multivariant (master) playlist** (`application/vnd.apple.mpegurl`) at that height — the URL `hls_url` and `hls_variants[].url` point at. It is a one-entry master carrying an `#EXT-X-STREAM-INF` with `BANDWIDTH`, `CODECS` (e.g. `avc1.640829,mp4a.40.2`) and, when known, `RESOLUTION`, and a single relative variant URI of `index.m3u8`. It exists because **hls.js** will not schedule fMP4 fragments from a codec-less media playlist; a master naming the codecs makes it, and native `AVPlayer`/Safari take it just as happily. `{height}` must be one of 2160, 1440, 1080, 720, 480 and one the video offers (`hls_variants`), else **404**. It starts the transcode like the media-playlist route. `?from=<seconds>` is carried through to the variant URI (`index.m3u8?from=<seconds>`), so a player following the master lands on the media playlist that carries the matching `#EXT-X-START`; a `from`-specific master is served `no-store`. The `CODECS` string is parsed from the init segment the job produces (truthful even for a copied source); before the first init lands it is the height's fixed-encoder default (served `no-store` until the real one is known) |
+| `GET /media/hls/{id}/{height}/index.m3u8` | the compatible rendition's **media** playlist (`application/vnd.apple.mpegurl`) at that height — what the master references, and what native players and the byte-range path load directly. Same `{height}` rules and **404**. Starts the transcode on the first request and returns the **complete VOD playlist immediately** — every segment of the video, `#EXT-X-ENDLIST` on the end — whatever the encoder has reached. `?from=<seconds>` (inside `(0, duration)`) is the resume position: it starts the transcode there **and** adds an `#EXT-X-START:TIME-OFFSET=<seconds>,PRECISE=YES` to the playlist header, so a resuming player begins at that point and fetches the resume segment first instead of blocking on segment 0 — which the resume-first transcode produces last. The segment list is unchanged (still the whole video, seekable anywhere); a `from` outside the range adds no tag. A `from`-specific playlist is served `no-store` (it is per-`from`; never cached as the canonical no-`from` playlist). 503 + `Retry-After: 5` only if the playlist itself cannot be produced (a video whose duration has to be probed from an unreachable source) |
 | `GET /media/hls/{id}/{height}/init.mp4` | the fMP4 initialisation segment (`video/mp4`) |
 | `GET /media/hls/{id}/{height}/seg00000.m4s` | a media segment (`video/iso.segment`). A segment the encoder has not reached **blocks** until it lands, up to `MEDIA_SEGMENT_WAIT` (60 s), then 503 + `Retry-After: 2`; a request far ahead of the encoder also re-aims it. 404 for a segment past the end of the video or of a rendition nothing is deriving; 502 if the transcode failed |
 | `GET /media/hls/{id}/master.m3u8`, `/index.m3u8`, `/init.mp4`, `/seg00000.m4s` | the same files without a height: a **legacy alias** for the 1080p rendition, kept for clients written before the ladder. It serves that rendition's cache entry rather than one of its own. New clients use `hls_variants` |
@@ -523,10 +523,24 @@ end of the playlist it holds and the playlist only reached 40:00 once the
 encoder did.
 
 - **Pass `from`.** `POST /videos/{id}/hls?height=<h>&from=<seconds>` (or
-  `?from=` on the playlist) is the resume position. The first ffmpeg run
-  encodes from the segment that position falls in to the end of the video, and
-  a second run fills in the part before it. Without `from` it is one run from
-  the start, as before.
+  `?from=` on the playlist/master URL handed to the player) is the resume
+  position. The first ffmpeg run encodes from the segment that position falls in
+  to the end of the video, and a second run fills in the part before it. Without
+  `from` it is one run from the start, as before.
+- **`from` also starts the *player* there, via `#EXT-X-START`.** Passing
+  `?from=<seconds>` on the **playlist/master URL** (not only the `POST`) adds an
+  `#EXT-X-START:TIME-OFFSET=<seconds>,PRECISE=YES` to the media playlist, and the
+  master carries the query through to its `index.m3u8?from=<seconds>` variant
+  URI. This is what makes resume *instant*: every HLS player (hls.js and
+  `AVPlayer`) fetches segment 0 first to lay out the timeline before honouring a
+  seek, but the resume-first transcode produces segment 0 **last** — so without
+  the tag the player blocks on a segment that will not exist for a long time.
+  `#EXT-X-START` moves the player's start point to the resume position, so the
+  first segment it asks for is the one the transcode produces first. The playlist
+  body is otherwise unchanged (still the complete VOD list, seekable anywhere); a
+  `from` outside `(0, duration)` adds no tag. A client should therefore pass
+  `?from=<resume position>` on the URL it hands the player, and `?from=<current
+  time>` on a quality switch, not only in the `POST`.
 - **A segment that is not encoded yet is a slow segment, not a missing one.**
   The request blocks until it lands, up to `MEDIA_SEGMENT_WAIT` (60 s), then
   answers **503 with `Retry-After: 2`**. Only a segment past the end of the
@@ -541,7 +555,10 @@ encoder did.
   for a segment request to trigger it.
 - **Caching.** A running rendition's playlist is served `no-store`, because it
   is rewritten once at the end with the segments' real durations; a finished one
-  gets a long cache lifetime. Segments are immutable and cached for a day.
+  gets a long cache lifetime. A playlist or master carrying a `?from=` is always
+  `no-store` — it is per-`from` (the `#EXT-X-START` and the variant query depend
+  on it) and must never be cached as the canonical no-`from` response. Segments
+  are immutable and cached for a day.
 - **Progress.** `hls_variants[].hls_progress` (and the `POST` response) is the
   fraction of the whole rendition that exists, for an honest "preparing…"
   label. It says nothing about *where* those segments are.

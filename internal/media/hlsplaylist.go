@@ -116,6 +116,80 @@ func buildHLSPlaylist(n int, duration float64, measured map[int]float64) []byte 
 	return b.Bytes()
 }
 
+// hlsSecondsParam formats a resume position for the EXT-X-START offset and the
+// master's `?from=` query, so both name the same point the same way: seconds
+// with three decimals, matching the EXTINF grid's precision.
+func hlsSecondsParam(t float64) string {
+	return strconv.FormatFloat(t, 'f', 3, 64)
+}
+
+// InsertHLSStart returns the media playlist with an `#EXT-X-START` tag added to
+// its header, so a resuming player begins at from and fetches the segment there
+// first rather than blocking on segment 0. That matters because the transcode is
+// resume-first — it encodes [from→end] before [0→from], so segment 0 is produced
+// last — while every HLS player (hls.js and AVPlayer alike) fetches segment 0
+// first to lay out the timeline before honouring a seek. EXT-X-START makes the
+// player's own start position the resume point, so the first segment it asks for
+// is the one the transcode produces first.
+//
+// The tag is inserted after `#EXT-X-PLAYLIST-TYPE` (conventionally in the header;
+// the spec allows it anywhere). from must be inside (0, duration), where duration
+// is the sum of the playlist's own EXTINF values; a from at or past the end, or a
+// non-positive one, leaves the playlist untouched, so the player starts at 0 as
+// it did before from existed. The segment list is never changed — this is a pure
+// header addition, and the body is still the complete VOD list.
+func InsertHLSStart(playlist []byte, from float64) []byte {
+	if from <= 0 {
+		return playlist
+	}
+	if total := hlsPlaylistDuration(playlist); total <= 0 || from >= total {
+		return playlist
+	}
+	tag := fmt.Sprintf("#EXT-X-START:TIME-OFFSET=%s,PRECISE=YES\n", hlsSecondsParam(from))
+
+	// Insert just after the EXT-X-PLAYLIST-TYPE line; fall back to before the
+	// first segment (its #EXTINF) if that tag is somehow absent.
+	at := -1
+	if i := bytes.Index(playlist, []byte("#EXT-X-PLAYLIST-TYPE")); i >= 0 {
+		if nl := bytes.IndexByte(playlist[i:], '\n'); nl >= 0 {
+			at = i + nl + 1
+		}
+	}
+	if at < 0 {
+		if i := bytes.Index(playlist, []byte("#EXTINF:")); i >= 0 {
+			at = i
+		}
+	}
+	if at < 0 {
+		return playlist
+	}
+	out := make([]byte, 0, len(playlist)+len(tag))
+	out = append(out, playlist[:at]...)
+	out = append(out, tag...)
+	out = append(out, playlist[at:]...)
+	return out
+}
+
+// hlsPlaylistDuration is the video's length as the playlist itself reports it:
+// the sum of its EXTINF segment durations. The playlist is the complete VOD list
+// from the first request, so this is the true duration without a second source.
+func hlsPlaylistDuration(playlist []byte) float64 {
+	var total float64
+	sc := bufio.NewScanner(bytes.NewReader(playlist))
+	for sc.Scan() {
+		line := strings.TrimSpace(sc.Text())
+		rest, ok := strings.CutPrefix(line, "#EXTINF:")
+		if !ok {
+			continue
+		}
+		value, _, _ := strings.Cut(rest, ",")
+		if d, err := strconv.ParseFloat(strings.TrimSpace(value), 64); err == nil && d > 0 {
+			total += d
+		}
+	}
+	return total
+}
+
 // writeHLSPlaylist publishes the playlist into dir by rename, so a player
 // re-reading it never gets half a file.
 func writeHLSPlaylist(dir string, n int, duration float64, measured map[int]float64) error {

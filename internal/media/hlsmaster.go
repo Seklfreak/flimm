@@ -54,7 +54,13 @@ type HLSCodecsInfo struct {
 // the encoded frame size; either being 0 omits RESOLUTION (a truthful omission
 // beats a guessed resolution). The single variant URI is the media playlist,
 // relative, so it resolves against the master's own URL.
-func BuildHLSMaster(codecs string, bandwidth, width, height int) []byte {
+//
+// from > 0 is a resume position: the variant URI carries it through as
+// `index.m3u8?from=<from>`, so the player follows the master to a media playlist
+// that in turn carries an EXT-X-START at that point (see InsertHLSStart) and
+// begins there instead of blocking on segment 0. A relative URI with a query
+// resolves against the master's own URL, so this needs no absolute path.
+func BuildHLSMaster(codecs string, bandwidth, width, height int, from float64) []byte {
 	var b bytes.Buffer
 	b.WriteString("#EXTM3U\n")
 	b.WriteString("#EXT-X-VERSION:7\n")
@@ -64,7 +70,11 @@ func BuildHLSMaster(codecs string, bandwidth, width, height int) []byte {
 		fmt.Fprintf(&b, ",RESOLUTION=%dx%d", width, height)
 	}
 	b.WriteByte('\n')
-	b.WriteString(HLSPlaylistName + "\n")
+	uri := HLSPlaylistName
+	if from > 0 {
+		uri += "?from=" + hlsSecondsParam(from)
+	}
+	b.WriteString(uri + "\n")
 	return b.Bytes()
 }
 

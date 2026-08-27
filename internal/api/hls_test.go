@@ -442,6 +442,68 @@ func TestHLSPlaylistFromStartsAtTheResumePosition(t *testing.T) {
 	}
 }
 
+// With `?from=`, the media playlist also carries an EXT-X-START, so the player
+// begins at the resume point and fetches that segment first — instead of
+// blocking on segment 0, which the resume-first transcode produces last. It is
+// per-`from`, so it is served no-store and its segment list is unchanged.
+func TestHLSPlaylistFromEmitsExtXStart(t *testing.T) {
+	h := hlsServer(t, t.TempDir(), writeRecordingFFmpegHold(t, filepath.Join(t.TempDir(), "argv.log"), 3))
+
+	rec := getMedia(t, h, "/media/hls/v1/1080/index.m3u8?from=120", "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("playlist = %d: %s", rec.Code, rec.Body.String())
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, "#EXT-X-START:TIME-OFFSET=120.000,PRECISE=YES") {
+		t.Errorf("resume playlist missing EXT-X-START:\n%s", body)
+	}
+	if n := strings.Count(body, ".m4s"); n != 150 {
+		t.Errorf("resume playlist names %d segments, want 150 (list unchanged)", n)
+	}
+	if cc := rec.Header().Get("Cache-Control"); cc != "no-store" {
+		t.Errorf("resume playlist Cache-Control = %q, want no-store", cc)
+	}
+}
+
+// A `from` outside (0, duration) — or none at all — adds no EXT-X-START: the
+// player starts at 0 as it did before `from` existed.
+func TestHLSPlaylistWithoutUsableFromHasNoExtXStart(t *testing.T) {
+	for _, q := range []string{"", "?from=", "?from=abc", "?from=-30", "?from=99999"} {
+		h := hlsServer(t, t.TempDir(), writeRecordingFFmpegHold(t, filepath.Join(t.TempDir(), "argv.log"), 3))
+		rec := getMedia(t, h, "/media/hls/v1/1080/index.m3u8"+q, "")
+		if rec.Code != http.StatusOK {
+			t.Fatalf("%q playlist = %d: %s", q, rec.Code, rec.Body.String())
+		}
+		if strings.Contains(rec.Body.String(), "#EXT-X-START") {
+			t.Errorf("%q playlist carries EXT-X-START", q)
+		}
+	}
+}
+
+// The master propagates `?from=` to its media-playlist URI, so the player
+// follows through to the EXT-X-START-bearing playlist; a `from`-specific master
+// is per-`from` and served no-store.
+func TestHLSMasterFromPropagatesAndIsNoStore(t *testing.T) {
+	h, _ := hlsFixture(t, []byte("segment")) // finished 1080p rendition
+
+	rec := getMedia(t, h, "/media/hls/v1/1080/master.m3u8?from=120", "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("master = %d: %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "index.m3u8?from=120.000") {
+		t.Errorf("master did not carry from into the variant URI:\n%s", rec.Body.String())
+	}
+	if cc := rec.Header().Get("Cache-Control"); cc != "no-store" {
+		t.Errorf("from master Cache-Control = %q, want no-store", cc)
+	}
+
+	// Without from the master is the plain index.m3u8, cacheable as before.
+	plain := getMedia(t, h, "/media/hls/v1/1080/master.m3u8", "")
+	if strings.Contains(plain.Body.String(), "?from=") {
+		t.Errorf("no-from master carries a query:\n%s", plain.Body.String())
+	}
+}
+
 // A `from` that is not a position inside the video is not an error; it means
 // "from the beginning", which is what a client that does not send one gets.
 func TestHLSIgnoresAnUnusableFrom(t *testing.T) {

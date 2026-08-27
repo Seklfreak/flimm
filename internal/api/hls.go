@@ -134,7 +134,8 @@ func (s *Server) serveHLSVariant(w http.ResponseWriter, r *http.Request, height 
 // transcode starts at that point rather than at 0:00. The playlist itself is
 // the same either way — it describes the whole video from the first request.
 func (s *Server) serveHLSPlaylist(w http.ResponseWriter, r *http.Request, id string, height int, enforceOffered bool) {
-	if _, err := s.startHLS(r.Context(), id, height, enforceOffered, fromSeconds(r)); err != nil {
+	from := fromSeconds(r)
+	if _, err := s.startHLS(r.Context(), id, height, enforceOffered, from); err != nil {
 		if errors.Is(err, errHLSHeightNotOffered) {
 			writeError(w, http.StatusNotFound, "not found")
 			return
@@ -162,13 +163,33 @@ func (s *Server) serveHLSPlaylist(w http.ResponseWriter, r *http.Request, id str
 	}
 	// A finished rendition's playlist never changes. A running one's is
 	// rewritten once at the end with the real segment durations, so it must not
-	// be cached in the meantime.
+	// be cached in the meantime. A `from`-specific playlist carries an
+	// EXT-X-START computed from the query, so it is per-`from` and must never be
+	// cached — least of all as the canonical (no-`from`) playlist.
 	cacheControl := "no-store"
-	if s.mediaCache.DirState(name) == media.StateDone {
+	if from == 0 && s.mediaCache.DirState(name) == media.StateDone {
 		cacheControl = "private, max-age=3600"
 	}
 	w.Header().Set("Cache-Control", cacheControl)
-	serveHLSContent(w, r, filepath.Join(dir, media.HLSPlaylistName), media.HLSPlaylistType)
+
+	path := filepath.Join(dir, media.HLSPlaylistName)
+	if from == 0 {
+		serveHLSContent(w, r, path, media.HLSPlaylistType)
+		return
+	}
+	// Resume: add EXT-X-START so the player begins at `from` and fetches that
+	// segment first (the resume-first transcode produces it first), instead of
+	// blocking on segment 0, which it produces last. The segment list is
+	// unchanged; this is a pure header addition, so the body stays a complete
+	// VOD list the player may still seek anywhere within.
+	body, err := os.ReadFile(path) //nolint:gosec // cache dir + a validated id + a fixed name
+	if err != nil {
+		writeError(w, http.StatusNotFound, "not found")
+		return
+	}
+	body = media.InsertHLSStart(body, from)
+	w.Header().Set("Content-Type", media.HLSPlaylistType)
+	http.ServeContent(w, r, media.HLSPlaylistName, time.Time{}, bytes.NewReader(body))
 }
 
 // serveHLSMaster starts (or re-aims) the transcode and serves the multivariant
@@ -182,7 +203,8 @@ func (s *Server) serveHLSPlaylist(w http.ResponseWriter, r *http.Request, id str
 // default is used — correct for the fixed encoder settings — and the real value
 // is cached once the init exists.
 func (s *Server) serveHLSMaster(w http.ResponseWriter, r *http.Request, id string, height int, enforceOffered bool) {
-	if _, err := s.startHLS(r.Context(), id, height, enforceOffered, fromSeconds(r)); err != nil {
+	from := fromSeconds(r)
+	if _, err := s.startHLS(r.Context(), id, height, enforceOffered, from); err != nil {
 		if errors.Is(err, errHLSHeightNotOffered) {
 			writeError(w, http.StatusNotFound, "not found")
 			return
@@ -192,12 +214,16 @@ func (s *Server) serveHLSMaster(w http.ResponseWriter, r *http.Request, id strin
 	}
 	dir := s.mediaCache.Dir(media.HLSName(id, height))
 	info, exact := s.hlsCodecs(r.Context(), dir, height)
-	master := media.BuildHLSMaster(info.Codecs, media.HLSBandwidth(height), info.Width, info.Height)
+	// When resuming, the variant URI carries `?from=` through to the media
+	// playlist, which then serves an EXT-X-START at that point.
+	master := media.BuildHLSMaster(info.Codecs, media.HLSBandwidth(height), info.Width, info.Height, from)
 
 	// A master built from parsed codecs never changes; one built from the
-	// default is provisional until the init lands, so it must not be cached.
+	// default is provisional until the init lands, so it must not be cached. A
+	// `from`-specific master points at a per-`from` media playlist, so it too is
+	// never cached — never as the canonical (no-`from`) master.
 	cacheControl := "no-store"
-	if exact {
+	if exact && from == 0 {
 		cacheControl = "private, max-age=3600"
 	}
 	w.Header().Set("Cache-Control", cacheControl)

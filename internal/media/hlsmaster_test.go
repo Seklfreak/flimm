@@ -85,7 +85,7 @@ func buildESDS(ascFirst byte) []byte {
 }
 
 func TestBuildHLSMaster(t *testing.T) {
-	got := string(BuildHLSMaster("avc1.640829,mp4a.40.2", 5_000_000, 1920, 1080))
+	got := string(BuildHLSMaster("avc1.640829,mp4a.40.2", 5_000_000, 1920, 1080, 0))
 	want := "#EXTM3U\n" +
 		"#EXT-X-VERSION:7\n" +
 		"#EXT-X-INDEPENDENT-SEGMENTS\n" +
@@ -95,7 +95,7 @@ func TestBuildHLSMaster(t *testing.T) {
 		t.Errorf("1080p master:\n%q\nwant\n%q", got, want)
 	}
 
-	got4k := string(BuildHLSMaster("hvc1.1.6.L153.90,mp4a.40.2", 20_000_000, 3840, 2160))
+	got4k := string(BuildHLSMaster("hvc1.1.6.L153.90,mp4a.40.2", 20_000_000, 3840, 2160, 0))
 	want4k := "#EXTM3U\n" +
 		"#EXT-X-VERSION:7\n" +
 		"#EXT-X-INDEPENDENT-SEGMENTS\n" +
@@ -106,9 +106,16 @@ func TestBuildHLSMaster(t *testing.T) {
 	}
 
 	// Unknown frame size omits RESOLUTION rather than guessing one.
-	noRes := string(BuildHLSMaster("avc1.640829,mp4a.40.2", 5_000_000, 0, 0))
+	noRes := string(BuildHLSMaster("avc1.640829,mp4a.40.2", 5_000_000, 0, 0, 0))
 	if want := "#EXT-X-STREAM-INF:BANDWIDTH=5000000,CODECS=\"avc1.640829,mp4a.40.2\"\nindex.m3u8\n"; noRes[len(noRes)-len(want):] != want {
 		t.Errorf("master without resolution = %q", noRes)
+	}
+
+	// A resume position carries through to the media playlist as `?from=`, so
+	// the player follows the master to a playlist that starts there.
+	resume := string(BuildHLSMaster("avc1.640829,mp4a.40.2", 5_000_000, 1920, 1080, 1408))
+	if want := "\nindex.m3u8?from=1408.000\n"; resume[len(resume)-len(want):] != want {
+		t.Errorf("resume master variant URI = %q", resume)
 	}
 }
 
