@@ -11,6 +11,8 @@ import SwiftUI
 struct TVSettingsView: View {
     @Environment(AppModel.self) private var app
     @Environment(AuthSession.self) private var session
+    /// Quality is per device, so it comes from here rather than from ``Prefs``.
+    @Environment(PlaybackSettings.self) private var playback
 
     @State private var confirmSignOut = false
     @State private var confirmChangeServer = false
@@ -20,6 +22,7 @@ struct TVSettingsView: View {
     var body: some View {
         List {
             playbackSection
+            qualitySection
             subtitleSection
             everythingSection
             librarySection
@@ -50,6 +53,34 @@ struct TVSettingsView: View {
             Sponsor, self-promotion and interaction-reminder segments are \
             skipped automatically; other SponsorBlock categories are only \
             marked on the transport bar.
+            """)
+            .font(.footnote)
+            .foregroundStyle(.secondary)
+        }
+    }
+
+    /// The one playback setting that stays on the device: an Apple TV on
+    /// ethernet wants a different answer from a phone on cellular.
+    private var qualitySection: some View {
+        Section("Video quality") {
+            NavigationLink {
+                TVChoiceList(
+                    title: "Video quality",
+                    options: VideoQuality.options.map { ($0.rawValue, VideoQuality.label($0)) },
+                    selection: playback.videoQuality.rawValue
+                ) { value in
+                    guard let preference = QualityPreference(rawValue: value) else { return }
+                    playback.videoQuality = preference
+                }
+            } label: {
+                LabeledContent("Quality", value: VideoQuality.label(playback.videoQuality))
+            }
+            Text("""
+            Auto plays the archived file whenever this Apple TV can decode it — \
+            full quality, and nothing for the server to convert — and otherwise \
+            the tallest rendition this screen can show, which is 4K on a 4K TV. \
+            A fixed height always plays a converted rendition, falling to the \
+            nearest lower one a video offers. This setting stays on this device.
             """)
             .font(.footnote)
             .foregroundStyle(.secondary)

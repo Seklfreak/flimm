@@ -25,9 +25,13 @@ final class TVPlayerCoordinator {
     private(set) var model: TVWatchModel?
 
     @ObservationIgnored private weak var app: AppModel?
+    /// This Apple TV's own playback settings — quality. One instance, shared
+    /// with the settings screen.
+    @ObservationIgnored private var playback = PlaybackSettings()
 
-    func configure(app: AppModel?) {
+    func configure(app: AppModel?, playback: PlaybackSettings) {
         self.app = app
+        self.playback = playback
         if app == nil { dismiss() }
     }
 
@@ -36,7 +40,7 @@ final class TVPlayerCoordinator {
         let next = TVPlayRequest(videoId: videoId, context: context, startAt: startAt)
         let leaving = model
         Task { await leaving?.tearDown() }
-        let created = TVWatchModel(request: next, app: app)
+        let created = TVWatchModel(request: next, app: app, playback: playback)
         model = created
         request = next
         Task { await created.load() }

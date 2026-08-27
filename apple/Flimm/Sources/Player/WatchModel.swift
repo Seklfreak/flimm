@@ -33,6 +33,10 @@ final class WatchModel {
     /// The server-reported state of that rendition, refreshed on every
     /// attempt. `done` means the wait is AVFoundation's, not the transcode's.
     private(set) var compatibleState: HLSState?
+    /// Which rung of the ladder is playing, when one is. `nil` while the
+    /// archived file plays, and also on a server that offers `hls_url` without
+    /// `hls_variants` — there the rendition has no height to name.
+    private(set) var activeVariant: HLSVariant?
     /// Set when the rendition never became playable inside the retry window,
     /// so the failure is finally shown rather than retried forever.
     private(set) var compatibleGaveUp = false
@@ -49,6 +53,9 @@ final class WatchModel {
 
     @ObservationIgnored private let app: AppModel
     @ObservationIgnored private let client: APIClient
+    /// Per-device, unlike ``prefs``: quality belongs to this screen and this
+    /// network, so it never goes to `PATCH /me/prefs`.
+    @ObservationIgnored private let playback: PlaybackSettings
     @ObservationIgnored private let reporter: ProgressReporter
     @ObservationIgnored private let nowPlaying = NowPlayingController()
     @ObservationIgnored private var startAtOverride: Double?
@@ -67,6 +74,18 @@ final class WatchModel {
     private static let compatibleRetryDelay: Duration = .seconds(5)
 
     var prefs: Prefs { app.prefs }
+    /// Reading it here keeps the menu's checkmark observing the settings
+    /// object rather than a copy of its value.
+    var videoQuality: QualityPreference { playback.videoQuality }
+    /// What the quality menu lists, tallest first. Empty on a server without
+    /// `hls_variants`, which is the signal to offer no picker at all.
+    var qualityLadder: [HLSVariant] { video?.hlsLadder ?? [] }
+    /// True when the archived file plays on this device — what makes
+    /// ``QualityPreference/auto`` mean "the source, at full quality".
+    var archivePlaysNatively: Bool {
+        guard let video else { return false }
+        return CodecGate.archivePlays(video)
+    }
     var hasContext: Bool { context.source != nil }
     /// "Preparing a compatible version…": the rendition is what will play, the
     /// player has nothing yet, and the server has not said it is on disk.
@@ -76,9 +95,10 @@ final class WatchModel {
     var canGoNext: Bool { nav?.next != nil }
     var canGoPrevious: Bool { nav?.previous != nil }
 
-    init(request: PlayRequest, app: AppModel) {
+    init(request: PlayRequest, app: AppModel, playback: PlaybackSettings) {
         self.app = app
         self.client = app.client
+        self.playback = playback
         self.videoId = request.videoId
         self.context = request.context
         self.audioOnly = request.context.audioOnly
@@ -127,6 +147,7 @@ final class WatchModel {
         audioUnavailable = false
         codecIssue = nil
         usingCompatibleRendition = false
+        activeVariant = nil
 
         let path: String
         // A growing EVENT playlist reports only what has been transcoded so
@@ -142,18 +163,24 @@ final class WatchModel {
             }
             path = nativeAudioURL
         } else {
-            switch CodecGate.decision(for: detail) {
+            switch CodecGate.decision(for: detail, preference: playback.videoQuality, device: .current) {
             case .native:
                 path = detail.mediaUrl
-            case .hls(let compatible):
-                path = compatible
+            case .hls(let choice):
+                path = choice.url
                 trustsItemDuration = false
                 usingCompatibleRendition = true
+                activeVariant = choice.variant
                 compatibleSince = compatibleSince ?? Date()
                 // Start the job before AVFoundation opens the playlist, so the
                 // transcode's head start is the server's rather than ours. The
                 // call is idempotent and reports where the rendition stands.
-                compatibleState = (try? await client.startHLS(videoId)) ?? detail.hlsState
+                // Only the height about to play is started: the server
+                // transcodes one job at a time, so warming the ladder would
+                // only make this one later.
+                compatibleState = (try? await client.startHLS(videoId, height: choice.height))
+                    ?? choice.state
+                    ?? detail.hlsState
             case .audioOnly(let issue), .unplayable(let issue):
                 codecIssue = issue
                 return
@@ -322,6 +349,24 @@ final class WatchModel {
         guard let video else { return }
         activeCue = nil
         await loadSubtitles(video)
+    }
+
+    /// Switches rendition without leaving the video.
+    ///
+    /// These are independent playlists rather than one master with several
+    /// `EXT-X-STREAM-INF` renditions, so a switch is a reload: remember the
+    /// clock, start the new height's job, swap the item, seek back and keep
+    /// playing. A rendition the server has not made yet puts the
+    /// "Preparing a compatible version…" overlay up exactly as a fresh video
+    /// does. The choice is per device and outlives this video.
+    func setVideoQuality(_ preference: QualityPreference) async {
+        guard playback.videoQuality != preference else { return }
+        playback.videoQuality = preference
+        guard let video, !audioOnly else { return }
+        startAtOverride = engine.currentTime
+        compatibleSince = nil
+        compatibleGaveUp = false
+        await startPlayback(video)
     }
 
     func toggleAudioOnly() async {

@@ -16,6 +16,18 @@ public enum DeviceCodecs {
         return hardwareDecodes(stream.codec)
     }
 
+    /// HEVC is what the 1440 and 2160 rungs of the HLS ladder are encoded in.
+    /// Every device that can drive a 4K panel decodes it in hardware — the
+    /// iPhone 7 and the first Apple TV 4K onwards — but an older one does not,
+    /// and it must be offered the H.264 rungs instead of a black picture.
+    public static var decodesHEVC: Bool {
+        #if canImport(VideoToolbox)
+        return VTIsHardwareDecodeSupported(kCMVideoCodecType_HEVC)
+        #else
+        return false
+        #endif
+    }
+
     static func hardwareDecodes(_ codec: String) -> Bool {
         #if canImport(VideoToolbox)
         if codec.hasPrefix("av01") || codec.hasPrefix("av1") {

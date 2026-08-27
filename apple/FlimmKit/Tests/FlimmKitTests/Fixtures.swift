@@ -85,8 +85,11 @@ enum Fixtures {
       "media_url": "/media/video/yt-id.mp4",
       "audio_url": "/media/audio/yt-id.webm",
       "audio_aac_url": "/media/audio/yt-id.m4a",
-      "hls_url": "/media/hls/yt-id/index.m3u8",
-      "hls_state": "pending",
+      "hls_url": "/media/hls/yt-id/1080/index.m3u8",
+      "hls_state": "done",
+      "hls_variants": [ { "height": 1080, "url": "/media/hls/yt-id/1080/index.m3u8", "state": "done", "codec": "h264" },
+                        { "height": 720, "url": "/media/hls/yt-id/720/index.m3u8", "state": "pending", "codec": "h264" },
+                        { "height": 480, "url": "/media/hls/yt-id/480/index.m3u8", "state": "pending", "codec": "h264" } ],
       "youtube_url": "https://www.youtube.com/watch?v=yt-id",
       "streams": [ { "type": "video", "codec": "avc1", "width": 1920, "height": 1080, "bitrate": 4500000 },
                    { "type": "audio", "codec": "mp4a", "width": 0, "height": 0, "bitrate": 130000 } ],
@@ -120,8 +123,29 @@ enum Fixtures {
     static let videoDetailWithoutHLS: String = {
         let lines = videoDetail
             .split(separator: "\n", omittingEmptySubsequences: false)
-            .filter { !$0.contains("\"hls_url\"") && !$0.contains("\"hls_state\"") }
+            .filter { !$0.contains("\"hls_") && !$0.contains("/media/hls/") }
         return lines.joined(separator: "\n")
+    }()
+
+    /// A backend with `hls_url` but no ladder — the release between the two.
+    /// A client that reads `hls_variants` still has to play these.
+    static let videoDetailWithoutVariants: String = {
+        let lines = videoDetail
+            .split(separator: "\n", omittingEmptySubsequences: false)
+            .filter { !$0.contains("\"hls_variants\"") && !$0.contains("\"height\": 720") && !$0.contains("\"height\": 480") }
+        return lines.joined(separator: "\n")
+    }()
+
+    /// A 4K source: every rung, and HEVC above 1080p.
+    static let videoDetail4K: String = {
+        videoDetail.replacingOccurrences(
+            of: "\"hls_variants\": [ {",
+            with: """
+            "hls_variants": [ { "height": 2160, "url": "/media/hls/yt-id/2160/index.m3u8", "state": "pending", "codec": "hevc" },
+                              { "height": 1440, "url": "/media/hls/yt-id/1440/index.m3u8", "state": "pending", "codec": "hevc" },
+                              {
+            """
+        )
     }()
 
     /// `POST /videos/{id}/hls`.

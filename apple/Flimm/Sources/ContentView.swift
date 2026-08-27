@@ -13,6 +13,10 @@ struct ContentView: View {
     @State private var player = PlayerCoordinator()
     /// Shared by both shells; see ``RootShell``.
     @State private var nav = NavigationModel()
+    /// Per-device playback settings (video quality). Unlike ``Prefs`` these
+    /// never leave the device, so they are not tied to the account and outlive
+    /// a sign-out.
+    @State private var playback = PlaybackSettings()
 
     var body: some View {
         Group {
@@ -31,6 +35,7 @@ struct ContentView: View {
                         .environment(app)
                         .environment(player)
                         .environment(nav)
+                        .environment(playback)
                 } else {
                     LoadingState()
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -53,13 +58,13 @@ struct ContentView: View {
             app = nil
             // A signed-out session has no client to report progress with, so
             // the player goes with it rather than playing on silently.
-            player.configure(app: nil)
+            player.configure(app: nil, playback: playback)
             return
         }
         if app?.client !== client {
             app = AppModel(client: client)
         }
-        player.configure(app: app)
+        player.configure(app: app, playback: playback)
     }
 }
 

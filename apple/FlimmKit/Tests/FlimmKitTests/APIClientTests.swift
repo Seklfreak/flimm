@@ -122,6 +122,19 @@ final class APIClientTests: XCTestCase {
         XCTAssertEqual(request.header("Authorization"), "Bearer tok")
     }
 
+    /// The quality picker starts the rung it is about to play, and only that
+    /// one: the server transcodes one job at a time.
+    func testStartHLSCarriesTheChosenHeight() async throws {
+        let session = StubURLProtocol.session(json: Fixtures.hlsStatus)
+        let client = APIClient(baseURL: baseURL, tokens: StaticTokenProvider("tok"), session: session)
+
+        _ = try await client.startHLS("yt-id", height: 720)
+
+        let request = try XCTUnwrap(StubURLProtocol.recorded.last)
+        XCTAssertEqual(request.path, "/api/v1/videos/yt-id/hls")
+        XCTAssertEqual(request.query, "height=720")
+    }
+
     func testFlagQueriesAreOmittedWhenFalse() async throws {
         let session = StubURLProtocol.session(json: Fixtures.searchResults)
         let client = APIClient(baseURL: baseURL, session: session)

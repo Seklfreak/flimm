@@ -71,13 +71,14 @@ struct PlayerControls: View {
     private var optionsMenu: some View {
         Menu {
             if model.usingCompatibleRendition {
-                // Informational, not a control: the rendition is chosen by the
-                // codec gate, never by hand.
+                // Informational: which rendition is playing, said where it is
+                // cheap to say it. The picker below is where it is changed.
                 Button {} label: {
-                    Label("Compatible version · up to 1080p", systemImage: "wand.and.rays")
+                    Label(VideoQuality.renditionHint(model.activeVariant), systemImage: "wand.and.rays")
                 }
                 .disabled(true)
             }
+            qualityMenu
             Picker("Speed", selection: speedBinding) {
                 ForEach(PlaybackSpeeds.all, id: \.self) { speed in
                     Text(Fmt.speed(speed)).tag(speed)
@@ -109,6 +110,57 @@ struct PlayerControls: View {
         } label: {
             Image(systemName: "ellipsis.circle")
         }
+    }
+
+    /// The quality picker.
+    ///
+    /// It is a per-device choice, not a server preference, and it applies from
+    /// here on rather than to this video alone. Auto is the archived file when
+    /// this device decodes it — free and full quality — and otherwise the
+    /// tallest rendition the screen can show; picking a height explicitly wins
+    /// even over a playable archive, because "720p" is a request for less data.
+    @ViewBuilder
+    private var qualityMenu: some View {
+        if !model.audioOnly, !model.qualityLadder.isEmpty {
+            Menu("Quality") {
+                qualityRow(VideoQuality.label(.auto), preference: .auto)
+                if model.archivePlaysNatively {
+                    // What Auto plays here, named rather than left implicit.
+                    // Not a choice of its own: Auto is how you ask for it.
+                    Button {} label: { Text(VideoQuality.sourceLabel(for: model.video)) }
+                        .disabled(true)
+                }
+                ForEach(model.qualityLadder) { variant in
+                    qualityRow(label(for: variant), preference: .height(variant.height))
+                }
+                // A height chosen on another video and not offered here still
+                // shows, so the picker never looks like it lost the setting.
+                if let height = model.videoQuality.height,
+                   !model.qualityLadder.contains(where: { $0.height == height }) {
+                    qualityRow("\(height)p · not offered", preference: .height(height))
+                }
+            }
+        }
+    }
+
+    private func qualityRow(_ title: String, preference: QualityPreference) -> some View {
+        Button {
+            Task { await model.setVideoQuality(preference) }
+        } label: {
+            if model.videoQuality == preference {
+                Label(title, systemImage: "checkmark")
+            } else {
+                Text(title)
+            }
+        }
+    }
+
+    /// `1080p`, `2160p · HEVC · ready`, `720p · preparing` — the state only
+    /// when there is something to say about it.
+    private func label(for variant: HLSVariant) -> String {
+        let label = VideoQuality.label(variant)
+        guard let hint = VideoQuality.stateHint(variant.state) else { return label }
+        return "\(label) · \(hint)"
     }
 
     @ViewBuilder
