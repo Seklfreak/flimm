@@ -61,9 +61,18 @@ public actor ProgressReporter {
     /// backgrounding and termination — the four moments a position would
     /// otherwise be lost.
     public func pause() async {
-        ticker?.cancel()
-        ticker = nil
+        await stopTicker()
         await flush()
+    }
+
+    /// Cancel the ticker and wait for it to wind down, so a heartbeat it had
+    /// in flight has landed before the caller moves on — otherwise it could
+    /// post after `stop()` returned, against a video that is no longer current.
+    private func stopTicker() async {
+        guard let ticker else { return }
+        self.ticker = nil
+        ticker.cancel()
+        await ticker.value
     }
 
     /// Post the current position now, whether or not the ticker is running.
@@ -86,8 +95,7 @@ public actor ProgressReporter {
 
     /// Flush and forget the video. Safe to call twice.
     public func stop() async {
-        ticker?.cancel()
-        ticker = nil
+        await stopTicker()
         await flush()
         videoId = nil
         playlistId = nil
