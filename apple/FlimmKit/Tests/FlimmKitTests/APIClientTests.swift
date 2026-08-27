@@ -36,6 +36,11 @@ final class APIClientTests: XCTestCase {
             client.mediaURL("https://cdn.example.com/x.mp4")?.absoluteString,
             "https://cdn.example.com/x.mp4"
         )
+        // `from` appends the resume offset an HLS master needs for EXT-X-START.
+        XCTAssertEqual(
+            client.mediaURL("/media/hls/yt-id/720/master.m3u8", from: 1408)?.absoluteString,
+            "https://flimm.example.com/media/hls/yt-id/720/master.m3u8?from=1408"
+        )
     }
 
     /// `/media/*` takes a Bearer header for native clients; the cookie path is

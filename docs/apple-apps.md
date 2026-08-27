@@ -391,9 +391,12 @@ that ladder**, and this is how it behaves:
   before it honours the seek to the resume point, and segment 0 is the segment
   the resume-first transcode produces **last**, so playback stalls waiting for a
   segment that will not exist for minutes. With `?from=` the player starts at the
-  resume point and fetches that segment first — the one produced first. (A
-  follow-up client change wires this through; the contract is that the URL, not
-  only the `POST`, carries `from`.)
+  resume point and fetches that segment first — the one produced first, so
+  resuming a long video now starts instantly instead of stalling. Both watch
+  models do this: the `.hls` branch passes the resume position to
+  `client.mediaURL(_:from:)`, which appends `?from=<seconds>` to the master URL
+  the `AVURLAsset` is built from. (The same offset still goes on the `POST`; the
+  contract is that the URL, not only the `POST`, carries `from`.)
 - **A switch is a reload.** Each height is its own independent playlist (a
   single-variant master over its own media playlist), not one master listing
   every height for the player to switch between, so `setVideoQuality(_:)` on both

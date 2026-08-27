@@ -33,6 +33,11 @@ const SIZES: Prefs["subtitle_size"][] = ["small", "medium", "large"];
  *  "come back", not "broken". */
 const HLS_NETWORK_RETRIES = 8;
 
+/** Append `?from=<seconds>` to an HLS playlist URL — see `playerFrom` below. */
+function withFrom(url: string, from: number): string {
+  return `${url}${url.includes("?") ? "&" : "?"}from=${from}`;
+}
+
 export interface PlayerProps {
   video: Video;
   prefs: Prefs;
@@ -102,7 +107,6 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(function Player(
   // A cache-busted retry URL after a media 401; cleared whenever the source
   // itself changes.
   const [retryUrl, setRetryUrl] = useState<string | null>(null);
-  const url = retryUrl ?? sourceUrl;
 
   // Where playback should begin for the source being loaded: the saved resume
   // position on the first load, and the clock the viewer was at when they
@@ -110,6 +114,16 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(function Player(
   // aimed at, so a resume at 40:00 transcodes 40:00 first.
   const startPosRef = useRef<number>(startAt ?? (!video.watched && video.position > 0 ? video.position : 0));
   const firstLoadRef = useRef(true);
+
+  // The URL handed to the player. A rendition carries `?from=<pos>` so the
+  // server returns a media playlist with `#EXT-X-START` and the player begins
+  // at the resume point — fetching the resume segment first (the transcode
+  // produces it first) instead of blocking on seg 0. `startPosRef` is already
+  // the clock the viewer was at on a quality switch, so the switched-to
+  // rendition starts there too. The plain archive path takes no `from`.
+  const playerFrom = isHls ? Math.floor(startPosRef.current) : 0;
+  const playerSource = sourceUrl && playerFrom > 0 ? withFrom(sourceUrl, playerFrom) : sourceUrl;
+  const url = retryUrl ?? playerSource;
 
   const rendition = useRendition({
     videoId: video.id,
@@ -173,7 +187,11 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(function Player(
           setError("This browser can't play the compatible version.");
           return;
         }
-        const instance = new Hls(HLS_CONFIG);
+        // `startPosition` is belt-and-suspenders for the EXT-X-START the media
+        // playlist already carries: it makes hls.js request the resume segment
+        // first even before it has parsed the playlist. -1 is its default
+        // (start at the beginning) for a start-over.
+        const instance = new Hls({ ...HLS_CONFIG, startPosition: playerFrom > 0 ? playerFrom : -1 });
         hls = instance;
         instance.on(Hls.Events.ERROR, (_event, data) => {
           if (!data.fatal) return;
@@ -208,7 +226,7 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(function Player(
       window.clearTimeout(retryTimer);
       hls?.destroy();
     };
-  }, [el, url, isHls, caps.nativeHLS, rendition.started]);
+  }, [el, url, isHls, caps.nativeHLS, rendition.started, playerFrom]);
 
   // Seek to resume point / ?t= once metadata is known; apply speed.
   useEffect(() => {
@@ -453,9 +471,10 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(function Player(
           // hls.js reports its own errors (and clears the element's src while
           // recovering), so only the direct path answers here.
           if (isHls && !caps.nativeHLS) return;
-          // Likely an expired media cookie: refresh it once and reload.
-          if (!sourceUrl) return;
-          void retryMediaUrl(sourceUrl).then((next) => {
+          // Likely an expired media cookie: refresh it once and reload. Retry
+          // the `?from`-bearing URL so a native-HLS resume keeps its offset.
+          if (!playerSource) return;
+          void retryMediaUrl(playerSource).then((next) => {
             if (next) setRetryUrl(next);
             else setError(audioOnly ? "Could not load the audio." : "Could not load the video.");
           });

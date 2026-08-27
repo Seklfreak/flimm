@@ -39,9 +39,23 @@ public actor APIClient {
 
     /// Resolves a media path from the API (`/media/video/id.mp4`,
     /// `/media/thumb/video/id`, a subtitle track URL) against the deployment.
-    public nonisolated func mediaURL(_ path: String) -> URL? {
-        if let absolute = URL(string: path), absolute.scheme != nil { return absolute }
-        return URL(string: path, relativeTo: baseURL)?.absoluteURL
+    ///
+    /// `from`, when given, appends `?from=<seconds>` to the resolved URL. For
+    /// an HLS master this is what makes the server return a media playlist
+    /// carrying `#EXT-X-START`, so `AVPlayer` begins at the resume point and
+    /// fetches the resume segment first instead of blocking on segment 0.
+    public nonisolated func mediaURL(_ path: String, from: Int? = nil) -> URL? {
+        let resolved: URL?
+        if let absolute = URL(string: path), absolute.scheme != nil {
+            resolved = absolute
+        } else {
+            resolved = URL(string: path, relativeTo: baseURL)?.absoluteURL
+        }
+        guard let url = resolved else { return nil }
+        guard let from else { return url }
+        guard var comps = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return url }
+        comps.queryItems = (comps.queryItems ?? []) + [URLQueryItem(name: "from", value: String(from))]
+        return comps.url ?? url
     }
 
     /// The `AVURLAsset` option key that carries ``mediaHeaders()``.

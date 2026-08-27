@@ -186,6 +186,11 @@ final class TVWatchModel {
         startAtOverride = nil
 
         let path: String
+        // For an HLS rendition the player URL carries `?from=<resume>`, so the
+        // media playlist comes back with `#EXT-X-START` and AVPlayer begins at
+        // the resume point (or, on a quality switch, the clock the viewer was
+        // at) — fetching that segment first instead of blocking on segment 0.
+        var mediaFrom: Int?
         if audioOnly {
             guard let nativeAudioURL = detail.nativeAudioURL else {
                 audioUnavailable = true
@@ -198,6 +203,7 @@ final class TVWatchModel {
                 path = detail.mediaUrl
             case .hls(let choice):
                 path = choice.url
+                mediaFrom = resume > 0 ? Int(resume.rounded(.down)) : nil
                 usingCompatibleRendition = true
                 activeVariant = choice.variant
                 compatibleSince = compatibleSince ?? Date()
@@ -215,7 +221,7 @@ final class TVWatchModel {
                 return
             }
         }
-        guard !path.isEmpty, let url = client.mediaURL(path) else {
+        guard !path.isEmpty, let url = client.mediaURL(path, from: mediaFrom) else {
             loadError = "This video has no playable media URL."
             return
         }
