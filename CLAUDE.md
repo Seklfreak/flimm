@@ -40,7 +40,36 @@ follow-up.
     input; `internal/db/sqlc` — generated (do **not** hand-edit).
 - `frontend/` — React + TypeScript + Vite. `frontend/dist` is `//go:embed`-ed
   into the binary, so the whole app ships as one container image.
-- `docs/` — `api.md` (contract), `design.md`, `deploy.md`, `roadmap.md`.
+- `apple/` — the native clients: `FlimmKit` (Swift package: models, API
+  client, auth, playback logic — no UI), `Flimm` (iPhone + iPad, one target),
+  `FlimmTV` (Apple TV), `Shared/` (views both targets compile). xcodegen
+  `project.yml`; the `.xcodeproj` is generated and gitignored.
+- `docs/` — `api.md` (contract), `design.md`, `deploy.md`, `roadmap.md`,
+  `apple-apps.md`.
+
+## One product, every platform
+
+Flimm is one product with four clients: web, iPhone, iPad and Apple TV. A
+change is not done when it works on the platform you happened to start on.
+
+- **Every behaviour change ships to all clients where it makes sense** — a new
+  player feature, a preference, a list, a fix in how progress or resume is
+  reported — in the **same change**. Do it in the web frontend and in both
+  Apple targets (`Flimm` and `FlimmTV`); the iPad is the same target as the
+  iPhone, so check its regular-width layout too.
+- **Logic lives in one place.** Anything a client decides — codec gating,
+  quality choice, chapter math, WebVTT, progress heartbeats — goes in
+  `FlimmKit` (Apple) or a shared module (web), never duplicated per target;
+  the tvOS and iOS players must call the same code. Anything the *server* can
+  decide (feed composition, watched state, shuffle order, resume position,
+  renditions) stays on the server so clients cannot drift.
+- **API changes name their clients.** When `api.md` gains a field, endpoint
+  or parameter, update every client that should use it in the same change,
+  and say in the commit which platforms picked it up.
+- "Does not make sense" is a deliberate, stated decision (e.g. tvOS has no
+  feed editor, the web plays the archive directly and needs no HLS rendition),
+  recorded in `docs/apple-apps.md` or `docs/design.md` — not a platform
+  quietly left behind.
 
 ## Toolchain
 
@@ -99,6 +128,10 @@ follow-up.
 - Backend: `golangci-lint run ./... && go build ./... && go test ./...`
   (config in `.golangci.yml`; it includes govet).
 - Frontend: `cd frontend && npm run lint && npm run build`.
+- Apple: `cd apple && xcodegen generate && swiftlint --strict`, then
+  `cd FlimmKit && swift test` (check swift's own exit status, not a grep's),
+  and build **both** schemes unsigned: `Flimm` for an iPhone *and* an iPad
+  simulator, `FlimmTV` for `generic/platform=tvOS Simulator` — zero warnings.
 - Go imports follow goimports grouping with the local module
   (`github.com/Seklfreak/flimm/...`) last.
 - Handler tests use the fake TA client and a fake querier; set only what a test
