@@ -21,7 +21,13 @@ struct RootTabView: View {
         }
         .tint(Palette.accent)
         .fullScreenCover(item: player.presented) { _ in
-            WatchView()
+            // A cover has no navigation bar of its own; the stack gives the
+            // watch screen its title and, more importantly, a Close button
+            // that is there even when the player overlay is not (codec gate,
+            // playback failure, controls hidden).
+            NavigationStack {
+                WatchView()
+            }
         }
     }
 
