@@ -2,6 +2,15 @@
 
 ## Done
 
+- **tvOS: the scrubber back, previous/next as buttons** (2026-08-27) — the
+  Apple TV player mapped previous/next onto the remote's skip gestures
+  (`skippingBehavior = .skipItem`), so clicking left or right jumped a whole
+  video and there was no way to move *inside* one: the transport bar's whole
+  reason for existing was gone. Skipping is AVKit's again (`.default` — click
+  to move ±10s, swipe to scrub), and stepping through the list is a pair of
+  buttons in the transport bar (`transportBarCustomMenuItems`) and in the Info
+  panel, each left out when the list cannot go that way. See
+  [apple-apps.md](apple-apps.md).
 - **Jump to the highlight** (2026-08-27) — the `poi` segment the backend
   started fetching is now something every client offers: sponsor, self-promo
   and the rest are what a player *skips*, but a point of interest is where a

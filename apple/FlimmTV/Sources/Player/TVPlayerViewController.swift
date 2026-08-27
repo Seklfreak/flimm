@@ -10,7 +10,7 @@ import SwiftUI
 /// SwiftUI would be worse in every way. What this bridge adds is the four
 /// things it cannot know about: the bearer-authenticated asset (set up in
 /// ``TVWatchModel``), Flimm's chapters as navigation markers, SponsorBlock as
-/// interstitials, and previous/next mapped onto the skip gestures.
+/// interstitials, and previous/next as transport-bar buttons.
 struct TVPlayerViewController: UIViewControllerRepresentable {
     let model: TVWatchModel
 
@@ -21,10 +21,12 @@ struct TVPlayerViewController: UIViewControllerRepresentable {
     func makeUIViewController(context: Context) -> AVPlayerViewController {
         let controller = AVPlayerViewController()
         controller.player = model.player
-        controller.delegate = context.coordinator
-        // Turns the remote's skip gestures into "previous/next video" instead
-        // of ±10s, which is what a feed or playlist run wants.
-        controller.skippingBehavior = .skipItem
+        // AVKit's own skipping: click left/right to move ±10s inside this
+        // video, swipe to scrub. Stepping through the list is what the
+        // transport-bar buttons below are for — mapping it onto the skip
+        // gestures (`skippingBehavior = .skipItem`) took the scrubber away
+        // from the viewer, which is the one thing the transport bar is for.
+        controller.skippingBehavior = .default
         controller.customInfoViewControllers = [context.coordinator.infoPanel]
 
         let overlay = context.coordinator.overlay
@@ -47,12 +49,11 @@ struct TVPlayerViewController: UIViewControllerRepresentable {
     }
 
     static func dismantleUIViewController(_ controller: AVPlayerViewController, coordinator: Coordinator) {
-        controller.delegate = nil
         controller.player = nil
     }
 
     @MainActor
-    final class Coordinator: NSObject, @preconcurrency AVPlayerViewControllerDelegate {
+    final class Coordinator: NSObject {
         let overlay: UIHostingController<TVPlayerOverlay>
         let infoPanel: UIHostingController<TVPlayerInfoPanel>
 
@@ -60,6 +61,9 @@ struct TVPlayerViewController: UIViewControllerRepresentable {
         /// The item state is expensive to rebuild, so it is re-applied only
         /// when the model says the item or its sidecars changed.
         private var appliedGeneration = -1
+        /// What the transport-bar buttons were last built for. They depend on
+        /// the list around the video, which arrives after the item does.
+        private var appliedNav: NavAvailability?
 
         init(model: TVWatchModel) {
             self.model = model
@@ -73,6 +77,11 @@ struct TVPlayerViewController: UIViewControllerRepresentable {
         /// have to be re-applied every time the model swaps one in — which is
         /// what `itemGeneration` marks.
         func apply(to controller: AVPlayerViewController) {
+            let nav = NavAvailability(previous: model.canGoPrevious, next: model.canGoNext)
+            if nav != appliedNav {
+                appliedNav = nav
+                controller.transportBarCustomMenuItems = transportBarItems(nav)
+            }
             guard appliedGeneration != model.itemGeneration else { return }
             guard let item = controller.player?.currentItem else { return }
             appliedGeneration = model.itemGeneration
@@ -85,14 +94,36 @@ struct TVPlayerViewController: UIViewControllerRepresentable {
             }
         }
 
-        // MARK: - AVPlayerViewControllerDelegate
-
-        func skipToNextItem(for playerViewController: AVPlayerViewController) {
-            Task { await model.goNext() }
-        }
-
-        func skipToPreviousItem(for playerViewController: AVPlayerViewController) {
-            Task { await model.goPrevious() }
+        /// Previous/next, as buttons in the transport bar where every other
+        /// player on the platform puts them. A direction the list cannot go is
+        /// left out rather than shown dead.
+        private func transportBarItems(_ nav: NavAvailability) -> [UIMenuElement] {
+            var items: [UIMenuElement] = []
+            if nav.previous {
+                items.append(UIAction(
+                    title: "Previous video",
+                    image: UIImage(systemName: "backward.end.fill")
+                ) { [model] _ in
+                    Task { @MainActor in await model.goPrevious() }
+                })
+            }
+            if nav.next {
+                items.append(UIAction(
+                    title: "Next video",
+                    image: UIImage(systemName: "forward.end.fill")
+                ) { [model] _ in
+                    Task { @MainActor in await model.goNext() }
+                })
+            }
+            return items
         }
     }
+}
+
+/// Which way the list around the video can be stepped. The transport-bar
+/// buttons are rebuilt when it changes, which is later than the item arrives:
+/// `nav` and `up-next` are sidecars, fetched after playback starts.
+private struct NavAvailability: Equatable {
+    let previous: Bool
+    let next: Bool
 }

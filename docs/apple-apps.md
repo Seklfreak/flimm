@@ -125,11 +125,17 @@ What is there:
     bar. The asset carries the bearer header; chapters become an
     `AVNavigationMarkersGroup` on the item, SponsorBlock range segments become
     `interstitialTimeRanges` (and are skipped outright on the
-    `skip_sponsors` preference), previous/next are mapped onto the remote's
-    skip gestures via `skippingBehavior = .skipItem`, autoplay follows
-    `up-next`, and shuffle is a new seed starting at `nav.first`. Resume is
-    the default; "Start over", the quality picker and the playback preferences
-    live in a custom Info-panel tab. Subtitles are rendered from the WebVTT cues in
+    `skip_sponsors` preference), autoplay follows `up-next`, and shuffle is a
+    new seed starting at `nav.first`. **Skipping stays AVKit's**
+    (`skippingBehavior = .default`): left/right moves inside the video and the
+    transport bar scrubs. Previous/next are *buttons* —
+    `transportBarCustomMenuItems`, plus the same pair in the Info panel — and
+    a direction the list cannot go is left out rather than shown dead. They
+    were briefly mapped onto the remote's skip gestures (`.skipItem`), which
+    silently cost the viewer the scrubber: clicking left or right jumped a
+    whole video instead of moving inside this one. Resume is the default;
+    "Start over", the quality picker and the playback preferences live in a
+    custom Info-panel tab. Subtitles are rendered from the WebVTT cues in
     `contentOverlayView` — the tracks are authenticated sidecars an
     `AVPlayerItem` cannot fetch itself. Audio-only plays `audio_aac_url` with
     artwork in the overlay and `MPNowPlayingInfoCenter`.

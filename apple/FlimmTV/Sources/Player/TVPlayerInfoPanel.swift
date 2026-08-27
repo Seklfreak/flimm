@@ -62,6 +62,24 @@ struct TVPlayerInfoPanel: View {
                 }
             }
 
+            // Also on the transport bar; here too, because this panel is
+            // where a viewer looks for what the remote's buttons do not do.
+            if model.canGoPrevious {
+                Button {
+                    Task { await model.goPrevious() }
+                } label: {
+                    Label("Previous video", systemImage: "backward.end.fill")
+                }
+            }
+
+            if model.canGoNext {
+                Button {
+                    Task { await model.goNext() }
+                } label: {
+                    Label("Next video", systemImage: "forward.end.fill")
+                }
+            }
+
             if let resumed = model.resumedFrom {
                 Button {
                     Task { await model.startOver() }
