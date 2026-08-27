@@ -44,10 +44,27 @@ final class ProgressReporterTests: XCTestCase {
         let position = MovingPosition()
 
         await reporter.start(videoId: "yt-id") { await position.next() }
-        try await Task.sleep(for: .milliseconds(200))
+        // Wait for the ticks, not for a stretch of wall clock. A loaded CI
+        // machine takes far longer than 3 × 20 ms to run three of them, and a
+        // fixed sleep long enough to be safe there is a slow test everywhere
+        // else — the assertion is "it keeps ticking", not "it ticks this fast".
+        let ticked = await heartbeatCount(reaches: 3, within: .seconds(10))
         await reporter.stop()
 
-        XCTAssertGreaterThanOrEqual(StubURLProtocol.recorded.count, 3)
+        XCTAssertGreaterThanOrEqual(ticked, 3)
+    }
+
+    /// Polls until the heartbeat has posted `target` times, returning the
+    /// count it got to — the caller asserts on that, so a timeout fails with
+    /// the real number rather than with "timed out".
+    private func heartbeatCount(reaches target: Int, within timeout: Duration) async -> Int {
+        let deadline = ContinuousClock.now + timeout
+        while ContinuousClock.now < deadline {
+            let count = StubURLProtocol.recorded.count
+            if count >= target { return count }
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+        return StubURLProtocol.recorded.count
     }
 
     /// Stepping to the next video must not lose the last position of the one
