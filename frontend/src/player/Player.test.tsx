@@ -1,7 +1,8 @@
-import { describe, expect, it } from "vitest";
-import { screen } from "@testing-library/react";
-import { Player, SUBTITLE_OFF, fmtSpeed, pickTrack, trackLabel } from "./Player";
-import type { Prefs, SubtitleTrack } from "@/lib/api";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { fireEvent, screen } from "@testing-library/react";
+import { Player, SUBTITLE_OFF, fmtSpeed, pickTrack, trackLabel, variantHint } from "./Player";
+import type { HLSVariant, Prefs, StreamInfo, SubtitleTrack, Video } from "@/lib/api";
+import { QUALITY_STORAGE_KEY } from "./codecGate";
 import { mockFetch, renderWithProviders, videoDetail } from "@/test/helpers";
 
 const tracks: SubtitleTrack[] = [
@@ -107,5 +108,115 @@ describe("Player audio mode", () => {
   it("labels the audio/video toggle for the opposite action", () => {
     renderPlayer(false);
     expect(screen.getByLabelText("Switch to audio only")).toBeTruthy();
+  });
+});
+
+
+// ---- renditions and the quality picker --------------------------------------
+
+const stream = (codec: string, height = 1080): StreamInfo => ({
+  type: "video",
+  codec,
+  width: (height * 16) / 9,
+  height,
+  bitrate: 4_500_000,
+});
+
+const rung = (height: number, state: HLSVariant["state"] = "pending"): HLSVariant => ({
+  height,
+  url: `/media/hls/vid1/${height}/index.m3u8`,
+  state,
+  codec: height > 1080 ? "hevc" : "h264",
+  hls_progress: 0,
+});
+
+/** A browser that decodes H.264 and nothing modern — the case the ladder is
+ *  for. Without this jsdom answers no probe at all and the gate is permissive. */
+function h264OnlyBrowser() {
+  vi.stubGlobal("MediaSource", { isTypeSupported: (t: string) => t.includes("avc1") });
+  vi.spyOn(HTMLMediaElement.prototype, "canPlayType").mockReturnValue("");
+}
+
+function renderVideo(v: Video) {
+  mockFetch({
+    "GET /api/v1/videos/vid1/chapters": { source: "none", chapters: [] },
+    "POST /api/v1/videos/vid1/hls": { state: "running", height: 1080, hls_progress: 0.37 },
+  });
+  return renderWithProviders(
+    <Player
+      video={v}
+      prefs={prefs}
+      audioOnly={false}
+      onToggleAudioOnly={() => {}}
+      onPrefs={() => {}}
+      onWatched={() => {}}
+      onStartOver={async () => {}}
+      onEnded={() => {}}
+    />,
+  );
+}
+
+describe("quality picker", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    window.localStorage.clear();
+  });
+
+  it("is hidden when the server offers no ladder", () => {
+    renderVideo(videoDetail());
+    expect(screen.queryByLabelText("Video quality")).toBeNull();
+  });
+
+  it("lists Auto, what Auto plays, and the rungs this browser can decode", () => {
+    h264OnlyBrowser();
+    renderVideo(videoDetail({ streams: [stream("avc1")], hls_variants: [rung(2160), rung(1080, "done"), rung(720)] }));
+    fireEvent.click(screen.getByLabelText("Video quality"));
+    // The control shows the current choice, and the menu repeats it as a row.
+    expect(screen.getByLabelText("Video quality").textContent).toBe("Auto");
+    expect(screen.getAllByText("Auto")).toHaveLength(2);
+    // The archive plays here, so Auto's line names it.
+    expect(screen.getByText(/Source · 1080p · H.264/)).toBeTruthy();
+    expect(screen.getByText("1080p")).toBeTruthy();
+    expect(screen.getByText("720p")).toBeTruthy();
+    // 2160p is HEVC, which this browser has no decoder for.
+    expect(screen.queryByText(/2160p/)).toBeNull();
+    // Each rung's own state, not the video's.
+    expect(screen.getByText("ready")).toBeTruthy();
+  });
+
+  it("remembers the choice on this device only", () => {
+    h264OnlyBrowser();
+    renderVideo(videoDetail({ streams: [stream("avc1")], hls_variants: [rung(1080), rung(720)] }));
+    fireEvent.click(screen.getByLabelText("Video quality"));
+    fireEvent.click(screen.getByText("720p"));
+    expect(window.localStorage.getItem(QUALITY_STORAGE_KEY)).toBe("720");
+    expect(screen.getByLabelText("Video quality").textContent).toBe("720p");
+  });
+
+  it("names each rung's state the way the menu does", () => {
+    expect(variantHint("done")).toBe("ready");
+    expect(variantHint("running")).toBe("preparing");
+    expect(variantHint("pending")).toBe("");
+    expect(variantHint("failed")).toBe("failed");
+  });
+});
+
+describe("codec fallback", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    window.localStorage.clear();
+  });
+
+  it("loads a rendition and says so while it is being prepared", () => {
+    h264OnlyBrowser();
+    renderVideo(videoDetail({ streams: [stream("av01", 2160)], hls_variants: [rung(1080), rung(720)] }));
+    expect(screen.getByText(/Preparing a compatible version/)).toBeTruthy();
+  });
+
+  it("shows the codec wall only when there is no rendition to fall back to", () => {
+    h264OnlyBrowser();
+    renderVideo(videoDetail({ streams: [stream("av01")] }));
+    expect(screen.getByText(/codec \(av01\) can't be played/)).toBeTruthy();
+    expect(screen.getByText("Play audio only")).toBeTruthy();
   });
 });

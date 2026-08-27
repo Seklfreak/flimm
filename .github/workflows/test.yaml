@@ -41,9 +41,11 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
 
       # lint = eslint (rules-of-hooks — bugs tsc/vite miss) + tsc typecheck.
-      - name: Install + lint + build
+      # test = vitest (the codec gate's rules, and the player's controls).
+      - name: Install + lint + test + build
         working-directory: frontend
         run: |
           npm ci
           npm run lint
+          npm test
           npm run build

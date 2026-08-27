@@ -47,6 +47,25 @@ feeds without leaving the page.
 - The subtitle picker is the CC button in the controls: Off, archived tracks,
   and auto-generated tracks marked *auto*, plus size. SponsorBlock segments
   can be skipped automatically (a preference).
+- **Quality is a per-device choice**, next to speed and subtitles: *Auto*,
+  then the qualities this video offers. The archive holds whatever was
+  downloaded — often AV1 or VP9, which some devices and browsers decode and
+  others do not — so the server can derive a compatible rendition at several
+  heights, and every platform picks from the same ladder by the same rule:
+
+  - *Auto* plays the **archived file** whenever the device can decode it: the
+    original, full quality, and nothing for the server to transcode. Only when
+    it cannot does Auto fall to a rendition — the tallest one the screen can
+    actually show, skipping any in a codec the device lacks.
+  - An **explicit height** wins even over a playable archive, because "720p"
+    is a request for less data, not a mistake. A height at or above the
+    source's own is the archive again.
+  - Switching mid-play keeps the position, and a rendition that has produced
+    nothing yet says *Preparing a compatible version… 37 %* rather than
+    stalling silently.
+
+  The choice lives on the device, not in the account: a phone on cellular and
+  a desktop on a 4K panel want different answers from the same login.
 - *Up next* follows the context the video was opened from (feed, playlist or
   channel), falling back to similar videos.
 
@@ -75,6 +94,10 @@ results to one kind, to unseen videos, or to the current feed.
 Autoplay, playback speed, subtitle language and size, skip sponsors, the
 Everything-feed options and theme (system / light / dark). Stored per user in
 Flimm.
+
+Video quality is deliberately **not** one of them — it belongs to the screen
+and the network in front of it, so it is kept on the device (the browser's
+`localStorage`, `UserDefaults` on Apple platforms) and never synced.
 
 ## Platforms
 

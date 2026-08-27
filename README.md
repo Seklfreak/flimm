@@ -31,14 +31,18 @@ One container image: a Go backend with the React frontend embedded.
 - **Player** — archived and auto-generated subtitle tracks, SponsorBlock
   segment skipping, playback speed, autoplay with context-aware *Up next*.
 - **Plays what your devices can't** — the archive is full of AV1 and VP9 that
-  Apple hardware cannot decode, so Flimm derives a compatible **HLS** rendition
-  on demand and streams it segment by segment: playback starts within seconds
-  instead of after the whole transcode. Audio-only renditions come the same
-  way. See [docs/api.md](docs/api.md#derived-media).
+  Apple hardware cannot decode and that not every browser does either, so Flimm
+  derives a compatible **HLS** rendition on demand and streams it segment by
+  segment: playback starts within seconds instead of after the whole transcode.
+  Audio-only renditions come the same way. See
+  [docs/api.md](docs/api.md#derived-media).
 - **Pick a quality** — up to five renditions per video (2160, 1440, 1080, 720,
   480, capped at what the source holds): H.264 up to 1080p, HEVC above it, so
   4K plays on anything from an iPhone 7 or an Apple TV 4K on. Each height is
-  derived only when a client asks for it. See
+  derived only when a client asks for it. Every client — the web player and the
+  Apple apps — offers the same *Quality* menu and the same *Auto* rule: the
+  archived file when the device decodes it, and otherwise the tallest rendition
+  the screen can show. The choice is remembered per device. See
   [docs/api.md](docs/api.md#compatible-video-renditions-hls).
 - **Preferences** per user (autoplay, speed, subtitles, theme…).
 - **OIDC login** with any provider; media streams through the backend so

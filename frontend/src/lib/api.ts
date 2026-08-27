@@ -85,12 +85,60 @@ export interface VideoPlaylistRef {
   count: number;
 }
 
+/** One source rendition TA muxed the video from. `codec` is a short name
+ *  (`avc1`, `vp09`, `av01`, `mp4a`, `opus`); the player maps it to a MIME
+ *  string to ask the browser whether it can decode it — see player/codecGate. */
+export interface StreamInfo {
+  type: "video" | "audio";
+  codec: string;
+  width: number;
+  height: number;
+  bitrate: number;
+}
+
+export type HLSState = "pending" | "running" | "done" | "failed";
+
+/** `h264` up to 1080p, `hevc` at 1440 and 2160. An unknown value is left in
+ *  rather than dropped: a rung added to the contract later is the browser's to
+ *  refuse, not something to hide from the picker. */
+export type HLSCodec = "h264" | "hevc" | (string & {});
+
+/** One rung of the compatible-rendition ladder (docs/api.md, tallest first). */
+export interface HLSVariant {
+  height: number;
+  url: string;
+  state: HLSState;
+  codec: HLSCodec;
+  /** Fraction of that rendition that has been transcoded, 0–1. Only a number
+   *  to show while preparing — it says nothing about *where* those segments
+   *  are, because the playlist is complete from the first request. */
+  hls_progress: number;
+}
+
+/** What `POST /videos/{id}/hls` answers with. */
+export interface HLSStatus {
+  state: HLSState;
+  height: number;
+  hls_progress: number;
+}
+
 export interface Video extends Omit<VideoSummary, "channel"> {
   description: string;
   height: number;
   media_url: string;
   audio_url: string;
+  /** The same audio as AAC in MP4, for players that cannot decode Opus in
+   *  WebM. The web player stays on `audio_url`; optional on older servers. */
+  audio_aac_url?: string;
+  /** The default compatible rendition. Optional here only because a server
+   *  older than the feature has none. */
+  hls_url?: string;
+  hls_state?: HLSState;
+  /** The quality ladder, tallest first. Absent on a server written before it. */
+  hls_variants?: HLSVariant[];
   youtube_url: string;
+  /** Absent on an older server — which means "unknown", never "unplayable". */
+  streams?: StreamInfo[];
   subtitles: SubtitleTrack[];
   sponsorblock: SponsorSegment[];
   stats: { views: number; likes: number };
@@ -320,6 +368,14 @@ export const api = {
     req<Page<VideoSummary>>(`/videos/${id}/up-next${qs({ ...ctx, page, page_size: PAGE_SIZE })}`),
   nav: (id: string, ctx: PlayContext) => req<NavResponse>(`/videos/${id}/nav${qs(ctx)}`),
   chapters: (id: string) => req<ChaptersResponse>(`/videos/${id}/chapters`),
+  // Starts (or re-aims) a compatible rendition without waiting. `height` picks
+  // the rung; `from` is the resume position, so the encoder produces the part
+  // that is about to be watched first. Idempotent — it is also the progress
+  // poll while a rendition is being prepared.
+  startHLS: (id: string, height?: number, from?: number) =>
+    req<HLSStatus>(`/videos/${id}/hls${qs({ height, from: from ? Math.floor(from) : undefined })}`, {
+      method: "POST",
+    }),
   // `playlistId` is the play context, not the video's playlist membership —
   // when it names a music playlist the server records no watch state at all
   // (see docs/api.md "Music playlists"). Every heartbeat path must pass it.

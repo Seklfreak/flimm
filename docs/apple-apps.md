@@ -310,10 +310,16 @@ exercise.
 
 **Codecs are the big unknown, and worth settling before writing UI.** The
 archive holds whatever was downloaded, which is often modern web codecs, while
-AVFoundation supports a narrower set than a browser does. Before committing to
-`AVPlayer`, take a handful of real files and check what actually plays on a
-device (not just the simulator) and on the tvOS hardware being targeted. There
-are three outcomes:
+AVFoundation supports a narrower set than a browser does. It is a difference of
+degree, not of kind: the **web client falls back the same way** — Safari has no
+AV1 decoder, and HEVC and VP9 support vary by browser and by machine — so it
+runs the identical gate and quality rule in `frontend/src/player/codecGate.ts`,
+loading a rendition (through hls.js, or natively in Safari) whenever the
+archive will not decode. Treat that as the reference implementation of the rule
+rather than as a client that never needs one. Before committing to `AVPlayer`,
+take a handful of real files and check what actually plays on a device (not
+just the simulator) and on the tvOS hardware being targeted. There are three
+outcomes:
 
 1. It all plays — proceed, and this section is moot.
 2. Some plays — decide per video, using the stream metadata, and fall back.
