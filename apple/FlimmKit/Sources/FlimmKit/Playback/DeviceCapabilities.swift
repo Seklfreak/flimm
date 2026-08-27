@@ -18,16 +18,40 @@ public struct DeviceCapabilities: Sendable, Hashable {
     /// `VTIsHardwareDecodeSupported(kCMVideoCodecType_HEVC)`. False rules the
     /// 1440 and 2160 rungs out entirely: they are HEVC and nothing else.
     public let decodesHEVC: Bool
+    /// Hardware AV1 decode (A17 Pro / M3 and later). Decides whether an AV1
+    /// archive plays as-is.
+    public let decodesAV1: Bool
+    /// Hardware VP9 decode. Same role for VP9 archives.
+    public let decodesVP9: Bool
 
-    public init(screenHeight: Int, decodesHEVC: Bool) {
+    public init(screenHeight: Int, decodesHEVC: Bool, decodesAV1: Bool = false, decodesVP9: Bool = false) {
         self.screenHeight = screenHeight
         self.decodesHEVC = decodesHEVC
+        self.decodesAV1 = decodesAV1
+        self.decodesVP9 = decodesVP9
+    }
+
+    /// Whether the archived stream itself decodes here: always for H.264 and
+    /// HEVC, and per the hardware for AV1 and VP9. Pure, so the gate can be
+    /// tested for any device without running on one.
+    public func canDecode(_ stream: MediaStream) -> Bool {
+        if stream.isNativelyPlayable { return true }
+        guard stream.type == .video else { return false }
+        let codec = stream.codec
+        if codec.hasPrefix("av01") || codec.hasPrefix("av1") { return decodesAV1 }
+        if codec.hasPrefix("vp09") || codec.hasPrefix("vp9") { return decodesVP9 }
+        return false
     }
 
     /// This device, right now.
     @MainActor
     public static var current: DeviceCapabilities {
-        DeviceCapabilities(screenHeight: DeviceScreen.pixelHeight, decodesHEVC: DeviceCodecs.decodesHEVC)
+        DeviceCapabilities(
+            screenHeight: DeviceScreen.pixelHeight,
+            decodesHEVC: DeviceCodecs.decodesHEVC,
+            decodesAV1: DeviceCodecs.hardwareDecodes("av01"),
+            decodesVP9: DeviceCodecs.hardwareDecodes("vp09")
+        )
     }
 
     /// Whether a rendition in this codec can play here. An unrecognised codec

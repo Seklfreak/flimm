@@ -28,7 +28,7 @@ public enum DeviceCodecs {
         #endif
     }
 
-    static func hardwareDecodes(_ codec: String) -> Bool {
+    public static func hardwareDecodes(_ codec: String) -> Bool {
         #if canImport(VideoToolbox)
         if codec.hasPrefix("av01") || codec.hasPrefix("av1") {
             return VTIsHardwareDecodeSupported(kCMVideoCodecType_AV1)

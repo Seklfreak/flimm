@@ -251,3 +251,13 @@ extension CodecGateTests {
         }
     }
 }
+
+extension CodecGateTests {
+    /// The archive check is a property of the device value, not of the
+    /// machine running the tests: an AV1-capable phone plays the source.
+    func testADeviceWithAV1DecodePlaysTheArchive() throws {
+        let detail = try legacyVideo(streams: #"[{"type":"video","codec":"av01.0.05M.08"}]"#, audio: false)
+        let proPhone = DeviceCapabilities(screenHeight: 1206, decodesHEVC: true, decodesAV1: true)
+        XCTAssertEqual(CodecGate.decision(for: detail, device: proPhone), .native)
+    }
+}
