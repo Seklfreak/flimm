@@ -185,6 +185,13 @@ export function SearchBox({
 // Fires onVisible when the sentinel scrolls into view (infinite lists).
 export function InfiniteSentinel({ onVisible, enabled }: { onVisible: () => void; enabled: boolean }) {
   const ref = useRef<HTMLDivElement>(null);
+  // `onVisible` is in the dependencies deliberately, and every call site
+  // passes an inline arrow, so the observer is rebuilt on each render. That
+  // rebuild is what *re-arms* it: an IntersectionObserver reports a change in
+  // intersection, and a sentinel that was already in view when the last page
+  // arrived never changes state — so a single long-lived observer fires once
+  // and the list stops loading. Holding the callback in a ref to "avoid the
+  // churn" looks tidier and breaks paging; there is a test for it.
   useEffect(() => {
     if (!enabled || !ref.current || typeof IntersectionObserver === "undefined") return;
     const io = new IntersectionObserver((entries) => {
