@@ -183,10 +183,16 @@ What is there:
     to ~1100pt: a tvOS row is nearly 1800pt wide, which is a 200-character
     line to read from a sofa. Section headers carry bottom padding, because a
     focused row grows and would otherwise sit on top of the header above it.
-  - **The custom Info-panel tab needs its own background.** AVKit gives it
-    none, so a `UIHostingController` full of preferences renders straight onto
-    moving video and cannot be read; the hosting view and the SwiftUI root
-    both paint an opaque ground.
+  - **The custom Info-panel tab must fit the band it is given, and fill it.**
+    The panel is a short strip across the top of the screen, not a screen of
+    its own. A tall stack scrolled inside it shows a handful of rows clipped
+    mid-height, so the tab is laid out as two columns that fit without
+    scrolling — actions on the left, preferences on the right, one line of
+    context above — and anything that cannot be made to fit stays out (which
+    is why "Up next" is not there: autoplay already decides what follows).
+    AVKit also gives the tab no background *and* sizes it to its content, so
+    it both paints an opaque ground and is pinned to the panel's width;
+    without the pin the ground stops short and the video shows beside it.
   - **Read-only feeds.** No feed editor: naming a feed and picking its
     channels wants a keyboard and a long list. The screens say "Edit feeds on
     your phone" where the button would otherwise be, rather than leaving

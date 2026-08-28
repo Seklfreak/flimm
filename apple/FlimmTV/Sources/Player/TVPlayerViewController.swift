@@ -64,6 +64,8 @@ struct TVPlayerViewController: UIViewControllerRepresentable {
         /// What the transport-bar buttons were last built for. They depend on
         /// the list around the video, which arrives after the item does.
         private var appliedNav: NavAvailability?
+        /// Whether the Info tab has been pinned to the panel's width (once).
+        private var pinnedInfoPanel = false
 
         init(model: TVWatchModel) {
             self.model = model
@@ -80,6 +82,7 @@ struct TVPlayerViewController: UIViewControllerRepresentable {
         /// have to be re-applied every time the model swaps one in — which is
         /// what `itemGeneration` marks.
         func apply(to controller: AVPlayerViewController) {
+            pinInfoPanelWidth()
             let nav = NavAvailability(previous: model.canGoPrevious, next: model.canGoNext)
             if nav != appliedNav {
                 appliedNav = nav
@@ -95,6 +98,23 @@ struct TVPlayerViewController: UIViewControllerRepresentable {
             } else {
                 item.navigationMarkerGroups = []
             }
+        }
+
+        /// AVKit lays a custom Info tab out to its own idea of the content's
+        /// size, which leaves the rest of the panel showing the video beside
+        /// an opaque tab — a black band that stops short with picture next to
+        /// it. Pinning the hosting view to its container's width makes the
+        /// ground cover the panel. Width only: the height is AVKit's business,
+        /// and constraining it too would be a fight with the panel's own
+        /// layout rather than a fix.
+        private func pinInfoPanelWidth() {
+            guard !pinnedInfoPanel, let host = infoPanel.viewIfLoaded, let parent = host.superview else { return }
+            pinnedInfoPanel = true
+            host.translatesAutoresizingMaskIntoConstraints = false
+            NSLayoutConstraint.activate([
+                host.leadingAnchor.constraint(equalTo: parent.leadingAnchor),
+                host.trailingAnchor.constraint(equalTo: parent.trailingAnchor)
+            ])
         }
 
         /// Previous/next, as buttons in the transport bar where every other

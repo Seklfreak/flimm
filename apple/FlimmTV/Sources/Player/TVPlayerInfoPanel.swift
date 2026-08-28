@@ -5,39 +5,52 @@ import SwiftUI
 /// the remote).
 ///
 /// It carries the things AVKit has no concept of: "Start over" against the
-/// server-held resume position, the shuffle seed, audio-only, and the four
+/// server-held resume position, the shuffle seed, audio-only, and the
 /// preferences that change what playback does. Everything here writes through
 /// `PATCH /me/prefs`, so a speed set from the sofa is the speed the phone uses
 /// next.
+///
+/// **It has to fit the strip AVKit gives it.** The panel is a short band
+/// across the top of the screen, not a screen of its own, and a tall stack
+/// scrolled inside it shows a few rows clipped mid-height with the rest of the
+/// content — and the background — running off the edge. So the layout is two
+/// columns that fit without scrolling: what you can *do* on the left, what you
+/// can *change* on the right, one line of context above them. Anything that
+/// cannot be made to fit does not belong here (which is why "Up next" is not:
+/// autoplay already decides what follows, and the transport bar can step).
 struct TVPlayerInfoPanel: View {
     @Bindable var model: TVWatchModel
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 34) {
-                header
+        VStack(alignment: .leading, spacing: 20) {
+            header
+            HStack(alignment: .top, spacing: 60) {
                 actions
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 preferences
-                if !model.upNext.isEmpty { upNext }
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .padding(50)
-            // The panel opens over playing video. Without a ground of its own
-            // the rows are drawn straight onto moving picture and cannot be
-            // read at all; AVKit does not put one behind a custom tab.
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color.black.opacity(0.92))
         }
+        .padding(.horizontal, 40)
+        .padding(.vertical, 28)
+        // Fill whatever AVKit hands over, and paint the ground outside that
+        // frame: the panel opens over playing video, and a background sized to
+        // the content leaves rows sitting on moving picture wherever the
+        // content stops short.
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(Color.black.opacity(0.92))
     }
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        HStack(alignment: .firstTextBaseline, spacing: 16) {
             Text(model.video?.title ?? "")
-                .font(.title2.bold())
-                .lineLimit(3)
+                .font(.title3.bold())
+                .lineLimit(1)
             Text(subtitle)
-                .font(.headline)
+                .font(.subheadline)
                 .foregroundStyle(.secondary)
+                .lineLimit(1)
+            Spacer(minLength: 0)
         }
     }
 
@@ -55,7 +68,7 @@ struct TVPlayerInfoPanel: View {
     }
 
     private var actions: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 10) {
             // A point of interest is offered, never taken: the remote has no
             // scrubber worth hunting on, so this is where the TV gets it.
             if let highlight = SponsorRules.highlightToOffer(
@@ -129,9 +142,9 @@ struct TVPlayerInfoPanel: View {
     }
 
     private var preferences: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 10) {
             Text("Preferences")
-                .font(.headline)
+                .font(.caption)
                 .foregroundStyle(.secondary)
 
             Toggle("Autoplay next video", isOn: Binding(
@@ -153,34 +166,33 @@ struct TVPlayerInfoPanel: View {
             }
 
             if !model.audioOnly, !model.qualityLadder.isEmpty {
+                // The footnote that used to sit here is gone: in a band this
+                // short a paragraph costs two rows and pushes something you
+                // can act on off the panel. What Auto is doing is in the value.
                 TVOptionRow(title: "Quality", value: qualityLabel) {
                     Task { await model.setVideoQuality(nextQuality) }
                 }
-                Text(qualityFooter)
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
             }
         }
     }
 
-    /// `Auto` / `2160p · HEVC · preparing` — the current choice, with the
-    /// rendition's state when there is something to say about it.
+    /// `Auto · 1080p` / `2160p · HEVC · preparing` — the current choice, and
+    /// what it resolved to. Auto says what it actually picked because a band
+    /// this short has no room for the sentence that used to explain it, and
+    /// "Auto" alone tells a viewer staring at a soft picture nothing.
     private var qualityLabel: String {
-        guard let height = model.videoQuality.height else { return VideoQuality.label(.auto) }
+        guard let height = model.videoQuality.height else {
+            if model.archivePlaysNatively {
+                return "\(VideoQuality.label(.auto)) · \(VideoQuality.sourceLabel(for: model.video))"
+            }
+            guard let variant = model.activeVariant else { return VideoQuality.label(.auto) }
+            return "\(VideoQuality.label(.auto)) · \(VideoQuality.label(variant))"
+        }
         guard let variant = model.qualityLadder.first(where: { $0.height == height }) else {
             return "\(height)p · not offered"
         }
         guard let hint = VideoQuality.stateHint(variant.state) else { return VideoQuality.label(variant) }
         return "\(VideoQuality.label(variant)) · \(hint)"
-    }
-
-    /// What Auto is doing right now, said in a line rather than left to be
-    /// guessed at from a black screen.
-    private var qualityFooter: String {
-        guard model.videoQuality == .auto else { return "Changing quality restarts this video where you are." }
-        if model.archivePlaysNatively { return "Auto is playing \(VideoQuality.sourceLabel(for: model.video).lowercased())." }
-        guard let variant = model.activeVariant else { return "Auto picks the best rendition this screen can show." }
-        return "Auto picked \(VideoQuality.label(variant)) for this screen."
     }
 
     /// Cycles Auto → the heights this video actually offers, tallest first. A
@@ -206,26 +218,6 @@ struct TVPlayerInfoPanel: View {
         return options[(index + 1) % options.count]
     }
 
-    private var upNext: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Up next")
-                .font(.headline)
-                .foregroundStyle(.secondary)
-            ForEach(model.upNext.prefix(5)) { video in
-                Button {
-                    Task { await model.go(to: video.id) }
-                } label: {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(video.title)
-                            .lineLimit(1)
-                        Text("\(video.channel.name) · \(Fmt.duration(video.duration))")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-            }
-        }
-    }
 }
 
 /// A settings row that steps to the next value rather than opening a picker —
