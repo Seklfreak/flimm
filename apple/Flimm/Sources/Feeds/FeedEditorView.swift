@@ -72,6 +72,7 @@ struct FeedEditorView: View {
             }
         }
         .navigationTitle(isNew ? "New feed" : "Edit feed")
+        .onAppear { Analytics.screen(.feedEditor) }
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .confirmationAction) {
@@ -116,6 +117,7 @@ struct FeedEditorView: View {
                 _ = try await app.client.updateFeed(feedId, input)
             } else {
                 _ = try await app.client.createFeed(input)
+                Analytics.feedCreated()
             }
             // The feed's channels decide what its list contains, so the cached
             // pages of it are wrong now (see ``PagerStore``).

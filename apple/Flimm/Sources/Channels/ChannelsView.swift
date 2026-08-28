@@ -42,6 +42,7 @@ struct ChannelsView: View {
         .listStyle(.plain)
         .refreshable { await pager?.reload() }
         .navigationTitle("Channels")
+        .onAppear { Analytics.screen(.channels) }
         .searchable(text: $searchText, isPresented: nav.searchPresented(for: .channels), prompt: "Search channels")
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {

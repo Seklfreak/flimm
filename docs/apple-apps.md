@@ -281,6 +281,33 @@ its clients change together — the same reason the web client lives here. CI
 must keep the existing Go and web jobs green; add a separate macOS job for the
 Apple build rather than extending the current one.
 
+## Analytics
+
+Both apps report anonymous usage to a self-hosted Umami instance through
+`FlimmKit`'s `Analytics`, which speaks Umami's `/api/send` directly — no SDK,
+no third party in the path — and is the only place a payload is composed, so
+the phone, the iPad and the TV cannot drift into three spellings of the same
+event.
+
+- **Configuration is baked in**, like the Sentry DSN: `UMAMI_URL` and
+  `UMAMI_WEBSITE_ID` in `Config/Secrets.xcconfig` (empty in the committed
+  example, so local and CI builds report nothing), passed by
+  `testflight.yaml` from repo variables. `Analytics.configure()` runs under
+  `#if !DEBUG` only.
+- **The server has the last word.** `AuthSession` calls `Analytics.apply(_:)`
+  with the server's config on every path that adopts one, and a deployment
+  running `ANALYTICS_DISABLED=true` switches reporting off — including
+  whatever was already queued.
+- **What is sent**: a pageview per `Analytics.Screen` (route patterns —
+  `/watch/:id`, never a video id) and four events, `play` (kind, audio-only),
+  `search` (scope only, never the query), `feed-created` and `sign-in`
+  (`browser` on iOS, `device-code` on tvOS). The visitor id is a random UUID
+  in `UserDefaults`, never the account or the token's `sub`; nothing touches
+  the IDFA, so neither app needs a tracking prompt.
+- The payload's `hostname` is what separates the clients inside one Umami
+  website: `flimm.ios`, `flimm.ipados`, `flimm.tvos`. tvOS has no feed editor,
+  so it never reports `feed-created` — the one deliberate gap.
+
 ## Authentication
 
 The backend uses OIDC (Authorization Code + PKCE) and tells the client how to
@@ -295,7 +322,7 @@ reach the provider, so the **server URL is the only thing a user enters**.
    This is *not* the same as a server that wants auth but publishes no issuer:
    that one is half-configured and stays refused.
 1. `GET /api/v1/config` — unauthenticated. Returns `app_name`, `oidc_issuer`,
-   `oidc_client_id`, `version`, `auth_disabled`. Use it to validate the URL the
+   `oidc_client_id`, `version`, `auth_disabled`, `analytics_disabled`. Use it to validate the URL the
    user typed *and*
    to configure the auth flow. A friendly failure here is most of the setup UX.
 2. Sign in against the issuer. **On iPhone and iPad** that is

@@ -225,6 +225,7 @@ final class WatchModel {
             rate: prefs.playbackSpeed,
             duration: detail.duration
         )
+        Analytics.play(videoID: detail.id, kind: detail.type.rawValue, audioOnly: audioOnly)
         if audioOnly { engine.detachPiP() }
         if usingCompatibleRendition {
             // "Waiting" is either overlay: nothing on screen yet, or a stall

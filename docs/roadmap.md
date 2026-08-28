@@ -2,6 +2,26 @@
 
 ## Done
 
+- **Usage analytics on all four clients** (2026-08-28) — Flimm now reports to
+  a self-hosted [Umami](https://umami.is) instance from the web app, the
+  iPhone, the iPad and the Apple TV, so it is possible to see which screens
+  and features are actually used. One shared vocabulary across the platforms:
+  a pageview per screen and four events (`play`, `search`, `feed-created`,
+  `sign-in`), composed in exactly one place per platform —
+  `frontend/src/lib/analytics.ts` on the web and `FlimmKit`'s `Analytics` on
+  Apple, which posts Umami's `/api/send` payload directly rather than
+  shipping an SDK. Deliberately incurious: Umami's auto-tracking is off
+  because it would report `location.pathname` and `document.title` — the id
+  and the title of whatever you are watching — so every payload carries a
+  route *pattern* (`/watch/:id`) and no event carries a video, channel,
+  playlist, search term or account. The endpoint is baked in at build time
+  (`VITE_UMAMI_*` build args for the image, `UMAMI_*` xcconfig values for the
+  apps), and because this is a public self-hosted product the deployment gets
+  the last word: `ANALYTICS_DISABLED=true` publishes `analytics_disabled` on
+  `GET /api/v1/config` and every client, App Store builds included, stops
+  reporting. See the README's "Analytics" and
+  [apple-apps.md](apple-apps.md#analytics).
+
 - **"Not interested": clearing a feed without watching** (2026-08-27) — the
   only way to take something out of a feed used to be *Mark seen*, which lies
   about the watch state and, because Flimm writes watched back to

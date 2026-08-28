@@ -35,6 +35,7 @@ struct TVSearchView: View {
             .padding(.bottom, TVMetrics.margin)
         }
         .searchable(text: $query, prompt: "Search videos, channels, subtitles")
+        .onAppear { Analytics.screen(.search) }
         .task(id: searchKey) { await search() }
     }
 
@@ -121,6 +122,9 @@ struct TVSearchView: View {
         do {
             results = try await app.client.search(text, scope: scope)
             error = nil
+            // After the debounce and the request, so this counts searches that
+            // ran — and the scope only, never what was typed.
+            Analytics.search(scope: scope.rawValue)
         } catch {
             self.error = AppModel.message(for: error)
         }

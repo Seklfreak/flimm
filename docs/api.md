@@ -23,8 +23,8 @@ Base path: `/api/v1`. JSON, snake_case. Times are RFC 3339 UTC. IDs are strings.
   the web app calls it after login and again when a media request returns 401.
   Native clients pass the Bearer header via `AVURLAssetHTTPHeaderFieldsKey`.
 - OIDC discovery for clients: `GET /api/v1/config` (unauthenticated) returns
-  `{ "app_name", "oidc_issuer", "oidc_client_id", "version", "auth_disabled" }`
-  so native apps need only the server URL.
+  `{ "app_name", "oidc_issuer", "oidc_client_id", "version", "auth_disabled",
+  "analytics_disabled" }` so native apps need only the server URL.
 - **`auth_disabled: true`** means the deployment runs with `AUTH_DISABLED=true`:
   there is no sign-in, and every request is the same fixed dev user. A client
   connects to such a server without an OIDC flow and sends any non-empty bearer
@@ -33,6 +33,12 @@ Base path: `/api/v1`. JSON, snake_case. Times are RFC 3339 UTC. IDs are strings.
   OIDC fields, because the two cases are opposites: a server deliberately
   running open is one to connect to, while a server that wants auth but
   publishes no issuer is broken and a client must refuse it.
+- **`analytics_disabled: true`** means the deployment runs with
+  `ANALYTICS_DISABLED=true`: no client may report usage to the analytics
+  endpoint it was built with. Every client reads this — the web app before it
+  loads the tracker, the Apple apps as soon as the server is known — and one
+  built without an endpoint reports nothing either way. See the README's
+  "Analytics".
 
 ## Errors
 
@@ -770,4 +776,10 @@ tested against a fake.
 | `APP_NAME` | no | default `Flimm` |
 | `PORT` | no | default 8080 |
 | `SENTRY_DSN` | no | |
+| `ANALYTICS_DISABLED` | no | `true` publishes `analytics_disabled` on `/config`, turning client analytics off for this deployment |
 | `LOG_LEVEL` | no | |
+
+The web client's analytics endpoint is a **build arg**, not an env var:
+`VITE_UMAMI_URL` / `VITE_UMAMI_WEBSITE_ID`, baked into the bundle at image
+build time (`UMAMI_URL` / `UMAMI_WEBSITE_ID` in the xcconfig for the Apple
+apps).

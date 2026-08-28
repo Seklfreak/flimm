@@ -72,6 +72,7 @@ struct HistoryView: View {
         .listStyle(.plain)
         .refreshable { await pager?.reload() }
         .navigationTitle("History")
+        .onAppear { Analytics.screen(.history) }
         .searchable(text: $searchText, isPresented: nav.searchPresented(for: .history), prompt: "Search history")
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {

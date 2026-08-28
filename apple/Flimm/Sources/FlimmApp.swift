@@ -19,6 +19,9 @@ struct FlimmApp: App {
                 options.sendDefaultPii = false
             }
         }
+        // Same rule as Sentry: local runs would only muddy the numbers, and
+        // the placeholder xcconfig has no Umami values anyway.
+        Analytics.configure()
         #endif
     }
 

@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"log/slog"
 	"net/http"
 	"reflect"
 	"testing"
@@ -257,6 +259,28 @@ func TestConfigIsPublic(t *testing.T) {
 	// never have to infer that from the OIDC fields being empty.
 	if !got.AuthDisabled {
 		t.Error("auth_disabled = false on a server with no verifier")
+	}
+	// Analytics is on unless the deployment says otherwise, so a client built
+	// with an endpoint reports by default.
+	if got.AnalyticsDisabled {
+		t.Error("analytics_disabled = true without ANALYTICS_DISABLED")
+	}
+}
+
+// ANALYTICS_DISABLED is the operator's runtime opt-out from the analytics its
+// clients were built with; they can only honour it if /api/v1/config says so.
+func TestConfigPublishesTheAnalyticsOptOut(t *testing.T) {
+	srv := NewServer(Options{
+		Querier:           newEventStore().querier(),
+		TA:                ta.NewFake(),
+		Log:               slog.New(slog.NewTextHandler(io.Discard, nil)),
+		AppName:           "Flimm",
+		MediaSecret:       testSecret,
+		AnalyticsDisabled: true,
+	})
+	rec := do(t, srv.Router(), http.MethodGet, "/api/v1/config", "")
+	if got := decode[ConfigResponse](t, rec); !got.AnalyticsDisabled {
+		t.Errorf("config = %+v", got)
 	}
 }
 

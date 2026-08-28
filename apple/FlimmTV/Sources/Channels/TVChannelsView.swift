@@ -31,6 +31,7 @@ struct TVChannelsView: View {
             .padding(.horizontal, TVMetrics.margin)
             .padding(.bottom, TVMetrics.margin)
         }
+        .onAppear { Analytics.screen(.channels) }
         .task(id: sort) { await reload() }
     }
 

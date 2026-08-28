@@ -48,6 +48,11 @@ type Options struct {
 	OIDCIssuer   string
 	OIDCClientID string
 	MediaSecret  string
+	// AnalyticsDisabled turns client-side usage analytics off for this
+	// deployment. The endpoint is baked into each client at build time (see
+	// the README), so this is the runtime opt-out an operator has: clients
+	// read it from /api/v1/config and report nothing.
+	AnalyticsDisabled bool
 	// SecureCookies sets the Secure flag on the media cookie (https deploys).
 	SecureCookies bool
 	// MediaCache stores derived renditions; nil disables /media/audio/*.
@@ -89,6 +94,7 @@ type Server struct {
 	appName       string
 	oidcIssuer    string
 	oidcClientID  string
+	analyticsOff  bool
 	mediaSecret   []byte
 	secureCookies bool
 	corsOrigins   []string
@@ -136,6 +142,7 @@ func NewServer(o Options) *Server {
 		appName:        o.AppName,
 		oidcIssuer:     o.OIDCIssuer,
 		oidcClientID:   o.OIDCClientID,
+		analyticsOff:   o.AnalyticsDisabled,
 		mediaSecret:    []byte(o.MediaSecret),
 		secureCookies:  o.SecureCookies,
 		corsOrigins:    o.CORSOrigins,
@@ -294,6 +301,10 @@ type ConfigResponse struct {
 	OIDCClientID string `json:"oidc_client_id"`
 	Version      string `json:"version"`
 	AuthDisabled bool   `json:"auth_disabled"`
+	// AnalyticsDisabled is the deployment's opt-out from the usage analytics
+	// its clients were built with (ANALYTICS_DISABLED=true). Clients that were
+	// built without an analytics endpoint report nothing either way.
+	AnalyticsDisabled bool `json:"analytics_disabled"`
 }
 
 // getConfig is unauthenticated so native clients need only the server URL.
@@ -305,7 +316,8 @@ func (s *Server) getConfig(w http.ResponseWriter, _ *http.Request) {
 		Version:      BuildVersion,
 		// AUTH_DISABLED is exactly "there is no verifier": every request is
 		// the fixed dev user.
-		AuthDisabled: s.verifier == nil,
+		AuthDisabled:      s.verifier == nil,
+		AnalyticsDisabled: s.analyticsOff,
 	})
 }
 

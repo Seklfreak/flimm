@@ -17,6 +17,7 @@ struct TVWatchView: View {
                 TVLoadingState()
             }
         }
+        .onAppear { Analytics.screen(.watch) }
     }
 
     @ViewBuilder

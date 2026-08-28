@@ -23,6 +23,7 @@ struct SearchResultsView: View {
             filters
             content
         }
+        .onAppear { Analytics.screen(.search) }
         .task(id: searchKey) { await search() }
     }
 
@@ -203,6 +204,9 @@ struct SearchResultsView: View {
                 feed: inCurrentFeed ? feedId : nil
             )
             error = nil
+            // After the debounce and the request, so this counts searches
+            // that ran — and the scope only, never what was typed.
+            Analytics.search(scope: scope.rawValue)
         } catch {
             self.error = AppModel.message(for: error)
         }

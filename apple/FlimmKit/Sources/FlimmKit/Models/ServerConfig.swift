@@ -16,6 +16,10 @@ public struct ServerConfig: Codable, Sendable, Hashable {
     /// deliberately running open is one to connect to, while a server that
     /// wants auth but publishes no issuer is broken and must not be.
     public let authDisabled: Bool
+    /// The server runs with `ANALYTICS_DISABLED=true`: this deployment is not
+    /// to be reported on, whatever analytics endpoint the app was built with.
+    /// See ``Analytics/apply(_:)``.
+    public let analyticsDisabled: Bool
 
     /// `false` when the deployment runs with `AUTH_DISABLED=true`, or is
     /// otherwise missing OIDC settings.
@@ -37,13 +41,15 @@ public struct ServerConfig: Codable, Sendable, Hashable {
         oidcIssuer: String = "",
         oidcClientId: String = "",
         version: String = "",
-        authDisabled: Bool = false
+        authDisabled: Bool = false,
+        analyticsDisabled: Bool = false
     ) {
         self.appName = appName
         self.oidcIssuer = oidcIssuer
         self.oidcClientId = oidcClientId
         self.version = version
         self.authDisabled = authDisabled
+        self.analyticsDisabled = analyticsDisabled
     }
 
     public init(from decoder: any Decoder) throws {
@@ -53,6 +59,7 @@ public struct ServerConfig: Codable, Sendable, Hashable {
         oidcClientId = try c.decode(.oidcClientId, or: "")
         version = try c.decode(.version, or: "")
         authDisabled = try c.decode(.authDisabled, or: false)
+        analyticsDisabled = try c.decode(.analyticsDisabled, or: false)
     }
 }
 

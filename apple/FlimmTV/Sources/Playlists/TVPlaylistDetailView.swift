@@ -31,6 +31,7 @@ struct TVPlaylistDetailView: View {
             .padding(.horizontal, TVMetrics.margin)
             .padding(.bottom, TVMetrics.margin)
         }
+        .onAppear { Analytics.screen(.playlist) }
         .task { await load() }
     }
 

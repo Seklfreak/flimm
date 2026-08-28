@@ -74,7 +74,10 @@ struct ServerSetupView: View {
             .frame(maxWidth: .infinity)
         }
         .background(Palette.background)
-        .onAppear { addressFocused = true }
+        .onAppear {
+            addressFocused = true
+            Analytics.screen(.server)
+        }
     }
 
     private var header: some View {

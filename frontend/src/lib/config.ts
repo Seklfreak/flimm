@@ -6,6 +6,7 @@ export const ConfigContext = createContext<AppConfig>({
   oidc_issuer: "",
   oidc_client_id: "",
   version: "dev",
+  analytics_disabled: false,
 });
 
 export function useConfig() {

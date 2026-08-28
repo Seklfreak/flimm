@@ -173,6 +173,8 @@ All configuration is via environment variables.
 | `SPONSORBLOCK_CATEGORIES` | no | comma-separated list restricting what is asked for; by default everything the service offers is fetched and each client decides what to do with it |
 | `SENTRY_DSN` | no | backend error reporting |
 | `VITE_SENTRY_DSN` | no | frontend error reporting; a **build arg**, baked into the bundle at image build time (not a runtime env var) |
+| `VITE_UMAMI_URL`, `VITE_UMAMI_WEBSITE_ID` | no | self-hosted [Umami](https://umami.is) analytics for the web app; **build args**, baked in at image build time. See [Analytics](#analytics) |
+| `ANALYTICS_DISABLED` | no | `true` turns analytics off for every client of this deployment at runtime, whatever they were built with. See [Analytics](#analytics) |
 | `LOG_LEVEL` | no | `debug`, `info` (default), `warn`, `error` |
 
 ## Running locally
@@ -239,6 +241,32 @@ ghcr.io/seklfreak/flimm:latest      # newest release
 
 `linux/amd64`. Listens on `PORT` (8080), serves the API, media proxy and web
 app from one port, runs migrations on start.
+
+## Analytics
+
+Flimm can report anonymous usage to a self-hosted
+[Umami](https://umami.is) instance: a pageview per screen and four events
+(`play`, `search`, `feed-created`, `sign-in`). It is **deliberately
+incurious** — screens are reported as route patterns (`/watch/:id`, never a
+video id), and no event carries a video, channel, playlist, search term or
+account. The native apps identify a visitor by a random UUID minted per
+install; nothing touches the IDFA.
+
+Where the endpoint comes from:
+
+- **Web** — `VITE_UMAMI_URL` and `VITE_UMAMI_WEBSITE_ID`, baked into the bundle
+  at image build time, like the Sentry DSN. Build your own image without them
+  and the tracker is never loaded.
+- **iPhone / iPad / Apple TV** — `UMAMI_URL` and `UMAMI_WEBSITE_ID` in
+  `apple/Config/Secrets.xcconfig` (CI passes them from repo variables). Debug
+  builds never report.
+
+**The prebuilt `ghcr.io/seklfreak/flimm` image and the TestFlight apps are
+built with the maintainer's endpoint**, so a deployment running them reports
+to it unless you say otherwise. Two ways to say otherwise: set
+`ANALYTICS_DISABLED=true` on the server — every client asks
+`GET /api/v1/config` and honours it, including the App Store apps — or build
+the image yourself and leave the build args unset.
 
 ## Deploying
 

@@ -85,8 +85,12 @@ type Config struct {
 	// CORSOrigins are extra allowed origins (e.g. the Vite dev server).
 	CORSOrigins []string
 
-	AppName  string
-	LogLevel slog.Level
+	AppName string
+	// AnalyticsDisabled turns off the client-side usage analytics the web and
+	// native clients were built with. Published on /api/v1/config; see the
+	// README's "Analytics" section.
+	AnalyticsDisabled bool
+	LogLevel          slog.Level
 }
 
 // Load reads configuration from the environment. If a .env file exists in the
@@ -120,6 +124,7 @@ func Load() (*Config, error) {
 		PublicURL:              strings.TrimRight(os.Getenv("PUBLIC_URL"), "/"),
 		CORSOrigins:            splitCSV(os.Getenv("CORS_ORIGINS")),
 		AppName:                getenvDefault("APP_NAME", "Flimm"),
+		AnalyticsDisabled:      os.Getenv("ANALYTICS_DISABLED") == "true",
 		LogLevel:               parseLevel(os.Getenv("LOG_LEVEL")),
 	}
 

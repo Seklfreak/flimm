@@ -187,6 +187,10 @@ public final class AuthSession {
 
     private func adopt(server: FlimmServer) {
         self.server = server
+        // Every path to a known server comes through here (restore, connect,
+        // and a re-probe), so this is the one place that has to ask the
+        // deployment whether it wants to be reported on at all.
+        Analytics.apply(server.config)
         guard !server.config.authDisabled else {
             // The value is ignored by a server running without auth, but it
             // must be *sent*: /media accepts a bearer header or the signed

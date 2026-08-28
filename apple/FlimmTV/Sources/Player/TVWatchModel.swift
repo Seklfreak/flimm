@@ -243,6 +243,7 @@ final class TVWatchModel {
         player.replaceCurrentItem(with: item)
         pendingSeek = resume > 0 ? resume : nil
         player.playImmediately(atRate: Float(prefs.playbackSpeed))
+        Analytics.play(videoID: detail.id, kind: detail.type.rawValue, audioOnly: audioOnly)
         itemGeneration += 1
         if usingCompatibleRendition {
             // "Waiting" is either overlay: nothing on screen yet, or a stall

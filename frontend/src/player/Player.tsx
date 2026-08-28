@@ -2,6 +2,7 @@ import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRe
 import type { HLSState, Prefs, SubtitleTrack, Video } from "@/lib/api";
 import { fmtDuration } from "@/lib/format";
 import { refreshMediaSession, retryMediaUrl } from "@/lib/media";
+import { trackPlay } from "@/lib/analytics";
 import { CheckIcon, HeadphonesIcon, MediaImg, Popover, Spinner } from "@/components/ui";
 import { useChapters } from "@/lib/queries";
 import { useSponsorSkip } from "./useSponsorSkip";
@@ -96,6 +97,8 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(function Player(
   const [waiting, setWaiting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const idleTimer = useRef<number | undefined>(undefined);
+  // One `play` event per video, not one per resume after a pause.
+  const reportedPlayRef = useRef<string | null>(null);
   const prevAudioOnlyRef = useRef(audioOnly);
 
   // ---- what plays here ------------------------------------------------------
@@ -474,6 +477,10 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(function Player(
           setPlaying(true);
           // HAVE_FUTURE_DATA or better means there is a frame to show.
           setWaiting(e.currentTarget.readyState < 3);
+          if (reportedPlayRef.current !== video.id) {
+            reportedPlayRef.current = video.id;
+            trackPlay(video.type, audioOnly);
+          }
         }}
         onPause={() => setPlaying(false)}
         onWaiting={() => setWaiting(true)}

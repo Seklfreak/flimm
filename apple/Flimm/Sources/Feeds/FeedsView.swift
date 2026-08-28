@@ -35,6 +35,7 @@ struct FeedsView: View {
         .refreshable { await refresh() }
         .background(Palette.background)
         .navigationTitle(feed?.name ?? "Feeds")
+        .onAppear { Analytics.screen(.feed) }
         .navigationBarTitleDisplayMode(.large)
         .toolbar { toolbar }
         .searchable(

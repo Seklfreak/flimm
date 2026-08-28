@@ -20,6 +20,9 @@ name: TestFlight
 #   APP_STORE_PROFILE                                 - base64 of the iOS App Store .mobileprovision
 #   APP_STORE_TV_PROFILE                              - base64 of the tvOS App Store .mobileprovision
 #   SENTRY_DSN                                        - baked into the shipped apps (crash reporting)
+# Repo variables (Settings -> Variables):
+#   UMAMI_URL / UMAMI_WEBSITE_ID                      - baked into the shipped apps (usage analytics);
+#                                                       leave unset to ship without analytics
 #   SENTRY_AUTH_TOKEN                                 - optional: dSYM upload for symbolicated crashes
 on:
   push:
@@ -131,6 +134,8 @@ jobs:
         env:
           TEAM_ID: ${{ secrets.APP_STORE_TEAM_ID }}
           SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+          UMAMI_URL: ${{ vars.UMAMI_URL }}
+          UMAMI_WEBSITE_ID: ${{ vars.UMAMI_WEBSITE_ID }}
           INPUT_VERSION: ${{ github.event.inputs.version }}
           SCHEME: ${{ matrix.scheme }}
           SDK: ${{ matrix.sdk }}
@@ -142,9 +147,10 @@ jobs:
           echo "Archiving $SCHEME $VERSION (build $BUILD) with profile '$PROFILE_NAME'"
           # Manual-signing settings live in project.yml scoped to the app
           # targets (CLI settings would hit SPM package targets, which refuse
-          # provisioning profiles). SENTRY_DSN on the command line overrides
-          # the placeholder xcconfig — unlike xcconfig files, CLI settings
-          # don't treat // as a comment.
+          # provisioning profiles). SENTRY_DSN and the UMAMI_* pair on the
+          # command line override the placeholder xcconfig — unlike xcconfig
+          # files, CLI settings don't treat // as a comment. Left unset, the
+          # app ships without analytics.
           xcodebuild archive \
             -project Flimm.xcodeproj -scheme "$SCHEME" \
             -configuration Release \
@@ -153,7 +159,9 @@ jobs:
             DEVELOPMENT_TEAM="$TEAM_ID" \
             MARKETING_VERSION="$VERSION" \
             CURRENT_PROJECT_VERSION="$BUILD" \
-            SENTRY_DSN="$SENTRY_DSN"
+            SENTRY_DSN="$SENTRY_DSN" \
+            UMAMI_URL="$UMAMI_URL" \
+            UMAMI_WEBSITE_ID="$UMAMI_WEBSITE_ID"
 
       # Symbolicated crash reports need the dSYMs in Sentry. Best-effort and
       # dormant without SENTRY_AUTH_TOKEN — the archive itself doesn't depend

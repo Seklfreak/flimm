@@ -5,6 +5,7 @@ import { pinnedFeed, useFeeds, useSearch } from "@/lib/queries";
 import { ccLabel, fmtDuration, plural } from "@/lib/format";
 import { Avatar, EmptyState, ErrorState, MediaImg, SearchIcon, Spinner } from "@/components/ui";
 import { VideoRow } from "@/components/VideoRow";
+import { trackSearch } from "@/lib/analytics";
 
 const SCOPES: { value: SearchScope; label: string }[] = [
   { value: "all", label: "Everything" },
@@ -33,6 +34,9 @@ export default function SearchPage() {
         if (input.trim()) next.set("q", input.trim());
         else next.delete("q");
         setParams(next, { replace: true });
+        // The scope only — the query itself is exactly what analytics must
+        // never see.
+        if (input.trim()) trackSearch(scope);
       }
     }, 300);
     return () => clearTimeout(t);

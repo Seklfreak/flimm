@@ -3,6 +3,7 @@ import { useNavigate } from "react-router";
 import { EVERYTHING_ID, type ChannelSummary, type Feed, type FeedInput, type FeedSort } from "@/lib/api";
 import { useAllChannels, useDeleteFeed, useSaveFeed, useUpdatePrefs, usePrefs } from "@/lib/queries";
 import { plural } from "@/lib/format";
+import { trackFeedCreated } from "@/lib/analytics";
 import { Avatar, CheckIcon, Modal, SearchBox, Segmented, Spinner, Toggle } from "./ui";
 
 const SORTS: { value: FeedSort; label: string }[] = [
@@ -71,7 +72,10 @@ export function FeedEditor({ feed, onClose }: { feed?: Feed; onClose: () => void
       };
       const saved = await save.mutateAsync({ id: feed?.id, input });
       if (feed) onClose();
-      else navigate(`/feeds/${saved.id}`, { replace: true });
+      else {
+        trackFeedCreated();
+        navigate(`/feeds/${saved.id}`, { replace: true });
+      }
     } catch (e) {
       setError((e as Error).message);
     }

@@ -37,6 +37,7 @@ final class TVSignInModel {
         }
         do {
             try await session.signIn(using: authenticator)
+            Analytics.signedIn(.deviceCode)
         } catch is CancellationError {
             phase = .idle
         } catch OIDCError.deviceFlowUnsupported {
@@ -74,6 +75,7 @@ struct TVSignInView: View {
         }
         .padding(TVMetrics.margin)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .onAppear { Analytics.screen(.signIn) }
         .task { await model.start(session: session) }
     }
 

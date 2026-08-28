@@ -1,11 +1,17 @@
 FROM node:24-alpine AS frontend
-# Baked into the bundle as import.meta.env.VITE_*: the release version and the
-# Sentry DSN. Both must be declared here — a build-arg that no stage declares
-# is silently dropped, which is how the frontend shipped without Sentry.
+# Baked into the bundle as import.meta.env.VITE_*: the release version, the
+# Sentry DSN and the Umami analytics endpoint. All must be declared here — a
+# build-arg that no stage declares is silently dropped, which is how the
+# frontend shipped without Sentry. Left unset (the default for anyone building
+# their own image), the bundle carries no reporting at all.
 ARG APP_VERSION=dev
 ARG VITE_SENTRY_DSN=
+ARG VITE_UMAMI_URL=
+ARG VITE_UMAMI_WEBSITE_ID=
 ENV VITE_APP_VERSION=${APP_VERSION}
 ENV VITE_SENTRY_DSN=${VITE_SENTRY_DSN}
+ENV VITE_UMAMI_URL=${VITE_UMAMI_URL}
+ENV VITE_UMAMI_WEBSITE_ID=${VITE_UMAMI_WEBSITE_ID}
 WORKDIR /app/frontend
 COPY frontend/package*.json ./
 RUN npm ci --no-fund --no-audit

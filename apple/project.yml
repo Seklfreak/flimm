@@ -74,6 +74,12 @@ targets:
         # willing to be resized at all.
         UIRequiresFullScreen: false
         SENTRY_DSN: $(SENTRY_DSN)
+        # Self-hosted Umami analytics, baked in the same way as the Sentry
+        # DSN. Empty in the placeholder xcconfig, so local and CI builds
+        # report nothing; a server running ANALYTICS_DISABLED=true turns it
+        # off for a shipped build too.
+        UMAMI_URL: $(UMAMI_URL)
+        UMAMI_WEBSITE_ID: $(UMAMI_WEBSITE_ID)
         # Audio-only playback of music playlists keeps running with the screen
         # locked; this is what makes that mode worth having on a phone.
         UIBackgroundModes:
@@ -140,6 +146,8 @@ targets:
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true
         SENTRY_DSN: $(SENTRY_DSN)
+        UMAMI_URL: $(UMAMI_URL)
+        UMAMI_WEBSITE_ID: $(UMAMI_WEBSITE_ID)
         # Music playlists play as audio only here too, and a TV keeps playing
         # them with the screen saver up.
         UIBackgroundModes:

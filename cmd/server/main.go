@@ -147,6 +147,7 @@ func main() {
 		Verifier:          verifier,
 		AdminEmails:       cfg.AdminEmails,
 		AppName:           cfg.AppName,
+		AnalyticsDisabled: cfg.AnalyticsDisabled,
 		OIDCIssuer:        cfg.OIDCIssuer,
 		OIDCClientID:      cfg.OIDCClientID,
 		MediaSecret:       cfg.MediaTokenSecret,

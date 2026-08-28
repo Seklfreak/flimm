@@ -48,6 +48,7 @@ struct PlaylistDetailView: View {
         .background(Palette.background)
         .refreshable { await load() }
         .navigationTitle(summary?.name ?? "Playlist")
+        .onAppear { Analytics.screen(.playlist) }
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { toolbar }
         .task { await load() }

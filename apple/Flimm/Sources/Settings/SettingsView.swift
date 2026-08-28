@@ -26,6 +26,7 @@ struct SettingsView: View {
             aboutSection
         }
         .navigationTitle("Settings")
+        .onAppear { Analytics.screen(.settings) }
         .navigationBarTitleDisplayMode(.inline)
         .confirmationDialog(
             session.requiresSignIn ? "Sign out?" : "Disconnect from this server?",

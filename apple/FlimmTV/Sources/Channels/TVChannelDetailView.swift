@@ -34,6 +34,7 @@ struct TVChannelDetailView: View {
             .padding(.horizontal, TVMetrics.margin)
             .padding(.bottom, TVMetrics.margin)
         }
+        .onAppear { Analytics.screen(.channel) }
         .task { await loadChannel() }
         .task(id: view) { await reload() }
         // Same as the feed screen: the player invalidates these lists, and a

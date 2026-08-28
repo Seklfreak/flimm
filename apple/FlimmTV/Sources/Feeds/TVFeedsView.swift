@@ -36,6 +36,7 @@ struct TVFeedsView: View {
             .padding(.horizontal, TVMetrics.margin)
             .padding(.bottom, TVMetrics.margin)
         }
+        .onAppear { Analytics.screen(.feed) }
         .task(id: contextKey) { await rebuildPager() }
         // A video finished or marked seen in the player drops this list from
         // the cache; coming back to a stale "Unseen" grid is the bug.

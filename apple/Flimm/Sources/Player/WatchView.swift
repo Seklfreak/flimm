@@ -71,6 +71,7 @@ struct WatchView: View {
         .onAppear {
             keyboardFocused = true
             scheduleHide()
+            Analytics.screen(.watch)
         }
         .onChange(of: scenePhase) { _, phase in
             guard phase != .active else { return }

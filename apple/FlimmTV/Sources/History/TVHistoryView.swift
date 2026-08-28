@@ -35,6 +35,7 @@ struct TVHistoryView: View {
             .padding(.horizontal, TVMetrics.margin)
             .padding(.bottom, TVMetrics.margin)
         }
+        .onAppear { Analytics.screen(.history) }
         .task(id: filter) { await reload() }
     }
 

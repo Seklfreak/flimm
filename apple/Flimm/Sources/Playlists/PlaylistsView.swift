@@ -41,6 +41,7 @@ struct PlaylistsView: View {
             await pager?.reload()
         }
         .navigationTitle("Playlists")
+        .onAppear { Analytics.screen(.playlists) }
         .searchable(text: $searchText, isPresented: nav.searchPresented(for: .playlists), prompt: "Filter playlists")
         .toolbar { toolbar }
         .alert("New playlist", isPresented: $showNewPlaylist) {

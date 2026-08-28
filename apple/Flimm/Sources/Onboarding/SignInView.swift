@@ -41,6 +41,7 @@ struct SignInView: View {
             .frame(maxWidth: .infinity)
         }
         .background(Palette.background)
+        .onAppear { Analytics.screen(.signIn) }
         .sheet(isPresented: $showRedirectHelp) { RedirectHelpSheet() }
     }
 
@@ -88,6 +89,7 @@ struct SignInView: View {
         defer { isSigningIn = false }
         do {
             try await session.signIn()
+            Analytics.signedIn(.browser)
         } catch is CancellationError {
             return
         } catch {

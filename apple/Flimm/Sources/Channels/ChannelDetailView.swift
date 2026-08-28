@@ -40,6 +40,7 @@ struct ChannelDetailView: View {
         .background(Palette.background)
         .refreshable { await load() }
         .navigationTitle(channel?.name ?? "Channel")
+        .onAppear { Analytics.screen(.channel) }
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { toolbar }
         .sheet(isPresented: $showFeedPicker) {

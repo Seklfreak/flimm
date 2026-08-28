@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AuthProvider, useAuth } from "react-oidc-context";
-import { BrowserRouter, Navigate, Route, Routes } from "react-router";
+import { BrowserRouter, Navigate, Route, Routes, useLocation } from "react-router";
 import { api, type AppConfig } from "@/lib/api";
 import { makeOidcConfig, rememberReturnTo, setAccessToken, setUnauthorizedHandler } from "@/lib/auth";
 import { refreshMediaSession } from "@/lib/media";
+import { routePattern, startAnalytics, trackScreen } from "@/lib/analytics";
 import { useMe } from "@/lib/queries";
 import { Spinner } from "@/components/ui";
 import { Layout } from "@/components/Layout";
@@ -33,6 +34,7 @@ export default function App() {
       <ConfigLoader>
         <BrowserRouter>
           <ThemeSync />
+          <RouteAnalytics />
           <Routes>
             <Route element={<Layout />}>
               <Route index element={<HomePage />} />
@@ -77,6 +79,12 @@ function ConfigLoader({ children }: { children: ReactNode }) {
       cancelled = true;
     };
   }, []);
+
+  // The tracker is baked in at build time, but the deployment gets the last
+  // word: a server running ANALYTICS_DISABLED=true is never reported to.
+  useEffect(() => {
+    if (config) startAnalytics(!config.analytics_disabled);
+  }, [config]);
 
   const oidc = useMemo(
     () => (config?.oidc_issuer ? makeOidcConfig(config.oidc_issuer, config.oidc_client_id) : null),
@@ -168,6 +176,17 @@ function Bootstrap({ children }: { children: ReactNode }) {
     );
   }
   return <>{children}</>;
+}
+
+// One pageview per navigation, reported as the route *pattern* — `/watch/:id`,
+// never the video id. See lib/analytics.ts.
+function RouteAnalytics() {
+  const { pathname } = useLocation();
+  useEffect(() => {
+    const route = routePattern(pathname);
+    if (route) trackScreen(route.url, route.title);
+  }, [pathname]);
+  return null;
 }
 
 // prefs.theme → <html data-theme>; "system" removes the attribute so the

@@ -7,6 +7,9 @@ export interface AppConfig {
   oidc_issuer: string;
   oidc_client_id: string;
   version: string;
+  /** The deployment runs with `ANALYTICS_DISABLED=true`: clients report
+   *  nothing, whatever analytics endpoint they were built with. */
+  analytics_disabled?: boolean;
 }
 
 export type VideoType = "video" | "short" | "stream";

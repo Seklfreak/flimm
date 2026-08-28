@@ -45,6 +45,7 @@ struct TVSettingsView: View {
             librarySection
             accountSection
         }
+        .onAppear { Analytics.screen(.settings) }
         .confirmationDialog("Sign out?", isPresented: $confirmSignOut, titleVisibility: .visible) {
             Button("Sign out", role: .destructive) { Task { await session.signOut() } }
             Button("Cancel", role: .cancel) {}

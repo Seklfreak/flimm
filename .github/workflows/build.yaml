@@ -51,11 +51,14 @@ jobs:
           context: .
           platforms: linux/amd64
           push: true
-          # VITE_SENTRY_DSN is a repo *variable* (Settings → Variables), not a
-          # hardcoded DSN; leave it unset to build without frontend Sentry.
+          # VITE_SENTRY_DSN and the VITE_UMAMI_* pair are repo *variables*
+          # (Settings → Variables), not hardcoded values; leave them unset to
+          # build without frontend Sentry and without analytics.
           build-args: |
             APP_VERSION=${{ env.APP_VERSION }}
             VITE_SENTRY_DSN=${{ vars.VITE_SENTRY_DSN }}
+            VITE_UMAMI_URL=${{ vars.VITE_UMAMI_URL }}
+            VITE_UMAMI_WEBSITE_ID=${{ vars.VITE_UMAMI_WEBSITE_ID }}
           tags: |
             ${{ env.IMAGE }}:${{ env.APP_VERSION }}
             ${{ env.IMAGE }}:latest
@@ -70,10 +73,14 @@ jobs:
         if: env.SENTRY_AUTH_TOKEN != ''
         env:
           VITE_SENTRY_DSN: ${{ vars.VITE_SENTRY_DSN }}
+          VITE_UMAMI_URL: ${{ vars.VITE_UMAMI_URL }}
+          VITE_UMAMI_WEBSITE_ID: ${{ vars.VITE_UMAMI_WEBSITE_ID }}
         run: |
           docker buildx build --target frontend \
             --build-arg APP_VERSION="$APP_VERSION" \
             --build-arg VITE_SENTRY_DSN="$VITE_SENTRY_DSN" \
+            --build-arg VITE_UMAMI_URL="$VITE_UMAMI_URL" \
+            --build-arg VITE_UMAMI_WEBSITE_ID="$VITE_UMAMI_WEBSITE_ID" \
             --cache-from type=gha,scope=flimm \
             --output type=local,dest=./fe-stage .
           ls -la ./fe-stage/app/frontend/dist/assets/ | head

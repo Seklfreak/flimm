@@ -94,6 +94,7 @@ struct TVServerSetupView: View {
             .frame(maxWidth: 700, alignment: .leading)
         }
         .padding(TVMetrics.margin)
+        .onAppear { Analytics.screen(.server) }
     }
 }
 
