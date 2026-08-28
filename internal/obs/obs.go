@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 	"strings"
 	"time"
@@ -38,6 +39,7 @@ func Init(release string, keepTx func(name string) bool) (flush func(), err erro
 		// capture site is what locates them.
 		AttachStacktrace: true,
 		EnableTracing:    true,
+		BeforeSend:       dropAbortedRequests,
 		TracesSampler: func(sctx sentry.SamplingContext) float64 {
 			if keepTx(sctx.Span.Name) {
 				return 1
@@ -46,6 +48,23 @@ func Init(release string, keepTx func(name string) bool) (flush func(), err erro
 		},
 	})
 	return func() { sentry.Flush(2 * time.Second) }, err
+}
+
+// dropAbortedRequests discards the panic net/http uses to tear down a response
+// the client stopped reading. ReverseProxy raises http.ErrAbortHandler when a
+// browser walks away from a media stream — a seek, a pause, a closed tab —
+// which for a video app is ordinary traffic rather than a fault. chi's
+// Recoverer already re-panics it unlogged, but sentryhttp recovers every panic
+// alike, so the event has to be dropped here. The panic still propagates, so
+// the connection is aborted exactly as before.
+func dropAbortedRequests(event *sentry.Event, hint *sentry.EventHint) *sentry.Event {
+	if hint == nil {
+		return event
+	}
+	if err, ok := hint.RecoveredException.(error); ok && errors.Is(err, http.ErrAbortHandler) {
+		return nil
+	}
+	return event
 }
 
 // NewLogger returns the process logger: text on stdout as before, with
