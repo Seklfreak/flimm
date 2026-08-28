@@ -3,7 +3,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router";
 import { render } from "@testing-library/react";
 import { vi } from "vitest";
-import type { Feed, PlaylistSummary, Video, VideoSummary } from "@/lib/api";
+import type { Channel, Feed, PlaylistSummary, Video, VideoSummary } from "@/lib/api";
 
 export function renderWithProviders(ui: ReactNode, { route = "/" }: { route?: string } = {}) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -49,6 +49,7 @@ export function video(over: Partial<VideoSummary> = {}): VideoSummary {
     subtitle_langs: ["en"],
     has_auto_subtitles: false,
     watched: false,
+    dismissed: false,
     position: 561,
     progress: 0.38,
     last_played_at: new Date().toISOString(),
@@ -98,6 +99,22 @@ export function videoDetail(over: Partial<Video> = {}): Video {
       subscribed: true,
       feeds: [],
     },
+    ...over,
+  };
+}
+
+export function channel(over: Partial<Channel> = {}): Channel {
+  return {
+    id: "UC1",
+    name: "Freya Holmér",
+    thumb_url: "/media/thumb/channel/UC1",
+    banner_url: "/media/thumb/channel/UC1/banner",
+    video_count: 212,
+    unseen_count: 3,
+    last_upload: new Date().toISOString(),
+    subscribed: true,
+    feeds: [],
+    description: "A channel about shaders and math.",
     ...over,
   };
 }

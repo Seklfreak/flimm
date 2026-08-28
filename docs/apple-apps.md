@@ -139,6 +139,14 @@ What is there:
     `contentOverlayView` — the tracks are authenticated sidecars an
     `AVPlayerItem` cannot fetch itself. Audio-only plays `audio_aac_url` with
     artwork in the overlay and `MPNowPlayingInfoCenter`.
+  - **"Not interested" is one action in one place.** `apple/Shared/DismissAction.swift`
+    holds both the round trip and the context-menu row, because `.contextMenu`
+    is the same SwiftUI API on iOS and tvOS — only the gesture that opens it
+    differs, and that is the platform's job. What the *list* does with the
+    result is the caller's: a feed drops the card and offers an undo (a feed
+    never shows a dismissed video), while a channel, playlist, search or
+    history list keeps it and flips it to "Not in feeds" with an "Add back"
+    entry in the same menu.
   - **An edit form fills itself once.** `.task` and `.onAppear` run again
     every time a screen reappears, and in a `NavigationStack` that includes
     coming back from a pushed child. A form that refills from the server there

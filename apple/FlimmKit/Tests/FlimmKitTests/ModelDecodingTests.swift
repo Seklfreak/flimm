@@ -23,10 +23,11 @@ final class ModelDecodingTests: XCTestCase {
         XCTAssertNotNil(video.lastPlayedAt)
         // Any position on an unwatched video means "in progress".
         XCTAssertTrue(video.isInProgress)
+        XCTAssertFalse(video.dismissed)
     }
 
     /// A music playlist reports no watch state at all; the fields must default
-    /// rather than fail the response.
+    /// rather than fail the response. `dismissed` falls back the same way.
     func testVideoSummaryWithoutWatchState() throws {
         let video = try decode(VideoSummary.self, Fixtures.videoSummaryWithoutWatchState)
         XCTAssertFalse(video.watched)
@@ -34,6 +35,17 @@ final class ModelDecodingTests: XCTestCase {
         XCTAssertEqual(video.progress, 0)
         XCTAssertNil(video.lastPlayedAt)
         XCTAssertFalse(video.isInProgress)
+        XCTAssertFalse(video.dismissed)
+    }
+
+    /// Channels, playlists, search and history still show a dismissed video —
+    /// that is where a viewer finds one again and puts it back.
+    func testVideoSummaryDismissed() throws {
+        let json = Fixtures.videoSummary.replacingOccurrences(
+            of: "\"dismissed\": false", with: "\"dismissed\": true"
+        )
+        let video = try decode(VideoSummary.self, json)
+        XCTAssertTrue(video.dismissed)
     }
 
     /// Go marshals `time.Time` as RFC 3339 Nano: whole seconds lose the
@@ -70,7 +82,10 @@ final class ModelDecodingTests: XCTestCase {
         XCTAssertEqual(video.sponsorblock.first?.category, "sponsor")
         XCTAssertEqual(video.sponsorblock.map(\.actionType), [.skip, .mute, .poi, .other])
         XCTAssertEqual(video.playlists.first?.position, 9)
+        XCTAssertFalse(video.dismissed)
         XCTAssertEqual(video.summary.id, video.id)
+        // The stub form carries dismissed through, like every other watch field.
+        XCTAssertEqual(video.summary.dismissed, video.dismissed)
 
         let streams = try XCTUnwrap(video.streams)
         XCTAssertEqual(streams.count, 2)

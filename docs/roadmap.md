@@ -2,6 +2,24 @@
 
 ## Done
 
+- **"Not interested": clearing a feed without watching** (2026-08-27) — the
+  only way to take something out of a feed used to be *Mark seen*, which lies
+  about the watch state and, because Flimm writes watched back to
+  TubeArchivist, followed the viewer into TA's own UI and every other client.
+  Dismissal is now Flimm's own per-user state in a `dismissed_videos` table
+  (deliberately not the `hidden` flag on `watch_events`, which means "removed
+  from history" and returns on the next play), with
+  `POST`/`DELETE /videos/{id}/dismiss` and a `dismissed` field on every video.
+  The **server** drops dismissed videos from every feed — Everything included,
+  in every view — and from *up next*, so autoplay never plays one and no
+  client has to filter; channel pages, playlists, search and history still
+  show them marked, which is where they are put back. All four clients offer
+  it: the web card has a control and leaves an undo slot in the grid, the
+  phone, iPad and TV share one context-menu row
+  (`apple/Shared/DismissAction.swift`) with an undo banner under the list, and
+  the History list also gets a swipe. See [api.md](api.md#video-summary) and
+  [design.md](design.md).
+
 - **A QA pass over all four clients** (2026-08-27) — the web app, the iPhone,
   the iPad and the Apple TV were each walked end to end against the local dev
   stack, and what came back was mostly **parity gaps** rather than broken

@@ -29,7 +29,7 @@ struct PlaylistDetailView: View {
                                     .foregroundStyle(.secondary)
                                     .frame(width: 22, alignment: .trailing)
                                     .padding(.top, 6)
-                                VideoRow(video: item.video, context: context)
+                                VideoRow(video: item.video, context: context, onDismissChange: updateVideo)
                             }
                         }
                     }
@@ -179,5 +179,17 @@ struct PlaylistDetailView: View {
         defer { isBusy = false }
         try? await app.client.setPlaylistMusic(playlistId, music: value)
         await load()
+    }
+
+    /// A playlist keeps listing a video after it is dismissed — the contract
+    /// makes an exception for feeds only — so this patches the row's own
+    /// state in place rather than removing it.
+    private func updateVideo(_ updated: VideoSummary) {
+        guard let current = playlist,
+              let index = current.items.firstIndex(where: { $0.video.id == updated.id }) else { return }
+        var items = current.items
+        items[index] = PlaylistItem(position: items[index].position, video: updated)
+        playlist = Playlist(summary: current.summary, items: items)
+        Task { await app.videoListStateChanged() }
     }
 }

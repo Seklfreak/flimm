@@ -23,6 +23,11 @@ export interface VideoSummary {
   subtitle_langs: string[];
   has_auto_subtitles: boolean;
   watched: boolean;
+  /** Taken out of the viewer's feeds without being watched — a decision
+   *  separate from `watched` and never written to TubeArchivist. Feeds and
+   *  up next never return a dismissed video; channel pages, playlists,
+   *  search and history do, so a viewer can find and restore it. */
+  dismissed: boolean;
   position: number;
   progress: number;
   last_played_at: string | null;
@@ -398,6 +403,9 @@ export const api = {
   setWatched: (id: string, watched: boolean) =>
     req<void>(`/videos/${id}/watched`, json("POST", { watched })),
   startOver: (id: string) => req<void>(`/videos/${id}/progress`, { method: "DELETE" }),
+  // Idempotent both ways — an undo control can never fail on a double tap.
+  dismissVideo: (id: string) => req<{ dismissed: boolean }>(`/videos/${id}/dismiss`, { method: "POST" }),
+  undismissVideo: (id: string) => req<{ dismissed: boolean }>(`/videos/${id}/dismiss`, { method: "DELETE" }),
 
   playlists: (kind: "custom" | "channel" | undefined, page: number) =>
     req<Page<PlaylistSummary>>(`/playlists${qs({ kind, page, page_size: PAGE_SIZE })}`),

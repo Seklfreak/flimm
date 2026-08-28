@@ -85,7 +85,7 @@ struct TVSearchView: View {
             section("Videos", count: results.videos.total) {
                 LazyVGrid(columns: TVGrids.videos, alignment: .leading, spacing: TVMetrics.gridSpacing) {
                     ForEach(results.videos.items) { match in
-                        TVVideoMatchCard(match: match)
+                        TVVideoMatchCard(match: match, onDismissChange: updateVideo)
                     }
                 }
             }
@@ -125,17 +125,35 @@ struct TVSearchView: View {
             self.error = AppModel.message(for: error)
         }
     }
+
+    /// Search keeps listing a video after it is dismissed — the contract
+    /// makes an exception for feeds only — so this patches the card's own
+    /// state in place rather than removing it.
+    private func updateVideo(_ updated: VideoSummary) {
+        guard let current = results,
+              let index = current.videos.items.firstIndex(where: { $0.video.id == updated.id }) else { return }
+        var items = current.videos.items
+        items[index] = VideoMatch(video: updated, subtitleHits: items[index].subtitleHits)
+        results = SearchResults(
+            tookMs: current.tookMs,
+            videos: SearchSection(total: current.videos.total, items: items),
+            channels: current.channels,
+            playlists: current.playlists
+        )
+        Task { await app.videoListStateChanged() }
+    }
 }
 
 /// A video result with its subtitle hits underneath; each hit seeks.
 struct TVVideoMatchCard: View {
     let match: VideoMatch
+    var onDismissChange: ((VideoSummary) -> Void)?
 
     @Environment(TVPlayerCoordinator.self) private var player
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            TVVideoCard(video: match.video)
+            TVVideoCard(video: match.video, onDismissChange: onDismissChange)
             ForEach(Array(match.subtitleHits.prefix(3).enumerated()), id: \.offset) { _, hit in
                 Button {
                     player.play(match.video.id, startAt: hit.start)

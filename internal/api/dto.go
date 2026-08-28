@@ -30,9 +30,13 @@ type VideoSummary struct {
 	SubtitleLangs    []string   `json:"subtitle_langs"`
 	HasAutoSubtitles bool       `json:"has_auto_subtitles"`
 	Watched          bool       `json:"watched"`
-	Position         float64    `json:"position"`
-	Progress         float64    `json:"progress"`
-	LastPlayedAt     *time.Time `json:"last_played_at"`
+	// Dismissed is "taken out of the feeds without watching it". Feed
+	// listings drop these; a channel page, search and playlists still show
+	// them, which is where a viewer puts one back.
+	Dismissed    bool       `json:"dismissed"`
+	Position     float64    `json:"position"`
+	Progress     float64    `json:"progress"`
+	LastPlayedAt *time.Time `json:"last_played_at"`
 }
 
 type SubtitleTrack struct {

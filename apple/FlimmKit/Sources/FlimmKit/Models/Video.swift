@@ -38,6 +38,12 @@ public struct VideoSummary: Codable, Sendable, Hashable, Identifiable {
     public let subtitleLangs: [String]
     public let hasAutoSubtitles: Bool
     public let watched: Bool
+    /// Taken out of every feed and out of *up next* without being watched —
+    /// Flimm's own per-user state, never written to TubeArchivist, and
+    /// unrelated to `watched`. Feeds never return a dismissed video, so this
+    /// is only ever `true` on a channel, playlist, search or history result,
+    /// which is where a viewer finds one again and puts it back.
+    public let dismissed: Bool
     /// Resume position in seconds, 0 when there is none.
     public let position: Double
     /// `position / duration`; 0 or 1 once watched.
@@ -48,6 +54,18 @@ public struct VideoSummary: Codable, Sendable, Hashable, Identifiable {
     /// a resume pill and every route into the player resumes from it. There is
     /// no threshold to reimplement client-side.
     public var isInProgress: Bool { !watched && position > 0 }
+
+    /// A copy with only ``dismissed`` changed — the local patch every client
+    /// applies after a dismiss/undismiss round trip, since every list but a
+    /// feed keeps showing the video afterward rather than dropping it.
+    public func withDismissed(_ dismissed: Bool) -> VideoSummary {
+        VideoSummary(
+            id: id, title: title, channel: channel, thumbUrl: thumbUrl, duration: duration,
+            published: published, downloaded: downloaded, type: type, subtitleLangs: subtitleLangs,
+            hasAutoSubtitles: hasAutoSubtitles, watched: watched, dismissed: dismissed,
+            position: position, progress: progress, lastPlayedAt: lastPlayedAt
+        )
+    }
 
     public init(
         id: String,
@@ -61,6 +79,7 @@ public struct VideoSummary: Codable, Sendable, Hashable, Identifiable {
         subtitleLangs: [String] = [],
         hasAutoSubtitles: Bool = false,
         watched: Bool = false,
+        dismissed: Bool = false,
         position: Double = 0,
         progress: Double = 0,
         lastPlayedAt: Date? = nil
@@ -76,6 +95,7 @@ public struct VideoSummary: Codable, Sendable, Hashable, Identifiable {
         self.subtitleLangs = subtitleLangs
         self.hasAutoSubtitles = hasAutoSubtitles
         self.watched = watched
+        self.dismissed = dismissed
         self.position = position
         self.progress = progress
         self.lastPlayedAt = lastPlayedAt
@@ -94,6 +114,7 @@ public struct VideoSummary: Codable, Sendable, Hashable, Identifiable {
         subtitleLangs = try c.decode(.subtitleLangs, or: [])
         hasAutoSubtitles = try c.decode(.hasAutoSubtitles, or: false)
         watched = try c.decode(.watched, or: false)
+        dismissed = try c.decode(.dismissed, or: false)
         position = try c.decode(.position, or: 0)
         progress = try c.decode(.progress, or: 0)
         lastPlayedAt = try c.decodeIfPresent(Date.self, forKey: .lastPlayedAt)
@@ -369,6 +390,8 @@ public struct Video: Codable, Sendable, Hashable, Identifiable {
     public let subtitleLangs: [String]
     public let hasAutoSubtitles: Bool
     public let watched: Bool
+    /// See ``VideoSummary/dismissed``.
+    public let dismissed: Bool
     public let position: Double
     public let progress: Double
     public let lastPlayedAt: Date?
@@ -453,6 +476,7 @@ public struct Video: Codable, Sendable, Hashable, Identifiable {
             subtitleLangs: subtitleLangs,
             hasAutoSubtitles: hasAutoSubtitles,
             watched: watched,
+            dismissed: dismissed,
             position: position,
             progress: progress,
             lastPlayedAt: lastPlayedAt
@@ -466,7 +490,7 @@ public struct Video: Codable, Sendable, Hashable, Identifiable {
     /// server, gated or not. `hls_url` → `hlsUrl` is the same trap.
     private enum CodingKeys: String, CodingKey {
         case id, title, channel, thumbUrl, duration, published, downloaded, type
-        case subtitleLangs, hasAutoSubtitles, watched, position, progress, lastPlayedAt
+        case subtitleLangs, hasAutoSubtitles, watched, dismissed, position, progress, lastPlayedAt
         case description, height, mediaUrl, audioUrl
         case audioAacURL = "audioAacUrl"
         case hlsURL = "hlsUrl"
@@ -487,6 +511,7 @@ public struct Video: Codable, Sendable, Hashable, Identifiable {
         subtitleLangs = try c.decode(.subtitleLangs, or: [])
         hasAutoSubtitles = try c.decode(.hasAutoSubtitles, or: false)
         watched = try c.decode(.watched, or: false)
+        dismissed = try c.decode(.dismissed, or: false)
         position = try c.decode(.position, or: 0)
         progress = try c.decode(.progress, or: 0)
         lastPlayedAt = try c.decodeIfPresent(Date.self, forKey: .lastPlayedAt)
@@ -516,6 +541,16 @@ public struct ProgressResult: Codable, Sendable, Hashable {
     public init(position: Double, watched: Bool) {
         self.position = position
         self.watched = watched
+    }
+}
+
+/// `POST` / `DELETE /videos/{id}/dismiss` response — the dismissal state
+/// after the call, which is also all the call itself needs to report.
+public struct DismissResult: Codable, Sendable, Hashable {
+    public let dismissed: Bool
+
+    public init(dismissed: Bool) {
+        self.dismissed = dismissed
     }
 }
 

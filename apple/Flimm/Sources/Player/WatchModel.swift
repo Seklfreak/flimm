@@ -412,7 +412,7 @@ final class WatchModel {
     func setWatched(_ watched: Bool) async {
         isWatched = watched
         try? await client.setWatched(videoId, watched: watched)
-        await app.videoWatchedStateChanged()
+        await app.videoListStateChanged()
     }
 
     // MARK: - Moving between videos
@@ -532,7 +532,7 @@ final class WatchModel {
         // playback reaching the end reports `watched` right here, and an
         // "Unseen" feed/channel list needs the same cache invalidation or it
         // keeps listing this video after the viewer goes back to it.
-        await app.videoWatchedStateChanged()
+        await app.videoListStateChanged()
     }
 
     private func handleEnded() async {

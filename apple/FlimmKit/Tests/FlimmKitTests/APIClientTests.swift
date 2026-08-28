@@ -235,6 +235,33 @@ final class APIClientTests: XCTestCase {
         XCTAssertEqual(request.path, "/api/v1/history/entry-1")
     }
 
+    /// Takes the video out of every feed without watching it.
+    func testDismissPostsAndReturnsTrue() async throws {
+        let session = StubURLProtocol.session(json: Fixtures.dismissResultTrue)
+        let client = APIClient(baseURL: baseURL, tokens: StaticTokenProvider("tok"), session: session)
+
+        let dismissed = try await client.dismiss("yt-id")
+
+        XCTAssertTrue(dismissed)
+        let request = try XCTUnwrap(StubURLProtocol.recorded.last)
+        XCTAssertEqual(request.method, "POST")
+        XCTAssertEqual(request.path, "/api/v1/videos/yt-id/dismiss")
+    }
+
+    /// Undoing a dismissal is a DELETE — the same shape an undo control needs
+    /// so a double tap can never fail it.
+    func testUndismissSendsDeleteAndReturnsFalse() async throws {
+        let session = StubURLProtocol.session(json: Fixtures.dismissResultFalse)
+        let client = APIClient(baseURL: baseURL, tokens: StaticTokenProvider("tok"), session: session)
+
+        let dismissed = try await client.undismiss("yt-id")
+
+        XCTAssertFalse(dismissed)
+        let request = try XCTUnwrap(StubURLProtocol.recorded.last)
+        XCTAssertEqual(request.method, "DELETE")
+        XCTAssertEqual(request.path, "/api/v1/videos/yt-id/dismiss")
+    }
+
     func testRequestBodiesUseSnakeCase() async throws {
         let session = StubURLProtocol.session { _, _ in (204, Data()) }
         let client = APIClient(baseURL: baseURL, tokens: StaticTokenProvider("tok"), session: session)

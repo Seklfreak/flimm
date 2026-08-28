@@ -413,13 +413,13 @@ func (s *Server) feedListOpts(r *http.Request, uid uuid.UUID, id string) (listOp
 		if err != nil {
 			return o, err
 		}
-		o = listOpts{Sort: prefs.EverythingSort, IncludeShorts: prefs.EverythingIncludeShorts, UnseenOnly: prefs.EverythingHideSeen}
+		o = listOpts{Sort: prefs.EverythingSort, IncludeShorts: prefs.EverythingIncludeShorts, UnseenOnly: prefs.EverythingHideSeen, DropDismissed: true}
 	} else {
 		feed, chans, err := s.loadFeed(r.Context(), uid, id)
 		if err != nil {
 			return o, err
 		}
-		o = listOpts{ChannelIDs: chans, Sort: feed.Sort, IncludeShorts: feed.IncludeShorts, SubtitlesOnly: feed.SubtitlesOnly, UnseenOnly: feed.HideSeen}
+		o = listOpts{ChannelIDs: chans, Sort: feed.Sort, IncludeShorts: feed.IncludeShorts, SubtitlesOnly: feed.SubtitlesOnly, UnseenOnly: feed.HideSeen, DropDismissed: true}
 	}
 	switch r.URL.Query().Get("view") {
 	case "unseen":

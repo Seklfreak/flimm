@@ -9,6 +9,12 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type DismissedVideo struct {
+	UserID      uuid.UUID          `json:"user_id"`
+	VideoID     string             `json:"video_id"`
+	DismissedAt pgtype.Timestamptz `json:"dismissed_at"`
+}
+
 type Feed struct {
 	ID            uuid.UUID          `json:"id"`
 	UserID        uuid.UUID          `json:"user_id"`

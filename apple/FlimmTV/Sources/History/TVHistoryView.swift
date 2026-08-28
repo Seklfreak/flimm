@@ -5,7 +5,10 @@ import SwiftUI
 ///
 /// Removing an entry is a soft delete on the server and deliberately does *not*
 /// change the video's seen state — but there is no swipe on a remote, so the
-/// TV only reads history. Tidying it up happens where the gesture exists.
+/// TV only reads history; removing an entry happens where the gesture exists.
+/// Taking a video out of feeds is a different action, needs no swipe (a
+/// long-press context menu is the remote's native gesture), and works here
+/// exactly as it does everywhere else.
 struct TVHistoryView: View {
     @Environment(AppModel.self) private var app
 
@@ -54,7 +57,7 @@ struct TVHistoryView: View {
                             .foregroundStyle(.secondary)
                         LazyVGrid(columns: TVGrids.videos, alignment: .leading, spacing: TVMetrics.gridSpacing) {
                             ForEach(group.entries) { entry in
-                                TVVideoCard(video: entry.video)
+                                TVVideoCard(video: entry.video, onDismissChange: { updateEntry(entry, video: $0) })
                                     .task { await pager.loadMoreIfNeeded(after: entry) }
                             }
                         }
@@ -103,5 +106,13 @@ struct TVHistoryView: View {
         app.pagers.insert(next, for: key)
         pager = next
         await next.reload()
+    }
+
+    /// History keeps listing a video after it is dismissed — the contract
+    /// makes an exception for feeds only — so this patches the card's own
+    /// state in place rather than removing it.
+    private func updateEntry(_ entry: HistoryEntry, video: VideoSummary) {
+        pager?.replace(HistoryEntry(id: entry.id, video: video, playedAt: entry.playedAt, state: entry.state))
+        Task { await app.videoListStateChanged() }
     }
 }

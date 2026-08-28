@@ -37,6 +37,16 @@ feeds without leaving the page.
 
 ## Player, resume and seen state
 
+- **"Not interested" takes a video out of the feeds without watching it.**
+  Marking something seen to clear a feed lies about the watch state, and Flimm
+  writes that back to TubeArchivist, so it would follow the viewer into TA's
+  own UI and every other client. Dismissing is Flimm's own per-user state and
+  says nothing about playback. It applies to *every* feed (including
+  Everything, in every view) and to *up next*, so autoplay never plays
+  something that was dismissed. Channel pages, playlists, search and history
+  still show it, marked, which is where a viewer puts one back. Every client
+  offers an undo without navigating away, because the action is one tap from a
+  card and easy to hit by accident.
 - **Resume is automatic.** A chip in the top-left says where playback resumed
   from, with *Start over*. Position is reported by heartbeat while playing.
 - A video flips to **seen** automatically at about 90 % (or with 30 s left).

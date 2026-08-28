@@ -98,7 +98,7 @@ struct TVPlaylistDetailView: View {
             } else {
                 LazyVGrid(columns: TVGrids.videos, alignment: .leading, spacing: TVMetrics.gridSpacing) {
                     ForEach(playlist.items) { item in
-                        TVVideoCard(video: item.video, context: context)
+                        TVVideoCard(video: item.video, context: context, onDismissChange: updateVideo)
                     }
                 }
             }
@@ -137,5 +137,17 @@ struct TVPlaylistDetailView: View {
             client: app.client,
             player: player
         )
+    }
+
+    /// A playlist keeps listing a video after it is dismissed — the contract
+    /// makes an exception for feeds only — so this patches the card's own
+    /// state in place rather than removing it.
+    private func updateVideo(_ updated: VideoSummary) {
+        guard let current = playlist,
+              let index = current.items.firstIndex(where: { $0.video.id == updated.id }) else { return }
+        var items = current.items
+        items[index] = PlaylistItem(position: items[index].position, video: updated)
+        playlist = Playlist(summary: current.summary, items: items)
+        Task { await app.videoListStateChanged() }
     }
 }

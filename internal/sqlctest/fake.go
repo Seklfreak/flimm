@@ -20,6 +20,9 @@ type FakeQuerier struct {
 	DeleteChannelFromUserFeedsFn func(context.Context, sqlc.DeleteChannelFromUserFeedsParams) error
 	DeleteFeedFn                 func(context.Context, sqlc.DeleteFeedParams) (int64, error)
 	DeleteFeedChannelsFn         func(context.Context, uuid.UUID) error
+	DismissVideoFn               func(context.Context, sqlc.DismissVideoParams) error
+	UndismissVideoFn             func(context.Context, sqlc.UndismissVideoParams) error
+	ListDismissedForVideosFn     func(context.Context, sqlc.ListDismissedForVideosParams) ([]string, error)
 	GetFeedFn                    func(context.Context, sqlc.GetFeedParams) (sqlc.Feed, error)
 	GetPrefsFn                   func(context.Context, uuid.UUID) ([]byte, error)
 	GetUserFn                    func(context.Context, uuid.UUID) (sqlc.User, error)
@@ -114,6 +117,33 @@ func (f *FakeQuerier) ListInProgress(ctx context.Context, arg sqlc.ListInProgres
 
 func (f *FakeQuerier) ListWatchEventsForVideos(ctx context.Context, arg sqlc.ListWatchEventsForVideosParams) ([]sqlc.WatchEvent, error) {
 	return f.ListWatchEventsForVideosFn(ctx, arg)
+}
+
+// The three dismissal queries below break the "unset panics" rule on purpose:
+// every video listing asks which videos are dismissed, so a test about
+// something else would otherwise have to stub a query it does not care about.
+// Unset means "nobody has dismissed anything", which is the state a test that
+// never mentions dismissal is describing.
+
+func (f *FakeQuerier) ListDismissedForVideos(ctx context.Context, arg sqlc.ListDismissedForVideosParams) ([]string, error) {
+	if f.ListDismissedForVideosFn == nil {
+		return nil, nil
+	}
+	return f.ListDismissedForVideosFn(ctx, arg)
+}
+
+func (f *FakeQuerier) DismissVideo(ctx context.Context, arg sqlc.DismissVideoParams) error {
+	if f.DismissVideoFn == nil {
+		return nil
+	}
+	return f.DismissVideoFn(ctx, arg)
+}
+
+func (f *FakeQuerier) UndismissVideo(ctx context.Context, arg sqlc.UndismissVideoParams) error {
+	if f.UndismissVideoFn == nil {
+		return nil
+	}
+	return f.UndismissVideoFn(ctx, arg)
 }
 
 func (f *FakeQuerier) NextFeedChannelPosition(ctx context.Context, feedID uuid.UUID) (int32, error) {

@@ -61,7 +61,7 @@ final class PagerStore {
 /// underneath never changed what it is showing, so its `.task(id:)` does not
 /// rerun and its `.onAppear` does not fire. But a video finished or marked
 /// seen in there drops every cached pager
-/// (``AppModel/videoWatchedStateChanged()``), and an "Unseen" list that keeps
+/// (``AppModel/videoListStateChanged()``), and an "Unseen" list that keeps
 /// showing what the viewer just watched is the bug that follows.
 ///
 /// The player's own request going back to `nil` is exactly "the viewer came

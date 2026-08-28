@@ -229,6 +229,8 @@ func (s *Server) Router() http.Handler {
 			r.Post("/videos/{id}/progress", s.postProgress)
 			r.Delete("/videos/{id}/progress", s.deleteProgress)
 			r.Post("/videos/{id}/watched", s.postWatched)
+			r.Post("/videos/{id}/dismiss", s.dismissVideo)
+			r.Delete("/videos/{id}/dismiss", s.undismissVideo)
 			r.Post("/videos/{id}/hls", s.postVideoHLS)
 
 			r.Get("/playlists", s.listPlaylists)

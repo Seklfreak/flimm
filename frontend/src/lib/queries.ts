@@ -142,6 +142,34 @@ export function useSetWatched() {
   });
 }
 
+// After a dismiss/undo: unseen counts change (a dismissed video drops out of
+// them), and any cached list that still shows this video — channel,
+// playlist, search, history — needs its `dismissed` flag to catch up.
+export function invalidateDismissState(qc: QueryClient, videoId?: string) {
+  void qc.invalidateQueries({ queryKey: ["feeds"] });
+  void qc.invalidateQueries({ queryKey: ["channels"] });
+  void qc.invalidateQueries({ queryKey: ["playlists"] });
+  void qc.invalidateQueries({ queryKey: ["history"] });
+  void qc.invalidateQueries({ queryKey: ["search"] });
+  if (videoId) void qc.invalidateQueries({ queryKey: keys.video(videoId) });
+}
+
+export function useDismissVideo() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.dismissVideo(id),
+    onSuccess: (_d, id) => invalidateDismissState(qc, id),
+  });
+}
+
+export function useUndismissVideo() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.undismissVideo(id),
+    onSuccess: (_d, id) => invalidateDismissState(qc, id),
+  });
+}
+
 export function useChannels(q: string, sort: "name" | "videos" | "unseen" | "last_upload", unfeeded: boolean) {
   return useInfiniteQuery({
     queryKey: keys.channels(q, sort, unfeeded),

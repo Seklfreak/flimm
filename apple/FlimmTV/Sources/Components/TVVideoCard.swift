@@ -14,6 +14,17 @@ struct TVVideoThumbnail: View {
             .aspectRatio(16 / 9, contentMode: .fill)
             .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             .overlay(alignment: .topLeading) { topLeading }
+            .overlay(alignment: .topTrailing) {
+                // A dismissed video only reaches this thumbnail on a
+                // channel, playlist, search or history card — a feed drops
+                // it server-side, and ``TVVideoGrid`` drops the card locally
+                // the moment it happens there. This is the "say so" half of
+                // putting one back; "Add back to feeds" in the card's own
+                // context menu is the other.
+                if video.dismissed {
+                    Text("Not in feeds").tvPillStyle().padding(10)
+                }
+            }
             .overlay(alignment: .bottomTrailing) {
                 HStack(spacing: 6) {
                     // Subtitles used to be a third part of the meta line,
@@ -90,6 +101,9 @@ struct TVVideoCard: View {
     let video: VideoSummary
     var context: PlaybackContext = .none
     var showChannel = true
+    /// Called with the updated summary once a dismiss/undismiss round trip
+    /// succeeds. See ``DismissMenuItem``.
+    var onDismissChange: ((VideoSummary) -> Void)?
 
     @Environment(TVPlayerCoordinator.self) private var player
 
@@ -103,6 +117,9 @@ struct TVVideoCard: View {
             .buttonStyle(.card)
             .opacity(video.watched ? 0.65 : 1)
             .accessibilityLabel(video.title)
+            // tvOS activates a `.contextMenu` on a focused card with the
+            // remote's long-press — the same gesture the phone and iPad use.
+            .contextMenu { DismissMenuItem(video: video, onChange: onDismissChange) }
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(video.title)

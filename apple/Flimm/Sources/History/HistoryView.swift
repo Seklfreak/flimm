@@ -28,15 +28,36 @@ struct HistoryView: View {
                     ForEach(groups, id: \.heading) { group in
                         Section(group.heading) {
                             ForEach(group.entries) { entry in
-                                VideoRow(video: entry.video, subtitle: subtitle(for: entry))
-                                    .task { await pager.loadMoreIfNeeded(after: entry) }
-                                    .swipeActions(edge: .trailing) {
-                                        Button(role: .destructive) {
-                                            Task { await remove(entry) }
-                                        } label: {
-                                            Label("Remove", systemImage: "trash")
+                                VideoRow(
+                                    video: entry.video,
+                                    subtitle: subtitle(for: entry),
+                                    onDismissChange: { updateEntry(entry, video: $0) }
+                                )
+                                .task { await pager.loadMoreIfNeeded(after: entry) }
+                                .swipeActions(edge: .trailing) {
+                                    Button(role: .destructive) {
+                                        Task { await remove(entry) }
+                                    } label: {
+                                        Label("Remove", systemImage: "trash")
+                                    }
+                                }
+                                .swipeActions(edge: .leading) {
+                                    // Same idiom as the trailing "Remove" swipe,
+                                    // for the other per-user state a history
+                                    // row can flip: keeping the video out of
+                                    // feeds without touching whether it was
+                                    // watched.
+                                    Button {
+                                        Task { await toggleDismiss(entry) }
+                                    } label: {
+                                        if entry.video.dismissed {
+                                            Label("Add back", systemImage: "arrow.uturn.backward")
+                                        } else {
+                                            Label("Not interested", systemImage: "hand.thumbsdown")
                                         }
                                     }
+                                    .tint(entry.video.dismissed ? .blue : .orange)
+                                }
                             }
                         }
                     }
@@ -118,5 +139,18 @@ struct HistoryView: View {
     private func remove(_ entry: HistoryEntry) async {
         pager?.remove(id: entry.id)
         try? await app.client.deleteHistoryEntry(entry.id)
+    }
+
+    private func toggleDismiss(_ entry: HistoryEntry) async {
+        guard let updated = await toggleDismissed(entry.video, client: app.client) else { return }
+        updateEntry(entry, video: updated)
+    }
+
+    /// History keeps listing a video after it is dismissed — the contract
+    /// makes an exception for feeds only — so this patches the row's own
+    /// state in place rather than removing it.
+    private func updateEntry(_ entry: HistoryEntry, video: VideoSummary) {
+        pager?.replace(HistoryEntry(id: entry.id, video: video, playedAt: entry.playedAt, state: entry.state))
+        Task { await app.videoListStateChanged() }
     }
 }

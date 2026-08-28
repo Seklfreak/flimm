@@ -144,8 +144,25 @@ struct SearchResultsView: View {
     @ViewBuilder
     private func videoMatches(_ results: SearchResults) -> some View {
         ForEach(results.videos.items) { match in
-            VideoMatchRow(match: match)
+            VideoMatchRow(match: match, onDismissChange: updateVideo)
         }
+    }
+
+    /// Search keeps listing a video after it is dismissed — the contract
+    /// makes an exception for feeds only — so this patches the row's own
+    /// state in place rather than removing it.
+    private func updateVideo(_ updated: VideoSummary) {
+        guard let current = results,
+              let index = current.videos.items.firstIndex(where: { $0.video.id == updated.id }) else { return }
+        var items = current.videos.items
+        items[index] = VideoMatch(video: updated, subtitleHits: items[index].subtitleHits)
+        results = SearchResults(
+            tookMs: current.tookMs,
+            videos: SearchSection(total: current.videos.total, items: items),
+            channels: current.channels,
+            playlists: current.playlists
+        )
+        Task { await app.videoListStateChanged() }
     }
 
     private func section(
@@ -195,12 +212,13 @@ struct SearchResultsView: View {
 /// A video result, with its subtitle hits underneath. Each hit seeks.
 struct VideoMatchRow: View {
     let match: VideoMatch
+    var onDismissChange: ((VideoSummary) -> Void)?
 
     @Environment(PlayerCoordinator.self) private var player
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            VideoRow(video: match.video)
+            VideoRow(video: match.video, onDismissChange: onDismissChange)
             ForEach(Array(match.subtitleHits.enumerated()), id: \.offset) { _, hit in
                 Button {
                     player.play(match.video.id, startAt: hit.start)

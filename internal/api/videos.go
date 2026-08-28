@@ -32,6 +32,10 @@ type listOpts struct {
 	SubtitlesOnly bool
 	// UnseenOnly asks TA for unwatched videos and drops completed events.
 	UnseenOnly bool
+	// DropDismissed removes videos the user took out of their feeds. Set for
+	// every feed view and never for a channel, a playlist or search: those are
+	// where a dismissed video is found again and put back.
+	DropDismissed bool
 }
 
 // taSort maps an API sort to TA's sort/order pair.
@@ -120,13 +124,36 @@ func (s *Server) overlay(ctx context.Context, uid uuid.UUID, videos []ta.Video) 
 	if err != nil {
 		return nil, err
 	}
+	dismissed, err := s.loadDismissed(ctx, uid, ids)
+	if err != nil {
+		return nil, err
+	}
 	out := make([]VideoSummary, 0, len(videos))
 	for _, v := range videos {
 		var ev *sqlc.WatchEvent
 		if e, ok := events[v.YoutubeID]; ok {
 			ev = &e
 		}
-		out = append(out, summarize(v, ev))
+		item := summarize(v, ev)
+		item.Dismissed = dismissed[v.YoutubeID]
+		out = append(out, item)
+	}
+	return out, nil
+}
+
+// loadDismissed reports which of the given videos the user has taken out of
+// their feeds.
+func (s *Server) loadDismissed(ctx context.Context, uid uuid.UUID, ids []string) (map[string]bool, error) {
+	out := map[string]bool{}
+	if len(ids) == 0 {
+		return out, nil
+	}
+	rows, err := s.q.ListDismissedForVideos(ctx, sqlc.ListDismissedForVideosParams{UserID: uid, VideoIds: ids})
+	if err != nil {
+		return nil, err
+	}
+	for _, id := range rows {
+		out[id] = true
 	}
 	return out, nil
 }
@@ -190,6 +217,15 @@ func (s *Server) buildList(ctx context.Context, uid uuid.UUID, o listOpts) ([]Vi
 		}
 		items = kept
 	}
+	if o.DropDismissed {
+		kept := items[:0]
+		for _, it := range items {
+			if !it.Dismissed {
+				kept = append(kept, it)
+			}
+		}
+		items = kept
+	}
 	sortSummaries(items, o.Sort)
 	if items == nil {
 		items = []VideoSummary{}
@@ -244,7 +280,26 @@ func (s *Server) continueList(ctx context.Context, uid uuid.UUID, channelIDs []s
 			items = append(items, out[i])
 		}
 	}
-	return items, nil
+	// A dismissed video does not come back through the in-progress view
+	// either: the viewer said they are not watching it, half-watched or not.
+	// (`summarize` above knows nothing about dismissal, so this pass both
+	// fills the flag in and drops the rows.)
+	ids := make([]string, 0, len(items))
+	for _, it := range items {
+		ids = append(ids, it.ID)
+	}
+	dismissed, err := s.loadDismissed(ctx, uid, ids)
+	if err != nil {
+		return nil, err
+	}
+	kept := items[:0]
+	for _, it := range items {
+		if dismissed[it.ID] {
+			continue
+		}
+		kept = append(kept, it)
+	}
+	return kept, nil
 }
 
 // ---- video endpoints ----

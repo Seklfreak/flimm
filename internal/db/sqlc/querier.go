@@ -19,11 +19,19 @@ type Querier interface {
 	DeleteChannelFromUserFeeds(ctx context.Context, arg DeleteChannelFromUserFeedsParams) error
 	DeleteFeed(ctx context.Context, arg DeleteFeedParams) (int64, error)
 	DeleteFeedChannels(ctx context.Context, feedID uuid.UUID) error
+	// Idempotent: dismissing an already-dismissed video keeps the original time,
+	// so a double tap does not look like a fresh decision.
+	DismissVideo(ctx context.Context, arg DismissVideoParams) error
 	GetFeed(ctx context.Context, arg GetFeedParams) (Feed, error)
 	GetPrefs(ctx context.Context, userID uuid.UUID) ([]byte, error)
 	GetUser(ctx context.Context, id uuid.UUID) (User, error)
 	GetWatchEvent(ctx context.Context, arg GetWatchEventParams) (WatchEvent, error)
 	HideHistoryEntry(ctx context.Context, arg HideHistoryEntryParams) (int64, error)
+	// Newest first, for the screen that lets a viewer put one back.
+	ListDismissed(ctx context.Context, arg ListDismissedParams) ([]string, error)
+	// Which of these videos the user has dismissed — one round trip per page,
+	// the same shape as ListWatchEventsForVideos.
+	ListDismissedForVideos(ctx context.Context, arg ListDismissedForVideosParams) ([]string, error)
 	ListFeedChannels(ctx context.Context, feedID uuid.UUID) ([]string, error)
 	// Every (feed, channel) membership of the user in one go, so feed lists and
 	// channel "In feeds:" badges need a single query.
@@ -50,6 +58,7 @@ type Querier interface {
 	// both completion and position. Does not bump last_played_at, so toggling
 	// from a list doesn't reorder history.
 	SetWatched(ctx context.Context, arg SetWatchedParams) (WatchEvent, error)
+	UndismissVideo(ctx context.Context, arg UndismissVideoParams) error
 	UnpinFeeds(ctx context.Context, userID uuid.UUID) error
 	UpdateFeed(ctx context.Context, arg UpdateFeedParams) (Feed, error)
 	UpsertPrefs(ctx context.Context, arg UpsertPrefsParams) error

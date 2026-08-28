@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { screen } from "@testing-library/react";
+import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { VideoCard, watchHref } from "./VideoCard";
-import { renderWithProviders, video } from "@/test/helpers";
+import { mockFetch, renderWithProviders, video } from "@/test/helpers";
 
 describe("VideoCard", () => {
   it("shows the resume chip, duration, channel link and CC meta", () => {
@@ -25,5 +25,24 @@ describe("VideoCard", () => {
     expect(watchHref({ id: "x" }, { audio: "1" })).toBe("/watch/x?audio=1");
     expect(watchHref({ id: "x" }, { playlist: "p", audio: "1" })).toBe("/watch/x?playlist=p&audio=1");
     expect(watchHref({ id: "x" }, { audio: undefined })).toBe("/watch/x");
+  });
+  it('dismisses a video: clicking "Not interested" calls the dismiss endpoint', async () => {
+    const { calls } = mockFetch({ "POST /api/v1/videos/vid1/dismiss": { dismissed: true } });
+    renderWithProviders(<VideoCard video={video()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Not interested" }));
+    await waitFor(() =>
+      expect(calls.some((c) => c.url.includes("/videos/vid1/dismiss") && c.init?.method === "POST")).toBe(true),
+    );
+  });
+  it('shows a dismissed video as "Hidden from feeds" and restores it', async () => {
+    const { calls } = mockFetch({ "DELETE /api/v1/videos/vid1/dismiss": { dismissed: false } });
+    renderWithProviders(<VideoCard video={video({ dismissed: true })} />);
+    expect(screen.getByText(/Hidden from feeds/)).toBeTruthy();
+    // Nothing left to dismiss on an already-dismissed card.
+    expect(screen.queryByRole("button", { name: "Not interested" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Restore" }));
+    await waitFor(() =>
+      expect(calls.some((c) => c.url.includes("/videos/vid1/dismiss") && c.init?.method === "DELETE")).toBe(true),
+    );
   });
 });

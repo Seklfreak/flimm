@@ -365,7 +365,7 @@ final class TVWatchModel {
     func setWatched(_ watched: Bool) async {
         isWatched = watched
         try? await client.setWatched(videoId, watched: watched)
-        await app.videoWatchedStateChanged()
+        await app.videoListStateChanged()
     }
 
     /// Switches rendition without leaving the video.
@@ -584,6 +584,6 @@ private extension TVWatchModel {
     func applyProgress(_ result: ProgressResult) async {
         guard result.watched, !isWatched else { return }
         isWatched = true
-        await app.videoWatchedStateChanged()
+        await app.videoListStateChanged()
     }
 }

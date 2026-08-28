@@ -77,4 +77,19 @@ final class Pager<Item: Codable & Sendable & Hashable & Identifiable> {
         items.removeAll { $0.id == id }
         total = max(0, total - 1)
     }
+
+    /// Puts a removed item back at the index it had — undoing ``remove(id:)``,
+    /// which is what an "Undo" on a dismissed video does.
+    func reinsert(_ item: Item, at index: Int) {
+        items.insert(item, at: min(max(index, 0), items.count))
+        total += 1
+    }
+
+    /// Swaps one item in place by id, without a round trip for the whole
+    /// list — a field changed server-side (a video was dismissed or put
+    /// back) but the row itself is not being added or removed.
+    func replace(_ item: Item) {
+        guard let index = items.firstIndex(where: { $0.id == item.id }) else { return }
+        items[index] = item
+    }
 }

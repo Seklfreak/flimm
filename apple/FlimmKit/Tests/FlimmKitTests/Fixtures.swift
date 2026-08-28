@@ -16,6 +16,7 @@ enum Fixtures {
       "subtitle_langs": ["en"],
       "has_auto_subtitles": true,
       "watched": false,
+      "dismissed": false,
       "position": 561,
       "progress": 0.38,
       "last_played_at": "2026-08-26T15:42:00Z"
@@ -77,6 +78,7 @@ enum Fixtures {
       "subtitle_langs": ["en"],
       "has_auto_subtitles": true,
       "watched": false,
+      "dismissed": false,
       "position": 561,
       "progress": 0.38,
       "last_played_at": "2026-08-26T15:42:00Z",
@@ -314,5 +316,13 @@ enum Fixtures {
 
     static let progressResult = """
     { "position": 561, "watched": false }
+    """
+
+    static let dismissResultTrue = """
+    { "dismissed": true }
+    """
+
+    static let dismissResultFalse = """
+    { "dismissed": false }
     """
 }

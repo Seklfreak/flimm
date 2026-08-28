@@ -24,6 +24,10 @@ One container image: a Go backend with the React frontend embedded.
   whole feed or channel seen.
 - **History** — grouped by day, in-progress rows resume in place, entries can
   be hidden.
+- **Not interested** — take a video out of every feed without watching it. It
+  is not "mark seen": watch state is untouched and nothing is written back to
+  TubeArchivist. Undo is one tap, and a dismissed video stays on its channel
+  page so it can be put back later.
 - **Playlists** — your custom playlists and channel playlists with watched
   progress and a resume target; create, reorder, delete through TubeArchivist.
 - **Search** across titles, channels, playlists **and subtitle text**; a

@@ -1,11 +1,11 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
-import { EVERYTHING_ID, type FeedView } from "@/lib/api";
-import { useFeed, useFeedVideos } from "@/lib/queries";
+import { EVERYTHING_ID, type FeedView, type VideoSummary } from "@/lib/api";
+import { useDismissVideo, useFeed, useFeedVideos, useUndismissVideo } from "@/lib/queries";
 import { plural } from "@/lib/format";
 import { PageHeader } from "@/components/Layout";
 import { EmptyState, ErrorState, InfiniteSentinel, Segmented, Spinner } from "@/components/ui";
-import { VideoCard, VideoGrid } from "@/components/VideoCard";
+import { DismissedCard, VideoCard, VideoGrid } from "@/components/VideoCard";
 import { FeedEditor } from "@/components/FeedEditor";
 
 const VIEWS: { value: FeedView; label: string }[] = [
@@ -24,9 +24,68 @@ export default function FeedPage({ editing = false }: { editing?: boolean }) {
   const videos = useFeedVideos(id, view);
   const closeEditor = useCallback(() => navigate(`/feeds/${id}`, { replace: true }), [navigate, id]);
 
+  // A feed never returns a dismissed video (docs/api.md "dismissed"), so
+  // dismissing here has to pull the card out of this list itself rather than
+  // toggling a flag in place.
+  //
+  // The undo slot is held *outside* the fetched list on purpose. Dismissing
+  // invalidates the feed query, so the refetch comes back without that video —
+  // and an undo rendered from `items` would vanish a moment after it appeared,
+  // which is the whole affordance gone. Keeping the video and the index it sat
+  // at means the slot survives the refetch and Undo can put the same object
+  // straight back.
+  // `undo` is a card that has just been dismissed and can be brought back;
+  // `restored` is one the viewer brought back, held until the refetch returns
+  // it, so Undo puts the card on screen at once rather than after a round trip.
+  const [pending, setPending] = useState<{ video: VideoSummary; index: number; mode: "undo" | "restored" }[]>([]);
+  const dismiss = useDismissVideo();
+  const undismiss = useUndismissVideo();
+  const onDismiss = useCallback(
+    (v: VideoSummary, index: number) => {
+      setPending((list) => [...list, { video: v, index, mode: "undo" as const }]);
+      dismiss.mutate(v.id, {
+        onError: () => setPending((list) => list.filter((d) => d.video.id !== v.id)),
+      });
+    },
+    [dismiss],
+  );
+  // A restored slot is a stand-in until the refetch returns the real card.
+  // Dropping it then keeps one video from being rendered out of stale state
+  // forever; returning the same array when nothing changed is what stops this
+  // from looping on every render.
+  const itemIds = (videos.data?.pages.flatMap((p) => p.items) ?? []).map((v) => v.id).join(",");
+  useEffect(() => {
+    const present = new Set(itemIds ? itemIds.split(",") : []);
+    setPending((list) => {
+      const next = list.filter((p) => !(p.mode === "restored" && present.has(p.video.id)));
+      return next.length === list.length ? list : next;
+    });
+  }, [itemIds]);
+
+  const onUndo = useCallback(
+    (v: VideoSummary) => {
+      setPending((list) => list.map((d) => (d.video.id === v.id ? { ...d, mode: "restored" as const } : d)));
+      undismiss.mutate(v.id, {
+        onError: () => setPending((list) => list.map((d) => (d.video.id === v.id ? { ...d, mode: "undo" as const } : d))),
+      });
+    },
+    [undismiss],
+  );
+
   if (feed.isError) return <ErrorState message={feed.error.message} retry={() => feed.refetch()} />;
   const f = feed.data;
   const items = videos.data?.pages.flatMap((p) => p.items) ?? [];
+  // What the grid actually renders: the fetched list with the pending slots
+  // put back where their cards were. Filtering by id first covers both
+  // in-between states — the moment after a dismissal before the refetch drops
+  // the video, and the moment after an undo before the refetch returns it.
+  const pendingIds = new Set(pending.map((p) => p.video.id));
+  const slots: { video: VideoSummary; undo?: true }[] = items
+    .filter((v) => !pendingIds.has(v.id))
+    .map((v) => ({ video: v }));
+  for (const { video, index, mode } of pending) {
+    slots.splice(Math.min(index, slots.length), 0, mode === "undo" ? { video, undo: true } : { video });
+  }
   const total = videos.data?.pages[0]?.total;
 
   return (
@@ -67,9 +126,18 @@ export default function FeedPage({ editing = false }: { editing?: boolean }) {
         ) : (
           <>
             <VideoGrid>
-              {items.map((v) => (
-                <VideoCard key={v.id} video={v} ctx={{ feed: id }} />
-              ))}
+              {slots.map((slot) =>
+                slot.undo ? (
+                  <DismissedCard key={slot.video.id} video={slot.video} onUndo={() => onUndo(slot.video)} />
+                ) : (
+                  <VideoCard
+                    key={slot.video.id}
+                    video={slot.video}
+                    ctx={{ feed: id }}
+                    onDismiss={(v) => onDismiss(v, slots.indexOf(slot))}
+                  />
+                ),
+              )}
             </VideoGrid>
             <InfiniteSentinel enabled={!!videos.hasNextPage && !videos.isFetchingNextPage} onVisible={() => void videos.fetchNextPage()} />
             {videos.isFetchingNextPage && <div className="py-6"><Spinner /></div>}

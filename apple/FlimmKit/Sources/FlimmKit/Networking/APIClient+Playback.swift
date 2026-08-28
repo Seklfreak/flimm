@@ -72,6 +72,25 @@ extension APIClient {
         try await discard(.post, "/videos/\(esc(id))/watched", body: WatchedBody(watched: watched))
     }
 
+    /// Takes the video out of every feed and out of *up next* without
+    /// watching it. This is Flimm's own state — never written to
+    /// TubeArchivist — so it says nothing about `watched`. Verified against
+    /// TA first, so an unknown id is a 404; idempotent, and the original
+    /// dismissal time is kept on a repeat call.
+    @discardableResult
+    public func dismiss(_ id: String) async throws -> Bool {
+        let result: DismissResult = try await send(.post, "/videos/\(esc(id))/dismiss")
+        return result.dismissed
+    }
+
+    /// Puts a dismissed video back. Undoing a non-dismissal is still a
+    /// success, so an undo control can never fail on a double tap.
+    @discardableResult
+    public func undismiss(_ id: String) async throws -> Bool {
+        let result: DismissResult = try await send(.delete, "/videos/\(esc(id))/dismiss")
+        return result.dismissed
+    }
+
     /// Starts — or steers — a compatible rendition **without waiting** for it,
     /// and reports where it stands.
     ///

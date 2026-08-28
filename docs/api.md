@@ -56,6 +56,7 @@ return 404 so existence isn't leaked. 502 when TA is unreachable, with
   "subtitle_langs": ["en"],            // archived tracks; [] if none
   "has_auto_subtitles": true,
   "watched": false,                    // TA watched flag
+  "dismissed": false,                  // taken out of the feeds without watching it
   "position": 561,                     // resume position in seconds, 0 if none
   "progress": 0.38,                    // position/duration, 0 or 1 when watched
   "last_played_at": "2026-08-26T15:42:00Z"  // null if never played here
@@ -64,6 +65,18 @@ return 404 so existence isn't leaked. 502 when TA is unreachable, with
 `watched`, `position`, `progress`, `last_played_at` are per-user and come from
 Flimm's `watch_events` table, falling back to TA's watched flag when Flimm
 has no event.
+
+`dismissed` is a **separate decision from watching**: "I am not going to watch
+this, take it out of my feeds." Feed listings (including *Everything*, and in
+every view — unseen, in-progress, all) drop dismissed videos server-side, so no
+client has to filter. *Up next* drops them too, so autoplay never
+plays something the viewer has dismissed. Channel pages, playlists, search and
+history still show them, with `dismissed: true` — that is where a viewer finds
+one again and puts it back. It never implies anything about watch state, and it is
+never written to TubeArchivist; marking a video seen to clear a feed would do
+both, which is the whole reason this exists. It also has nothing to do with the
+`hidden` flag on a history entry (`DELETE /history/{id}`), which only removes a
+row from history and returns on the next play.
 
 Any `position > 0` on an unwatched video means "in progress": the card shows a
 `Resume · m:ss` pill and **every** link to the player (thumbnail, title, Resume
@@ -304,6 +317,8 @@ Prefs:
 | POST | `/videos/{id}/progress` | `{ "position": 561 }` — heartbeat. Upserts watch_event; writes TA `/video/{id}/progress/`; at ≥90% (or ≤30 s remaining) marks watched. Returns `{ "position", "watched" }`. **Nothing is recorded below `MIN_PLAY_SECONDS`** unless the video completes or an event already exists — see below | Pass `?playlist=<id>` so the server can skip recording for music playlists.
 | POST | `/videos/{id}/watched` | `{ "watched": true\|false }` — writes TA `/watched/`; true completes the watch_event, false clears position and TA progress |
 | DELETE | `/videos/{id}/progress` | "Start over": position → 0, TA progress deleted, 204 |
+| POST | `/videos/{id}/dismiss` | take the video out of every feed without watching it; returns `{ "dismissed": true }`. Verified against TA first, so an unknown id is **404**. Idempotent, and the original dismissal time is kept |
+| DELETE | `/videos/{id}/dismiss` | put it back; returns `{ "dismissed": false }`. Undoing something that was never dismissed is a success, so an undo control cannot fail on a double tap |
 | POST | `/videos/{id}/hls` | starts (or re-aims) a compatible video rendition **without waiting** and returns `{ "state": "pending\|running\|done\|failed", "height": 1080, "hls_progress": 0.37 }`, so a client can prefetch instead of making the viewer wait at play time. `?height=` picks which rendition; without it the one `hls_url` points at. A height the video does not offer (not in `hls_variants`) is **400**. `?from=<seconds>` is the **resume position**: the transcode starts at that point instead of at 0:00, and a job that is already running is re-aimed at it — send it before handing the playlist to a player and again after a seek. A `from` that is not a position inside the video is ignored. Idempotent: a running or finished rendition is not started again |
 
 #### Nav
