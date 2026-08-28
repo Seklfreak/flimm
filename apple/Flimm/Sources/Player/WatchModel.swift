@@ -19,7 +19,10 @@ final class WatchModel {
     private(set) var video: Video?
     private(set) var nav: Nav?
     private(set) var chapters: [Chapter] = []
-    private(set) var upNext: [VideoSummary] = []
+    private(set) var upNext: [VideoSummary] = [] {
+        // A load, a dismissal or an undo: the lock screen has to agree.
+        didSet { nowPlaying.register(hasNext: canGoNext || !upNext.isEmpty, hasPrevious: canGoPrevious) }
+    }
     private(set) var cues: [SubtitleCue] = []
     private(set) var activeCue: String?
     private(set) var activeChapter: Int = -1
@@ -269,7 +272,6 @@ final class WatchModel {
         chapters = loadedChapters
         nav = loadedNav
         upNext = loadedNext
-        nowPlaying.register(hasNext: canGoNext || !upNext.isEmpty, hasPrevious: canGoPrevious)
         await loadSubtitles(detail)
         await loadArtwork(detail)
     }
@@ -356,6 +358,11 @@ final class WatchModel {
         guard next != current else { return }
         await setSpeed(speeds[next])
     }
+
+    /// The list after "Not interested" took a video out or an undo put one
+    /// back: up next never holds a dismissed video (`docs/api.md`), and the
+    /// caller owns the undo, and with it the position to put it back at.
+    func setUpNext(_ videos: [VideoSummary]) { upNext = videos }
 
     /// "Start over": clear the server-side position, then rewind.
     func startOver() async {

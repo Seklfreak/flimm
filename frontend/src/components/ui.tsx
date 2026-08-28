@@ -121,6 +121,23 @@ export function CloseIcon({ size = 16 }: { size?: number }) {
   );
 }
 
+/** A plain chevron; `direction` is where it points. */
+export function ChevronIcon({ size = 16, direction = "right" }: { size?: number; direction?: "left" | "right" }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.5"
+      style={direction === "left" ? { transform: "scaleX(-1)" } : undefined}
+    >
+      <path d="M9 5l7 7-7 7" />
+    </svg>
+  );
+}
+
 export function SearchIcon({ size = 20 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">

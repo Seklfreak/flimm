@@ -1,14 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, EVERYTHING_ID, type VideoSummary } from "@/lib/api";
+import { api, EVERYTHING_ID } from "@/lib/api";
 import { invalidateWatchState, keys, useChapters, useFeeds, usePrefs, useSetWatched, useUpdatePrefs, useUpNext, useVideo } from "@/lib/queries";
 import { fmtDuration, plural, relativeDay } from "@/lib/format";
-import { Avatar, CheckIcon, ErrorState, InfiniteSentinel, Spinner, Toggle } from "@/components/ui";
-import { Thumb, watchHref } from "@/components/VideoCard";
+import { Avatar, CheckIcon, ErrorState, Spinner } from "@/components/ui";
+import { watchHref } from "@/components/VideoCard";
 import { Player, SUBTITLE_OFF, langName, pickTrack, type PlayerHandle } from "@/player/Player";
 import { Chapters } from "@/player/Chapters";
 import { AddToPlaylist } from "@/player/AddToPlaylist";
+import { UpNextPanel } from "@/player/UpNextPanel";
 
 export default function WatchPage() {
   const { id = "" } = useParams();
@@ -172,34 +173,17 @@ export default function WatchPage() {
           <Chapters chapters={chapters} activeIndex={activeChapter} onSeek={onSeekChapter} />
         </div>
       </div>
-      <aside className="flex w-full flex-none flex-col gap-3.5 px-5 md:w-[360px] md:px-0">
-        <div className="flex items-baseline justify-between">
-          <span className="text-[16px] font-extrabold">{contextName ? `Up next in ${contextName}` : "Up next"}</span>
-          <label className="flex items-center gap-2 meta text-[12px]">
-            Autoplay {prefs.autoplay ? "on" : "off"}
-            <Toggle on={prefs.autoplay} onChange={(on) => onPrefs({ autoplay: on })} label="Autoplay" />
-          </label>
-        </div>
-        {upNext.isLoading ? (
-          <Spinner />
-        ) : upNextItems.length === 0 ? (
-          <p className="meta">Nothing more in this context.</p>
-        ) : (
-          upNextItems.map((n: VideoSummary) => (
-            <Link key={n.id} to={watchHref(n, ctx)} className="flex items-center gap-3 text-ink no-underline hover:text-ink">
-              <div className="w-32 flex-none"><Thumb video={n} compact className="!rounded-[10px]" /></div>
-              <span className="flex min-w-0 flex-col gap-[3px]">
-                <span className="text-[14px] font-extrabold leading-[1.25] line-clamp-2">{n.title}</span>
-                <span className="meta text-[12px]">
-                  {n.channel.name} · {fmtDuration(n.duration)}
-                </span>
-              </span>
-            </Link>
-          ))
-        )}
-        <InfiniteSentinel enabled={!!upNext.hasNextPage && !upNext.isFetchingNextPage} onVisible={() => void upNext.fetchNextPage()} />
-        {upNext.isFetchingNextPage && <div className="py-3"><Spinner /></div>}
-      </aside>
+      <UpNextPanel
+        items={upNextItems}
+        title={contextName ? `Up next in ${contextName}` : "Up next"}
+        isLoading={upNext.isLoading}
+        hasNextPage={!!upNext.hasNextPage}
+        isFetchingNextPage={upNext.isFetchingNextPage}
+        fetchNextPage={() => void upNext.fetchNextPage()}
+        ctx={ctx}
+        autoplay={!!prefs?.autoplay}
+        onAutoplay={onPrefs}
+      />
     </div>
   );
 }

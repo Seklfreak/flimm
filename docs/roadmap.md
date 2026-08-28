@@ -2,6 +2,16 @@
 
 ## Done
 
+- **Up next earns its space** (2026-08-28) — two things it was missing.
+  *Not interested* now works from the up-next list, on the web and in the
+  phone/iPad player's details pane (tvOS has no up-next list — the info panel
+  deliberately leaves it out, since autoplay already decides what follows).
+  The video leaves the list rather than staying marked, because up next never
+  contains a dismissed video, and the slot it vacates carries the undo. The
+  web's up-next sidebar also collapses now, with the choice remembered in
+  `localStorage` per browser rather than in `/me/prefs`: there is no sidebar
+  to collapse on a phone or a TV, so it is not an account preference.
+
 - **The resume chip retires itself** (2026-08-28) — "Resumed from 12:31 ·
   Start over" is an offer, useful while a viewer works out where they are and
   in the way afterwards. It now disappears a minute of playback past the

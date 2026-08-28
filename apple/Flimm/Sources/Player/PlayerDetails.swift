@@ -107,6 +107,18 @@ struct UpNextList: View {
     /// squeezing the text sideways.
     var columnWidth: CGFloat?
 
+    @Environment(AppModel.self) private var app
+
+    /// Set right after "Not interested" drops a row — what the undo banner
+    /// acts on. Same shape as ``VideoList``'s, for the same reason.
+    @State private var pendingUndo: PendingDismiss?
+
+    private struct PendingDismiss: Identifiable {
+        let video: VideoSummary
+        let index: Int
+        var id: String { video.id }
+    }
+
     private var stacked: Bool {
         guard let columnWidth else { return false }
         return columnWidth < 260
@@ -136,9 +148,41 @@ struct UpNextList: View {
                         row(video)
                     }
                     .buttonStyle(.plain)
+                    .contextMenu {
+                        DismissMenuItem(video: video, onChange: handleDismiss)
+                    }
+                }
+                if let pendingUndo {
+                    DismissUndoBanner(title: pendingUndo.video.title) {
+                        Task { await undoDismiss(pendingUndo) }
+                    }
                 }
             }
         }
+    }
+
+    // MARK: - Dismiss / undo
+
+    private func handleDismiss(_ updated: VideoSummary) {
+        guard updated.dismissed,
+              let index = model.upNext.firstIndex(where: { $0.id == updated.id }) else { return }
+        withAnimation {
+            pendingUndo = PendingDismiss(video: updated, index: index)
+            model.setUpNext(model.upNext.filter { $0.id != updated.id })
+        }
+        // Every other cached list contains this video too.
+        Task { await app.videoListStateChanged() }
+    }
+
+    /// Back where it was, so the list a viewer was reading does not reshuffle.
+    private func undoDismiss(_ pending: PendingDismiss) async {
+        if pendingUndo?.id == pending.id { pendingUndo = nil }
+        guard let restored = await toggleDismissed(pending.video, client: app.client) else { return }
+        var items = model.upNext
+        guard !items.contains(where: { $0.id == restored.id }) else { return }
+        items.insert(restored, at: min(pending.index, items.count))
+        withAnimation { model.setUpNext(items) }
+        await app.videoListStateChanged()
     }
 
     @ViewBuilder
