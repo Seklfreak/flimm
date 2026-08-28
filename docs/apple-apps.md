@@ -139,6 +139,16 @@ What is there:
     `contentOverlayView` — the tracks are authenticated sidecars an
     `AVPlayerItem` cannot fetch itself. Audio-only plays `audio_aac_url` with
     artwork in the overlay and `MPNowPlayingInfoCenter`.
+  - **A glyph is not a tap target.** An `Image` inside a `Button` is only as
+    tappable as the icon is drawn, which left the phone/iPad transport
+    controls at 17–26pt against Apple's 44pt minimum — and worst on iPad,
+    where the surface is bigger and usually held at arm's length. Every
+    control goes through `.playerHitTarget(_:)` (`PlayerControls.swift`),
+    which is `frame(minWidth:minHeight:)` plus the `contentShape` that makes
+    the padding around the glyph hit-testable: 44pt compact, 52pt regular,
+    with the icons themselves stepping up on iPad too. The scrubber keeps its
+    22pt bar but is dragged over 44 — the touch area is padded out and the
+    layout pulled back by the same amount, so nothing moves.
   - **A finished video invalidates the lists behind the player.** Marking a
     video seen — or playback reaching the end, which reports `watched` through
     the heartbeat — goes through `AppModel.videoWatchedStateChanged()`, which

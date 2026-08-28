@@ -64,7 +64,11 @@ struct ScrubberView: View {
                     .offset(x: width * fraction - (dragValue == nil ? 6 : 9))
                     .shadow(radius: 2)
             }
-            .frame(height: 22)
+            // Drawn 22pt tall, dragged over 44: a thin bar is the right look
+            // and the wrong target, so the touch area is grown and the layout
+            // pulled back by the same amount (below) so nothing moves.
+            .frame(height: PlayerMetrics.scrubberBar)
+            .padding(.vertical, (44 - PlayerMetrics.scrubberBar) / 2)
             .contentShape(Rectangle())
             .gesture(
                 DragGesture(minimumDistance: 0)
@@ -82,7 +86,8 @@ struct ScrubberView: View {
                     }
             )
         }
-        .frame(height: 22)
+        .frame(height: 44)
+        .padding(.vertical, -(44 - PlayerMetrics.scrubberBar) / 2)
         .animation(.easeOut(duration: 0.12), value: dragValue == nil)
     }
 }

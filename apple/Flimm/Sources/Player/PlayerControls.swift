@@ -5,6 +5,34 @@ import SwiftUI
 ///
 /// Everything is a plain SwiftUI control over `AVPlayerLayer`, which is what
 /// buys the chapter ticks and SponsorBlock tints on the scrubber.
+/// Sizes for the transport chrome.
+///
+/// A glyph is not a target: an `Image` in a `Button` is only as tappable as
+/// the icon is big, which left most of these controls around 17–26pt against
+/// Apple's 44pt minimum. The player is the worst place to miss — the video
+/// carries on while the viewer stabs at it — so every control gets a real
+/// target whatever its icon, and the iPad gets more of both: a bigger surface
+/// held further away, usually one-handed at the edge of reach.
+enum PlayerMetrics {
+    static func hitTarget(regular: Bool) -> CGFloat { regular ? 52 : 44 }
+    static func barIcon(regular: Bool) -> CGFloat { regular ? 21 : 17 }
+    static func transportIcon(regular: Bool) -> CGFloat { regular ? 32 : 26 }
+    static func playIcon(regular: Bool) -> CGFloat { regular ? 48 : 40 }
+    static func playTarget(regular: Bool) -> CGFloat { regular ? 68 : 56 }
+    /// The scrubber's drawn height. Its *touch* height is the target above,
+    /// added without moving the bar (see ``ScrubberView``).
+    static let scrubberBar: CGFloat = 22
+}
+
+extension View {
+    /// A tappable area of at least `side`, centred on whatever it wraps.
+    /// `contentShape` is what makes the padding around a glyph hit-testable.
+    func playerHitTarget(_ side: CGFloat) -> some View {
+        frame(minWidth: side, minHeight: side)
+            .contentShape(Rectangle())
+    }
+}
+
 struct PlayerControls: View {
     let model: WatchModel
     var isFullScreen = false
@@ -12,6 +40,11 @@ struct PlayerControls: View {
     let onToggleFullScreen: () -> Void
 
     @Binding var isVisible: Bool
+    @Environment(\.horizontalSizeClass) private var sizeClass
+
+    /// The iPad (and an iPhone in landscape) gets the roomier set.
+    private var regular: Bool { sizeClass == .regular }
+    private var hit: CGFloat { PlayerMetrics.hitTarget(regular: regular) }
 
     var body: some View {
         ZStack {
@@ -45,6 +78,7 @@ struct PlayerControls: View {
         HStack(spacing: 14) {
             Button(action: onClose) {
                 Image(systemName: isFullScreen ? "arrow.down.right.and.arrow.up.left" : "chevron.down")
+                    .playerHitTarget(hit)
             }
             .accessibilityLabel(isFullScreen ? "Exit full screen" : "Close player")
             Spacer(minLength: 0)
@@ -52,6 +86,7 @@ struct PlayerControls: View {
                 Task { await model.toggleAudioOnly() }
             } label: {
                 Image(systemName: model.audioOnly ? "headphones" : "headphones.slash")
+                    .playerHitTarget(hit)
             }
             .accessibilityLabel(model.audioOnly ? "Switch to video" : "Audio only")
             if model.engine.isPiPPossible && !model.audioOnly {
@@ -59,12 +94,13 @@ struct PlayerControls: View {
                     model.engine.togglePiP()
                 } label: {
                     Image(systemName: "pip.enter")
+                        .playerHitTarget(hit)
                 }
                 .accessibilityLabel("Picture in Picture")
             }
             optionsMenu
         }
-        .font(.system(size: 17, weight: .semibold))
+        .font(.system(size: PlayerMetrics.barIcon(regular: regular), weight: .semibold))
         .foregroundStyle(.white)
     }
 
@@ -109,6 +145,7 @@ struct PlayerControls: View {
             }
         } label: {
             Image(systemName: "ellipsis.circle")
+                .playerHitTarget(hit)
         }
     }
 
@@ -185,32 +222,36 @@ struct PlayerControls: View {
                     Task { await model.goPrevious() }
                 } label: {
                     Image(systemName: "backward.end.fill")
+                        .playerHitTarget(hit)
                 }
                 .disabled(!model.canGoPrevious)
                 .opacity(model.canGoPrevious ? 1 : 0.35)
             }
             Button { model.skip(by: -10) } label: {
                 Image(systemName: "gobackward.10")
+                    .playerHitTarget(hit)
             }
             Button { model.togglePlay() } label: {
                 Image(systemName: model.engine.isPlaying ? "pause.fill" : "play.fill")
-                    .font(.system(size: 40, weight: .bold))
-                    .frame(width: 56, height: 56)
+                    .font(.system(size: PlayerMetrics.playIcon(regular: regular), weight: .bold))
+                    .playerHitTarget(PlayerMetrics.playTarget(regular: regular))
             }
             Button { model.skip(by: 10) } label: {
                 Image(systemName: "goforward.10")
+                    .playerHitTarget(hit)
             }
             if model.hasContext {
                 Button {
                     Task { await model.goNext() }
                 } label: {
                     Image(systemName: "forward.end.fill")
+                        .playerHitTarget(hit)
                 }
                 .disabled(!model.canGoNext && model.upNext.isEmpty)
                 .opacity(model.canGoNext || !model.upNext.isEmpty ? 1 : 0.35)
             }
         }
-        .font(.system(size: 26, weight: .semibold))
+        .font(.system(size: PlayerMetrics.transportIcon(regular: regular), weight: .semibold))
         .foregroundStyle(.white)
     }
 
@@ -242,8 +283,11 @@ struct PlayerControls: View {
                 Text(Fmt.duration(model.engine.duration))
                 Button(action: onToggleFullScreen) {
                     Image(systemName: isFullScreen ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
+                        // Its own size, not the row's `.caption`, which made
+                        // this the smallest target on the screen.
+                        .font(.system(size: PlayerMetrics.barIcon(regular: regular), weight: .semibold))
+                        .playerHitTarget(hit)
                 }
-                .padding(.leading, 8)
                 .accessibilityLabel("Toggle full screen")
             }
             .font(.caption.monospacedDigit().weight(.semibold))
