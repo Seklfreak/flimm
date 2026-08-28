@@ -5,11 +5,13 @@ package api
 import (
 	"cmp"
 	"context"
+	"errors"
 	"io/fs"
 	"log/slog"
 	"net/http"
 	"net/http/httputil"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/coreos/go-oidc/v3/oidc"
@@ -93,6 +95,9 @@ type Server struct {
 	frontend      fs.FS
 	// chapters caches derived chapter lists per video id.
 	chapters *chaptersCache
+	// taHealth is the cached, time-boxed answer to "is TubeArchivist
+	// reachable" that /healthz reports; see taStatus.
+	taHealth taHealth
 	// sponsorblock is the segment source; nil uses TA's snapshot.
 	sponsorblock *sponsorblock.Client
 	// minPlaySeconds gates recording a watch event; see Options.
@@ -183,6 +188,7 @@ func (s *Server) Router() http.Handler {
 	}
 
 	r.Get("/healthz", s.healthz)
+	r.Get("/livez", s.livez)
 
 	r.Route("/api/v1", func(r chi.Router) {
 		// Per-user data; never let a browser cache it.
@@ -196,6 +202,7 @@ func (s *Server) Router() http.Handler {
 
 		r.Get("/config", s.getConfig)
 		r.Get("/healthz", s.healthz)
+		r.Get("/livez", s.livez)
 
 		r.Group(func(r chi.Router) {
 			r.Use(s.authMiddleware)
@@ -302,8 +309,15 @@ func (s *Server) getConfig(w http.ResponseWriter, _ *http.Request) {
 	})
 }
 
-// healthz is 200 when the DB answers; `ta` reports TA reachability. Admins
-// (or dev mode) also see the TA error text.
+// healthz answers "can this instance serve traffic": 200 when the database
+// answers, 503 when it does not. `ta` reports TubeArchivist's reachability
+// beside that verdict without deciding it — Flimm still serves its frontend,
+// its auth and everything already cached when the archive is away. Admins (or
+// dev mode) also see the TA error text.
+//
+// This is the readiness endpoint. Point liveness at /livez instead: a database
+// outage is not something restarting the process can fix, and a probe that
+// restarts on it only adds downtime to an outage.
 func (s *Server) healthz(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
@@ -318,13 +332,10 @@ func (s *Server) healthz(w http.ResponseWriter, r *http.Request) {
 			out["db"] = "ok"
 		}
 	}
-	if err := s.ta.Ping(ctx); err != nil {
-		out["ta"] = "unreachable"
-		if s.verifier == nil || s.isAdminEmail(currentEmailFromBearer(s, r)) {
-			out["ta_error"] = err.Error()
-		}
-	} else {
-		out["ta"] = "ok"
+	state, taErr := s.taStatus(ctx)
+	out["ta"] = state
+	if taErr != nil && (s.verifier == nil || s.isAdminEmail(currentEmailFromBearer(s, r))) {
+		out["ta_error"] = taErr.Error()
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(w, status, out)
@@ -362,4 +373,74 @@ func spaHandler(dist fs.FS) http.Handler {
 		}
 		fileServer.ServeHTTP(w, r)
 	})
+}
+
+// ---- health ----
+
+const (
+	// taHealthTimeout bounds the TubeArchivist check inside /healthz.
+	//
+	// A readiness probe gives this endpoint about a second before it counts as
+	// a failure, and TA's reachability is reported beside `status` rather than
+	// deciding it. A slow archive must therefore never be able to make the
+	// probe late: after this long the answer is "slow", which is the honest
+	// thing to report and costs the probe nothing.
+	taHealthTimeout = 500 * time.Millisecond
+	// taHealthTTL reuses the last answer between probes, so probing every ten
+	// seconds does not mean asking TubeArchivist every ten seconds.
+	taHealthTTL = 15 * time.Second
+)
+
+type taHealth struct {
+	mu    sync.Mutex
+	state string
+	err   error
+	exp   time.Time
+}
+
+// taStatus reports TubeArchivist's reachability for /healthz: cached, and
+// time-boxed so a slow archive cannot hold the probe open. It returns the
+// state to publish ("ok", "slow" or "unreachable") and the underlying error,
+// which only an admin gets to see.
+func (s *Server) taStatus(ctx context.Context) (string, error) {
+	s.taHealth.mu.Lock()
+	if time.Now().Before(s.taHealth.exp) {
+		state, err := s.taHealth.state, s.taHealth.err
+		s.taHealth.mu.Unlock()
+		return state, err
+	}
+	s.taHealth.mu.Unlock()
+
+	probe, cancel := context.WithTimeout(ctx, taHealthTimeout)
+	defer cancel()
+	err := s.ta.Ping(probe)
+
+	state := "ok"
+	switch {
+	case err == nil:
+	case ctx.Err() != nil:
+		// The caller went away, not TA. Report it, but do not remember it.
+		return "unknown", err
+	case errors.Is(probe.Err(), context.DeadlineExceeded):
+		state = "slow"
+	default:
+		state = "unreachable"
+	}
+
+	s.taHealth.mu.Lock()
+	s.taHealth.state, s.taHealth.err, s.taHealth.exp = state, err, time.Now().Add(taHealthTTL)
+	s.taHealth.mu.Unlock()
+	return state, err
+}
+
+// livez is the liveness endpoint: 200 whenever the process is running and its
+// router is answering. It deliberately touches nothing else.
+//
+// Liveness answers "should I be restarted", which is a different question from
+// "can I serve traffic" — that one is /healthz. Pointing liveness at a check
+// that reaches the database or TubeArchivist means an outage in either
+// restarts the pod, which cannot fix the outage and adds downtime to it.
+func (s *Server) livez(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "version": BuildVersion})
 }

@@ -103,10 +103,14 @@ spec:
           envFrom:
             - configMapRef: { name: archive-config }
             - secretRef: { name: archive-secrets }
+          # Readiness asks "can this pod take traffic" and so checks the
+          # database; liveness asks "should this pod be restarted" and must
+          # not, because restarting cannot fix a database that is away and
+          # only adds downtime to the outage.
           readinessProbe:
             httpGet: { path: /api/v1/healthz, port: http }
           livenessProbe:
-            httpGet: { path: /api/v1/healthz, port: http }
+            httpGet: { path: /api/v1/livez, port: http }
             periodSeconds: 30
           volumeMounts:
             - name: media-cache

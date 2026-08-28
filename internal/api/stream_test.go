@@ -16,6 +16,12 @@ import (
 type countingTA struct {
 	*ta.Fake
 	lists atomic.Int64
+	pings atomic.Int64
+}
+
+func (c *countingTA) Ping(ctx context.Context) error {
+	c.pings.Add(1)
+	return c.Fake.Ping(ctx)
 }
 
 func (c *countingTA) ListVideos(ctx context.Context, q ta.VideoQuery) (*ta.VideoPage, error) {

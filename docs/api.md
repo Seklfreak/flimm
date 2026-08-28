@@ -302,7 +302,8 @@ Note that TA paginates at a size it chooses (12 by default) and ignores the
 | Method | Path | Notes |
 |---|---|---|
 | GET | `/config` | unauthenticated; app name, OIDC issuer/client id, version |
-| GET | `/healthz` | unauthenticated; 200 when DB ok; `ta` field reports TA reachability |
+| GET | `/healthz` | unauthenticated **readiness**: 200 when the DB answers, 503 when it does not. `ta` reports TubeArchivist as `ok`/`slow`/`unreachable` beside that verdict without deciding it — the check is time-boxed and cached, so a slow archive cannot make the probe late |
+| GET | `/livez` | unauthenticated **liveness**: 200 whenever the process is answering. Touches neither the DB nor TA — restarting fixes neither |
 | GET | `/me` | `{ "id", "name", "email", "is_admin", "prefs": Prefs }` |
 | PATCH | `/me/prefs` | partial update of Prefs, returns Prefs |
 | POST | `/session/media` | sets `flimm_media` cookie, 204 |

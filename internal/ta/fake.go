@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 )
 
 // Fake is an in-memory Client for handler tests. Seed Videos / Channels /
@@ -28,6 +29,9 @@ type Fake struct {
 	Err error
 	// PingErr fails only Ping.
 	PingErr error
+	// PingDelay makes Ping take this long, so a caller that time-boxes it can
+	// be tested against a slow archive rather than only an absent one.
+	PingDelay time.Duration
 	// PageSizeCap makes ListVideos ignore the requested page size and use
 	// this one, the way a real TubeArchivist does.
 	PageSizeCap int
@@ -77,7 +81,14 @@ func (f *Fake) record(s string) {
 	f.Calls = append(f.Calls, s)
 }
 
-func (f *Fake) Ping(context.Context) error {
+func (f *Fake) Ping(ctx context.Context) error {
+	if f.PingDelay > 0 {
+		select {
+		case <-time.After(f.PingDelay):
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
 	if f.PingErr != nil {
 		return f.PingErr
 	}
