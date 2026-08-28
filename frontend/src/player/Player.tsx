@@ -3,7 +3,7 @@ import type { HLSState, Prefs, SubtitleTrack, Video } from "@/lib/api";
 import { fmtDuration } from "@/lib/format";
 import { refreshMediaSession, retryMediaUrl } from "@/lib/media";
 import { trackPlay } from "@/lib/analytics";
-import { useCueSize } from "./cueSize";
+import { useCueLift, useCueSize } from "./cueSize";
 import { CheckIcon, HeadphonesIcon, MediaImg, Popover, Spinner } from "@/components/ui";
 import { useChapters } from "@/lib/queries";
 import { useSponsorSkip } from "./useSponsorSkip";
@@ -29,6 +29,9 @@ import {
 
 const SPEEDS = [0.75, 1, 1.25, 1.5, 1.75, 2];
 const SIZES: Prefs["subtitle_size"][] = ["small", "medium", "large"];
+/** How long the resume chip stays up, in seconds of playback past the resume
+ *  point. Mirrors `ResumeNotice.window` in FlimmKit. */
+const RESUME_NOTICE_SECONDS = 60;
 /** How many fatal network errors to ride out before giving up on a rendition.
  *  A playlist the server cannot open yet answers 503 + Retry-After, and a
  *  segment the encoder has not reached blocks for up to a minute — both are
@@ -270,6 +273,17 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(function Player(
     if (el) el.playbackRate = prefs.playback_speed || 1;
   }, [el, prefs.playback_speed]);
 
+  // "Resumed from 12:31 · Start over" is an offer, not a status: it is worth
+  // making while the viewer is still deciding where they are, and it is in
+  // the way after that. A minute of playback past the resume point retires
+  // it, measured in playback rather than wall clock so a paused player keeps
+  // the offer up. The Apple clients apply the same rule (FlimmKit's
+  // ResumeNotice).
+  useEffect(() => {
+    if (resumedFrom === null) return;
+    if (time - resumedFrom >= RESUME_NOTICE_SECONDS) setResumedFrom(null);
+  }, [time, resumedFrom]);
+
   // Toggle native text tracks to match the chosen one.
   useEffect(() => {
     if (!el) return;
@@ -281,8 +295,10 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(function Player(
     }
   }, [el, activeTrack, video.subtitles]);
 
-  // Cue size follows the player box, not the browser's idea of an em.
+  // Cue size follows the player box, not the browser's idea of an em, and
+  // cues sit a couple of lines above the bottom edge rather than on it.
   useCueSize(el, prefs.subtitle_size);
+  useCueLift(el);
   useSponsorSkip(el, video.sponsorblock, prefs.skip_sponsors);
   const highlight = highlightToOffer(video.sponsorblock, time);
   useProgressHeartbeat(el, video.id, onWatched, playlistId);

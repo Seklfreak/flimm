@@ -39,6 +39,54 @@ export function cueFontSize(height: number, size: Prefs["subtitle_size"]): numbe
   return Math.round(Math.max(MIN_CUE_PX[size], scaled));
 }
 
+/**
+ * Which line cues sit on, counted from the bottom (WebVTT's own convention).
+ * The browser default is the last line, tight against the bottom edge and
+ * behind the control bar whenever it is up; -3 leaves about two lines of
+ * clearance without pushing captions into the middle of the picture. The
+ * Apple clients pad their own overlay off the bottom for the same reason.
+ */
+export const CUE_LINE = -3;
+
+/**
+ * Lifts cues off the bottom edge. Only cues that left their position to the
+ * browser are moved — a VTT that places a cue itself (on-screen text it is
+ * dodging, say) means it, and is left alone.
+ */
+export function useCueLift(el: HTMLVideoElement | null): void {
+  useEffect(() => {
+    if (!el) return;
+    const tracks = el.textTracks;
+    const lift = (track: TextTrack) => {
+      for (const cue of Array.from(track.cues ?? [])) {
+        const vtt = cue as VTTCue;
+        if (vtt.line === "auto") vtt.line = CUE_LINE;
+      }
+    };
+    // Cues arrive with the .vtt, long after this runs, so the first cuechange
+    // is where a freshly loaded track gets lifted.
+    const onCueChange = (e: Event) => lift(e.target as TextTrack);
+    const attach = () => {
+      for (let i = 0; i < tracks.length; i++) {
+        // jsdom's TextTrack is a stub without the event methods; the optional
+        // calls keep the player mountable in tests.
+        tracks[i].addEventListener?.("cuechange", onCueChange);
+        lift(tracks[i]);
+      }
+    };
+    attach();
+    // A language switch mounts a new <track>; re-running attach is safe
+    // because the same listener on the same track is added only once.
+    tracks.addEventListener?.("addtrack", attach);
+    tracks.addEventListener?.("change", attach);
+    return () => {
+      tracks.removeEventListener?.("addtrack", attach);
+      tracks.removeEventListener?.("change", attach);
+      for (let i = 0; i < tracks.length; i++) tracks[i].removeEventListener?.("cuechange", onCueChange);
+    };
+  }, [el]);
+}
+
 const STYLE_ID = "flimm-cue-size";
 
 function cueStyle(): HTMLStyleElement {

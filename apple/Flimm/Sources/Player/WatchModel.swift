@@ -546,6 +546,11 @@ final class WatchModel {
         // The retry window measures "how long without playback", so it rolls
         // forward while the rendition is actually playing.
         if usingCompatibleRendition, engine.isReady { compatibleSince = Date() }
+        // The "Resumed from …" offer retires itself once it has been on
+        // screen for a minute of playback; see ``ResumeNotice``.
+        if let resumed = resumedFrom, !ResumeNotice.isVisible(resumedFrom: resumed, currentTime: time) {
+            resumedFrom = nil
+        }
         activeCue = WebVTT.cue(at: time, in: cues)?.text
         activeChapter = ChapterMath.index(of: time, in: chapters)
         applySponsorSegments(at: time)

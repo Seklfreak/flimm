@@ -48,7 +48,10 @@ feeds without leaving the page.
   offers an undo without navigating away, because the action is one tap from a
   card and easy to hit by accident.
 - **Resume is automatic.** A chip in the top-left says where playback resumed
-  from, with *Start over*. Position is reported by heartbeat while playing.
+  from, with *Start over*. It is an offer rather than a status, so it retires
+  itself after a minute of playback past the resume point — measured in
+  playback, so pausing to decide does not spend the minute. Position is
+  reported by heartbeat while playing.
 - A video flips to **seen** automatically at about 90 % (or with 30 s left).
   *Mark seen* is the primary action under the video; *Mark unseen* clears the
   position.

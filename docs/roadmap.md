@@ -2,6 +2,14 @@
 
 ## Done
 
+- **The resume chip retires itself** (2026-08-28) — "Resumed from 12:31 ·
+  Start over" is an offer, useful while a viewer works out where they are and
+  in the way afterwards. It now disappears a minute of playback past the
+  resume point on all four clients, the rule living in FlimmKit's
+  `ResumeNotice` for the Apple ones and mirrored in the web player. Measured
+  in playback rather than wall clock, so a pause to decide does not spend the
+  minute.
+
 - **Web subtitles are sized off the player again** (2026-08-28) — cues were
   sized in `em` (`0.55/0.7/0.9em`), which relied on Chrome resolving that
   against its own default cue size, 5% of the video height. Chrome now
@@ -12,7 +20,10 @@
   multiplied through that 5%, so the settings mean what they always meant),
   with a per-setting floor so the three stay distinct in a small window. The
   Apple clients already drew their own overlay at explicit point sizes and
-  needed no change.
+  needed no change. Web cues also sit two lines above the bottom edge now
+  (WebVTT `line: -3`, applied only where the .vtt left placement to the
+  browser) rather than against it and under the control bar — the clearance
+  the Apple overlays already had.
 
 - **Usage analytics on all four clients** (2026-08-28) — Flimm now reports to
   a self-hosted [Umami](https://umami.is) instance from the web app, the

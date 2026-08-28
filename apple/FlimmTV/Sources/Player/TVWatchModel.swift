@@ -491,6 +491,11 @@ final class TVWatchModel {
         // The retry window measures "how long without playback", so it rolls
         // forward while the rendition is actually playing.
         if usingCompatibleRendition, isReady { compatibleSince = Date() }
+        // The "Resumed from …" offer retires itself once it has been on
+        // screen for a minute of playback; see ``ResumeNotice``.
+        if let resumed = resumedFrom, !ResumeNotice.isVisible(resumedFrom: resumed, currentTime: seconds) {
+            resumedFrom = nil
+        }
         activeCue = WebVTT.cue(at: seconds, in: cues)?.text
         let segments = video?.sponsorblock ?? []
         if prefs.skipSponsors, let segment = SponsorRules.segmentToSkip(at: seconds, in: segments) {
