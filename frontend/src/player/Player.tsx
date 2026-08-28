@@ -3,6 +3,7 @@ import type { HLSState, Prefs, SubtitleTrack, Video } from "@/lib/api";
 import { fmtDuration } from "@/lib/format";
 import { refreshMediaSession, retryMediaUrl } from "@/lib/media";
 import { trackPlay } from "@/lib/analytics";
+import { useCueSize } from "./cueSize";
 import { CheckIcon, HeadphonesIcon, MediaImg, Popover, Spinner } from "@/components/ui";
 import { useChapters } from "@/lib/queries";
 import { useSponsorSkip } from "./useSponsorSkip";
@@ -280,6 +281,8 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(function Player(
     }
   }, [el, activeTrack, video.subtitles]);
 
+  // Cue size follows the player box, not the browser's idea of an em.
+  useCueSize(el, prefs.subtitle_size);
   useSponsorSkip(el, video.sponsorblock, prefs.skip_sponsors);
   const highlight = highlightToOffer(video.sponsorblock, time);
   useProgressHeartbeat(el, video.id, onWatched, playlistId);
@@ -469,7 +472,7 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(function Player(
           hls.js assigns one of its own and React would fight it. */}
       <video
         ref={setEl}
-        className={`h-full w-full cc-${prefs.subtitle_size} ${audioOnly ? "invisible" : ""}`}
+        className={`h-full w-full ${audioOnly ? "invisible" : ""}`}
         playsInline
         preload="metadata"
         onClick={togglePlay}

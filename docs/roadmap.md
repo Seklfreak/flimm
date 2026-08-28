@@ -2,6 +2,18 @@
 
 ## Done
 
+- **Web subtitles are sized off the player again** (2026-08-28) — cues were
+  sized in `em` (`0.55/0.7/0.9em`), which relied on Chrome resolving that
+  against its own default cue size, 5% of the video height. Chrome now
+  resolves it against the video element's inherited font size — a flat 16px —
+  so every setting collapsed to ~11px, the same in a small window and in
+  fullscreen. The scale now lives in `frontend/src/player/cueSize.ts`, which
+  measures the player box and writes the size in absolute px (the old factors
+  multiplied through that 5%, so the settings mean what they always meant),
+  with a per-setting floor so the three stay distinct in a small window. The
+  Apple clients already drew their own overlay at explicit point sizes and
+  needed no change.
+
 - **Usage analytics on all four clients** (2026-08-28) — Flimm now reports to
   a self-hosted [Umami](https://umami.is) instance from the web app, the
   iPhone, the iPad and the Apple TV, so it is possible to see which screens
