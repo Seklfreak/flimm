@@ -53,6 +53,17 @@ func writeError(w http.ResponseWriter, status int, msg string) {
 
 // writeTAError maps a TA client error: 404 for unknown resources (never
 // leaking existence), 502 when TA is down, 500 otherwise.
+// writeListError is writeTAError plus the one failure a lazily composed list
+// adds: a cursor that cannot be used. That is the caller's mistake to fix by
+// restarting the list, so it is a 400 rather than a silent reset to page 0.
+func (s *Server) writeListError(w http.ResponseWriter, what string, err error) {
+	if errors.Is(err, errBadCursor) {
+		writeError(w, http.StatusBadRequest, "invalid cursor")
+		return
+	}
+	s.writeTAError(w, what, err)
+}
+
 func (s *Server) writeTAError(w http.ResponseWriter, what string, err error) {
 	switch {
 	case errors.Is(err, ta.ErrNotFound):
@@ -96,17 +107,25 @@ type Page[T any] struct {
 	PageSize int   `json:"page_size"`
 	Total    int64 `json:"total"`
 	HasMore  bool  `json:"has_more"`
+	// NextCursor resumes exactly here on the next request. Absent when there
+	// is nothing more, and on lists that are not composed lazily.
+	NextCursor string `json:"next_cursor,omitempty"`
 }
 
 type paging struct {
 	Page, Size int
+	// Cursor is the opaque `next_cursor` from a previous response. When it is
+	// set the offset is not used at all: the cursor already says where to
+	// resume, which is what makes a deep page cost the same as the first.
+	Cursor string
 }
 
 func (p paging) offset() int { return p.Page * p.Size }
 
-// parsePaging reads page (0-based) and page_size (default 30, max 100).
+// parsePaging reads page (0-based), page_size (default 30, max 100) and an
+// optional cursor.
 func parsePaging(r *http.Request) paging {
-	p := paging{Size: defaultPageSize}
+	p := paging{Size: defaultPageSize, Cursor: r.URL.Query().Get("cursor")}
 	if v, err := strconv.Atoi(r.URL.Query().Get("page")); err == nil && v >= 0 {
 		p.Page = v
 	}
@@ -125,25 +144,6 @@ func slicePage[T any](items []T, p paging) Page[T] {
 		out = []T{}
 	}
 	return Page[T]{Items: out, Page: p.Page, PageSize: p.Size, Total: int64(len(items)), HasMore: to < len(items)}
-}
-
-// windowPage wraps the result of a lazy compose: `prefix` is everything
-// composed up to and including the requested window, and `more` says the
-// streams had at least one item left over.
-func windowPage[T any](prefix []T, more bool, p paging) Page[T] {
-	from := min(p.offset(), len(prefix))
-	to := min(from+p.Size, len(prefix))
-	out := prefix[from:to]
-	if out == nil {
-		out = []T{}
-	}
-	return Page[T]{
-		Items:    out,
-		Page:     p.Page,
-		PageSize: p.Size,
-		Total:    int64(len(prefix)),
-		HasMore:  more || to < len(prefix),
-	}
 }
 
 // parallel runs fn over items with at most fanoutLimit in flight; the first

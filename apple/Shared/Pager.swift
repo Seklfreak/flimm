@@ -10,7 +10,12 @@ import Observation
 @MainActor
 @Observable
 final class Pager<Item: Codable & Sendable & Hashable & Identifiable> {
-    typealias Fetch = @MainActor (_ page: Int) async throws -> Page<Item>
+    /// A page request: the offset a caller would have asked for, and the
+    /// cursor the last response handed back. Lists the server composes lazily
+    /// (feed and channel videos) should send the cursor — it resumes exactly
+    /// where the last page stopped, where an offset makes the server walk
+    /// every page before it. Lists that are not composed lazily ignore it.
+    typealias Fetch = @MainActor (_ page: Int, _ cursor: String?) async throws -> Page<Item>
 
     private(set) var items: [Item] = []
     /// The server's `total`, which is a **floor** while `hasMore` is true —
@@ -27,20 +32,27 @@ final class Pager<Item: Codable & Sendable & Hashable & Identifiable> {
 
     private let fetch: Fetch
     private var nextPage = 0
+    private var nextCursor: String?
 
     init(fetch: @escaping Fetch) {
         self.fetch = fetch
+    }
+
+    /// For a list with no cursor of its own — most of them.
+    convenience init(fetch: @escaping @MainActor (_ page: Int) async throws -> Page<Item>) {
+        self.init(fetch: { page, _ in try await fetch(page) })
     }
 
     func reload() async {
         isLoading = true
         defer { isLoading = false }
         do {
-            let page = try await fetch(0)
+            let page = try await fetch(0, nil)
             items = page.items
             total = page.total
             hasMore = page.hasMore
             nextPage = 1
+            nextCursor = page.nextCursor
             error = nil
         } catch is CancellationError {
             return
@@ -55,7 +67,7 @@ final class Pager<Item: Codable & Sendable & Hashable & Identifiable> {
         isLoadingMore = true
         defer { isLoadingMore = false }
         do {
-            let page = try await fetch(nextPage)
+            let page = try await fetch(nextPage, nextCursor)
             // Ids can repeat when the underlying list shifts between pages;
             // dropping the duplicates keeps SwiftUI's diffing sane.
             let known = Set(items.map(\.id))
@@ -63,6 +75,7 @@ final class Pager<Item: Codable & Sendable & Hashable & Identifiable> {
             total = page.total
             hasMore = page.hasMore
             nextPage += 1
+            nextCursor = page.nextCursor
         } catch {
             // Silent: the sentinel reappears and tries again on the next scroll.
         }

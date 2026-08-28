@@ -158,18 +158,17 @@ func (s *Server) listChannelVideos(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid sort")
 		return
 	}
-	p := parsePaging(r)
-	prefix, more, err := s.buildWindow(r.Context(), uid, listOpts{
+	page, err := s.listVideosPage(r.Context(), uid, listOpts{
 		ChannelIDs:    []string{id},
 		Sort:          sortKey,
 		IncludeShorts: true,
 		UnseenOnly:    r.URL.Query().Get("view") == "unseen",
-	}, p.offset()+p.Size+1)
+	}, parsePaging(r))
 	if err != nil {
-		s.writeTAError(w, "list channel videos", err)
+		s.writeListError(w, "list channel videos", err)
 		return
 	}
-	writeJSON(w, http.StatusOK, windowPage(prefix, more, p))
+	writeJSON(w, http.StatusOK, page)
 }
 
 func (s *Server) listChannelPlaylists(w http.ResponseWriter, r *http.Request) {

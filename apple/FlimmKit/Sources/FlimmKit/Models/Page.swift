@@ -17,6 +17,11 @@ public struct Page<Item: Codable & Sendable & Hashable>: Codable, Sendable, Hash
     /// older than the field, hence optional.
     private let moreRemaining: Bool?
 
+    /// Resumes exactly here on the next request. Following it keeps a deep
+    /// page as cheap as the first; asking for the offset instead makes the
+    /// server walk every page before it. Absent when there is nothing more.
+    public let nextCursor: String?
+
     /// True while more pages remain — the infinite-scroll condition.
     ///
     /// The server's flag wins where it exists. Measuring the offset against
@@ -29,19 +34,21 @@ public struct Page<Item: Codable & Sendable & Hashable>: Codable, Sendable, Hash
         page: Int = 0,
         pageSize: Int = Page.defaultSize,
         total: Int = 0,
-        hasMore: Bool? = nil
+        hasMore: Bool? = nil,
+        nextCursor: String? = nil
     ) {
         self.items = items
         self.page = page
         self.pageSize = pageSize
         self.total = total
         self.moreRemaining = hasMore
+        self.nextCursor = nextCursor
     }
 
     /// `hasMore` carries the wire name; the stored property is called
     /// something else so the computed one above can keep the good name.
     private enum CodingKeys: String, CodingKey {
-        case items, page, pageSize, total, hasMore
+        case items, page, pageSize, total, hasMore, nextCursor
     }
 
     public init(from decoder: any Decoder) throws {
@@ -51,6 +58,7 @@ public struct Page<Item: Codable & Sendable & Hashable>: Codable, Sendable, Hash
         pageSize = try c.decode(.pageSize, or: Page.defaultSize)
         total = try c.decode(.total, or: 0)
         moreRemaining = try c.decodeIfPresent(Bool.self, forKey: .hasMore)
+        nextCursor = try c.decodeIfPresent(String.self, forKey: .nextCursor)
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -60,5 +68,6 @@ public struct Page<Item: Codable & Sendable & Hashable>: Codable, Sendable, Hash
         try c.encode(pageSize, forKey: .pageSize)
         try c.encode(total, forKey: .total)
         try c.encodeIfPresent(moreRemaining, forKey: .hasMore)
+        try c.encodeIfPresent(nextCursor, forKey: .nextCursor)
     }
 }

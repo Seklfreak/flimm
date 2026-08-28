@@ -35,6 +35,18 @@ struct QueryBuilder {
         add("page_size", size)
     }
 
+    /// A cursor replaces the offset rather than joining it: the cursor already
+    /// says where to resume, and sending both would only invite them to
+    /// disagree.
+    mutating func page(_ page: Int?, size: Int?, cursor: String?) {
+        if let cursor, !cursor.isEmpty {
+            add("cursor", cursor)
+            add("page_size", size)
+            return
+        }
+        self.page(page, size: size)
+    }
+
     mutating func append(contentsOf other: [URLQueryItem]) {
         items.append(contentsOf: other)
     }

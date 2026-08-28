@@ -449,12 +449,12 @@ func (s *Server) listFeedVideos(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, slicePage(items, p))
 		return
 	}
-	prefix, more, err := s.buildWindow(r.Context(), uid, o, p.offset()+p.Size+1)
+	page, err := s.listVideosPage(r.Context(), uid, o, p)
 	if err != nil {
-		s.writeTAError(w, "list feed videos", err)
+		s.writeListError(w, "list feed videos", err)
 		return
 	}
-	writeJSON(w, http.StatusOK, windowPage(prefix, more, p))
+	writeJSON(w, http.StatusOK, page)
 }
 
 func (s *Server) markFeedSeen(w http.ResponseWriter, r *http.Request) {

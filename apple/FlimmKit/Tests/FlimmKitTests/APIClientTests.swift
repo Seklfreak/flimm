@@ -83,6 +83,24 @@ final class APIClientTests: XCTestCase {
         XCTAssertEqual(request.query, "feed=feed-1&page=2&page_size=30")
     }
 
+    /// A cursor replaces the offset. Sending both would let them disagree, and
+    /// the point of the cursor is that the server never has to walk to an
+    /// offset at all.
+    func testCursorReplacesTheOffset() async throws {
+        let session = StubURLProtocol.session(json: Fixtures.page)
+        let client = APIClient(baseURL: baseURL, tokens: StaticTokenProvider("tok"), session: session)
+
+        _ = try await client.feedVideos("feed-1", view: .unseen, page: 3, cursor: "abc123", pageSize: 30)
+        var request = try XCTUnwrap(StubURLProtocol.recorded.last)
+        XCTAssertEqual(request.path, "/api/v1/feeds/feed-1/videos")
+        XCTAssertEqual(request.query, "view=unseen&cursor=abc123&page_size=30")
+
+        // No cursor yet — the first page still asks by offset.
+        _ = try await client.channelVideos("UC-1", view: .all, page: 0, pageSize: 30)
+        request = try XCTUnwrap(StubURLProtocol.recorded.last)
+        XCTAssertEqual(request.query, "view=all&page=0&page_size=30")
+    }
+
     func testNavWithoutContextSendsNoQuery() async throws {
         let session = StubURLProtocol.session(json: Fixtures.navDetached)
         let client = APIClient(baseURL: baseURL, session: session)

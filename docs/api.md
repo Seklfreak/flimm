@@ -263,7 +263,7 @@ resolve, so a stale pin can never wedge the sidebar.
 ### Page
 List endpoints take `page` (0-based) and `page_size` (default 30, max 100) and
 return `{ "items": [...], "page": 0, "page_size": 30, "total": 123,
-"has_more": true }`.
+"has_more": true, "next_cursor": "…" }`.
 
 **Page on `has_more`, never on `total`.** Video lists are composed lazily: the
 server merges the feed's channels, applies its filters and the user's watch and
@@ -277,6 +277,18 @@ There is no ceiling on how large a list can be. Composition is bounded only by
 `maxComposeVideos`, how many TubeArchivist rows a single request may walk while
 filling its window — reached only when the filters reject nearly everything,
 never by ordinary browsing.
+
+**Follow `next_cursor`.** Feed and channel video lists also return an opaque
+`next_cursor` alongside `has_more`; send it back as `?cursor=…` (instead of
+`page`, not alongside it) and the server resumes exactly where the last page
+stopped. Offset paging still works and still costs what it always did — `page=40`
+makes the server walk the forty pages before it — so a client should ask for
+`page=0` once and follow cursors from then on. A cursor belongs to the list
+that issued it: sending one to a different list, or a different view of the
+same list, is **400 `invalid cursor`**, because quietly serving page 0 instead
+would show the reader everything twice. Restart the list from `page=0` if that
+happens. Lists that are not composed lazily (playlists, history, channels,
+search, up next, "continue watching") have no cursor and page by offset.
 
 `unseen_count` on a feed is unrelated to any of this and can still read higher
 than a list; see the Feed section.

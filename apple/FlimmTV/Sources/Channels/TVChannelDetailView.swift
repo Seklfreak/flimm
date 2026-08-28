@@ -178,8 +178,8 @@ struct TVChannelDetailView: View {
             pager = cached
             return
         }
-        let next = Pager<VideoSummary> { page in
-            try await client.channelVideos(id, view: view, page: page)
+        let next = Pager<VideoSummary> { page, cursor in
+            try await client.channelVideos(id, view: view, page: page, cursor: cursor)
         }
         app.pagers.insert(next, for: key)
         pager = next

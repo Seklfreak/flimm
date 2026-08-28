@@ -5,7 +5,7 @@ import {
   useQueryClient,
   type QueryClient,
 } from "@tanstack/react-query";
-import { api, type Feed, type FeedInput, type Page, type Prefs, type VideoSummary, EVERYTHING_ID } from "./api";
+import { api, type Feed, type FeedInput, type Page, type PageAt, type Prefs, type VideoSummary, EVERYTHING_ID } from "./api";
 
 export const keys = {
   me: ["me"] as const,
@@ -43,6 +43,21 @@ export function pageParams<T>() {
       if (last.has_more !== undefined) return last.has_more ? last.page + 1 : undefined;
       const seen = (last.page + 1) * last.page_size;
       return seen < last.total ? last.page + 1 : undefined;
+    },
+  };
+}
+
+// Cursor adapter for the lazily composed video lists. The server hands back a
+// `next_cursor` that resumes exactly where the last page stopped; following it
+// keeps a deep page as cheap as the first, where asking for `page=40` makes
+// the server walk the forty pages before it.
+export function cursorParams<T>() {
+  return {
+    initialPageParam: { page: 0 } as PageAt,
+    getNextPageParam: (last: Page<T>, _pages: Page<T>[], lastParam: PageAt): PageAt | undefined => {
+      const more = last.has_more ?? (last.page + 1) * last.page_size < last.total;
+      if (!more) return undefined;
+      return { page: lastParam.page + 1, cursor: last.next_cursor };
     },
   };
 }
@@ -94,7 +109,7 @@ export function useFeedVideos(id: string, view: "unseen" | "continue" | "all" | 
   return useInfiniteQuery({
     queryKey: keys.feedVideos(id, view),
     queryFn: ({ pageParam }) => api.feedVideos(id, view, pageParam),
-    ...pageParams(),
+    ...cursorParams<VideoSummary>(),
   });
 }
 
@@ -213,7 +228,7 @@ export function useChannelVideos(id: string, view: "all" | "unseen") {
   return useInfiniteQuery({
     queryKey: keys.channelVideos(id, view),
     queryFn: ({ pageParam }) => api.channelVideos(id, view, pageParam),
-    ...pageParams(),
+    ...cursorParams<VideoSummary>(),
   });
 }
 

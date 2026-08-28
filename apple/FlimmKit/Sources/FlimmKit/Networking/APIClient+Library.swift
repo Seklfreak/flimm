@@ -37,11 +37,12 @@ extension APIClient {
         _ id: String,
         view: FeedView? = nil,
         page: Int = 0,
+        cursor: String? = nil,
         pageSize: Int = Page<VideoSummary>.defaultSize
     ) async throws -> Page<VideoSummary> {
         var query = QueryBuilder()
         query.add("view", view)
-        query.page(page, size: pageSize)
+        query.page(page, size: pageSize, cursor: cursor)
         return try await get("/feeds/\(esc(id))/videos", query: query.items)
     }
 
@@ -76,12 +77,13 @@ extension APIClient {
         view: ChannelView = .all,
         sort: FeedSort? = nil,
         page: Int = 0,
+        cursor: String? = nil,
         pageSize: Int = Page<VideoSummary>.defaultSize
     ) async throws -> Page<VideoSummary> {
         var query = QueryBuilder()
         query.add("view", view)
         query.add("sort", sort)
-        query.page(page, size: pageSize)
+        query.page(page, size: pageSize, cursor: cursor)
         return try await get("/channels/\(esc(id))/videos", query: query.items)
     }
 

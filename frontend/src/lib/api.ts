@@ -250,6 +250,11 @@ export interface Page<T> {
   total: number;
   /** Whether another page exists. Page on this, not on `total`. */
   has_more?: boolean;
+  /**
+   * Resumes exactly here on the next request. Following it makes a deep page
+   * cost what the first one did; without it the server re-walks the offset.
+   */
+  next_cursor?: string;
 }
 
 export interface Prefs {
@@ -348,6 +353,21 @@ function qs<T extends object>(params: T): string {
 
 export const PAGE_SIZE = 30;
 
+/**
+ * Where in a list to read from: the first page, or wherever the last response
+ * said to resume. Lists composed lazily by the server (feed and channel
+ * videos) hand back a cursor; following it beats asking for an offset the
+ * server would have to walk to.
+ */
+export interface PageAt {
+  page: number;
+  cursor?: string;
+}
+
+function pageAt(at: PageAt) {
+  return at.cursor ? { cursor: at.cursor, page_size: PAGE_SIZE } : { page: at.page, page_size: PAGE_SIZE };
+}
+
 export const api = {
   // Unauthenticated; used before the OIDC client exists.
   config: (): Promise<AppConfig> =>
@@ -366,8 +386,8 @@ export const api = {
   updateFeed: (id: string, input: FeedInput) => req<Feed>(`/feeds/${id}`, json("PUT", input)),
   deleteFeed: (id: string) => req<void>(`/feeds/${id}`, { method: "DELETE" }),
   reorderFeeds: (ids: string[]) => req<void>("/feeds/reorder", json("POST", { ids })),
-  feedVideos: (id: string, view: FeedView | undefined, page: number) =>
-    req<Page<VideoSummary>>(`/feeds/${id}/videos${qs({ view, page, page_size: PAGE_SIZE })}`),
+  feedVideos: (id: string, view: FeedView | undefined, at: PageAt) =>
+    req<Page<VideoSummary>>(`/feeds/${id}/videos${qs({ view, ...pageAt(at) })}`),
   markFeedSeen: (id: string) => req<void>(`/feeds/${id}/mark-seen`, { method: "POST" }),
 
   channels: (opts: { q?: string; sort?: ChannelSort; unfeeded?: boolean; page: number; page_size?: number }) =>
@@ -375,8 +395,8 @@ export const api = {
       `/channels${qs({ q: opts.q, sort: opts.sort, unfeeded: opts.unfeeded ? "true" : undefined, page: opts.page, page_size: opts.page_size ?? PAGE_SIZE })}`,
     ),
   channel: (id: string) => req<Channel>(`/channels/${id}`),
-  channelVideos: (id: string, view: "all" | "unseen", page: number) =>
-    req<Page<VideoSummary>>(`/channels/${id}/videos${qs({ view, page, page_size: PAGE_SIZE })}`),
+  channelVideos: (id: string, view: "all" | "unseen", at: PageAt) =>
+    req<Page<VideoSummary>>(`/channels/${id}/videos${qs({ view, ...pageAt(at) })}`),
   channelPlaylists: (id: string) => req<PlaylistSummary[]>(`/channels/${id}/playlists`),
   setChannelFeeds: (id: string, feed_ids: string[]) =>
     req<void>(`/channels/${id}/feeds`, json("PUT", { feed_ids })),

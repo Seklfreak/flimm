@@ -104,6 +104,45 @@ describe("feed pagination", () => {
     await waitFor(() => expect(screen.getByText("Video number 8")).toBeTruthy());
   });
 
+  // Following the server's cursor is what keeps a deep page as cheap as the
+  // first; asking for page=40 instead makes the server walk forty pages.
+  it("follows next_cursor instead of asking for an offset", async () => {
+    useFakeObserver();
+    const all = Array.from({ length: 9 }, (_, i) => video({ id: `vid${i}`, title: `Video number ${i}`, position: 0, progress: 0 }));
+    const urls: string[] = [];
+    mockFetch({
+      "GET /api/v1/feeds": [feed()],
+      "GET /api/v1/feeds/f1": feed(),
+      "GET /api/v1/feeds/f1/videos": (url: string) => {
+        urls.push(url);
+        const q = new URL(url, "http://x").searchParams;
+        const at = q.get("cursor") ? Number(q.get("cursor")!.replace("at-", "")) : 0;
+        const items = all.slice(at, at + 3);
+        return {
+          items,
+          page: 0,
+          page_size: 3,
+          total: at + items.length,
+          has_more: at + 3 < all.length,
+          next_cursor: `at-${at + 3}`,
+        };
+      },
+    });
+    renderWithProviders(
+      <Routes>
+        <Route path="/feeds/:id" element={<FeedPage />} />
+      </Routes>,
+      { route: "/feeds/f1" },
+    );
+    await waitFor(() => expect(screen.getByText("Video number 8")).toBeTruthy());
+    const followUps = urls.filter((u) => u.includes("/feeds/f1/videos")).slice(1);
+    expect(followUps.length).toBeGreaterThan(0);
+    for (const u of followUps) {
+      expect(u).toContain("cursor=at-");
+      expect(u).not.toContain("page=");
+    }
+  });
+
   it("stops observing once there is nothing left to load", async () => {
     useFakeObserver();
     mockFetch({
