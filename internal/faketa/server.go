@@ -13,6 +13,12 @@ import (
 	"github.com/Seklfreak/flimm/internal/ta"
 )
 
+// PageSize is what TubeArchivist paginates video lists at by default, and
+// what this stand-in uses regardless of the `page_size` on the request. It is
+// deliberately smaller than anything Flimm asks for: a client that mistakes a
+// short page for the last page must fail here, not only in production.
+const PageSize = 12
+
 // Server answers the subset of the TubeArchivist API that Flimm calls, plus
 // the nginx-style /media/ paths its documents point at.
 //
@@ -106,7 +112,12 @@ func (s *Server) listVideos(w http.ResponseWriter, r *http.Request) {
 	}
 	sortVideos(videos, q.Get("sort"), q.Get("order"))
 
-	pageSize := intParam(q.Get("page_size"), 12)
+	// A real TubeArchivist paginates at the size configured on *its* side and
+	// ignores `page_size` on the request, so the stand-in must too — honouring
+	// it here is what let a client bug (reading a short page as the last one)
+	// look fine in local development while every list in production stopped at
+	// twelve items.
+	const pageSize = PageSize
 	page := intParam(q.Get("page"), 1)
 	total := len(videos)
 	start := (page - 1) * pageSize
@@ -118,7 +129,7 @@ func (s *Server) listVideos(w http.ResponseWriter, r *http.Request) {
 		end = total
 	}
 	last := 0
-	if pageSize > 0 && total > 0 {
+	if total > 0 {
 		last = (total + pageSize - 1) / pageSize
 	}
 	writeJSON(w, http.StatusOK, map[string]any{

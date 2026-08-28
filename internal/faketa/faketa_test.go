@@ -39,8 +39,10 @@ func TestPingAndListing(t *testing.T) {
 	if page.Paginate.TotalHits != len(catalogue.Videos) {
 		t.Errorf("total_hits = %d, want %d", page.Paginate.TotalHits, len(catalogue.Videos))
 	}
-	if len(page.Data) != len(catalogue.Videos) {
-		t.Fatalf("got %d videos, want %d", len(page.Data), len(catalogue.Videos))
+	// One page only: TA ignores the requested page_size and uses its own, so
+	// total_hits is the whole catalogue while data is a single page of it.
+	if len(page.Data) != faketa.PageSize {
+		t.Fatalf("got %d videos, want one page of %d", len(page.Data), faketa.PageSize)
 	}
 	// Newest first, the way every list in the app expects.
 	for i := 1; i < len(page.Data); i++ {

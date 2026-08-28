@@ -221,6 +221,11 @@ video differ.
 `everything` is built-in: read-only except `sort`/`hide_seen`/`include_shorts`
 (stored in prefs), always last.
 
+`unseen_count` is TubeArchivist's unwatched total for the feed's channels. It
+is a **hint, not the list's length**: TA knows nothing about the feed's own
+filters (shorts, subtitles-only) or about videos the user dismissed, so it can
+read higher than `GET /feeds/{id}/videos?view=unseen` reports as its `total`.
+
 ### PlaylistSummary
 ```json
 {
@@ -258,6 +263,14 @@ resolve, so a stale pin can never wedge the sidebar.
 ### Page
 List endpoints take `page` (0-based) and `page_size` (default 30, max 100) and
 return `{ "items": [...], "page": 0, "page_size": 30, "total": 123 }`.
+
+`total` is the length of the composed list, not TubeArchivist's hit count: the
+server merges the channels, applies the feed's filters and the user's watch and
+dismissal state, and pages the result. Composition reads at most 500 videos per
+query (`maxListVideos`), so a very large archive is truncated to the newest 500
+per channel — `unseen_count` can therefore read higher than any list. Note that
+TA paginates at a size it chooses (12 by default) and ignores the `page_size`
+Flimm sends, so a short page from TA never means the last one.
 
 ## Endpoints
 

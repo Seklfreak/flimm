@@ -28,6 +28,9 @@ type Fake struct {
 	Err error
 	// PingErr fails only Ping.
 	PingErr error
+	// PageSizeCap makes ListVideos ignore the requested page size and use
+	// this one, the way a real TubeArchivist does.
+	PageSizeCap int
 	// SearchFn overrides Search.
 	SearchFn func(query string) (*SearchResult, error)
 	// SimilarFn overrides SimilarVideos.
@@ -115,7 +118,12 @@ func (f *Fake) ListVideos(_ context.Context, q VideoQuery) (*VideoPage, error) {
 		all = append(all, *v)
 	}
 	sortVideos(all, q.Sort, q.Order)
+	// A real TubeArchivist decides its own page size and ignores the one on
+	// the request; set PageSizeCap to reproduce that.
 	size := q.PageSize
+	if f.PageSizeCap > 0 {
+		size = f.PageSizeCap
+	}
 	if size <= 0 {
 		size = 12
 	}

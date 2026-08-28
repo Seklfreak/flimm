@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"reflect"
 	"testing"
@@ -256,5 +257,30 @@ func TestConfigIsPublic(t *testing.T) {
 	// never have to infer that from the OIDC fields being empty.
 	if !got.AuthDisabled {
 		t.Error("auth_disabled = false on a server with no verifier")
+	}
+}
+
+// TubeArchivist ignores the page size Flimm asks for and paginates at its own
+// (12 by default). Reading a short page as the last one capped every list at
+// a single TA page: a 369-video channel came back with twelve videos, and so
+// did a feed over a 10,000-video archive.
+func TestListsPageBeyondTubeArchivistsOwnPageSize(t *testing.T) {
+	client := ta.NewFake()
+	client.PageSizeCap = 12
+	for i := range 40 {
+		client.AddVideo(video(fmt.Sprintf("v%02d", i), "A", fmt.Sprintf("2026-08-%02d", (i%28)+1), 600, false))
+	}
+	h := newTestServer(client, newEventStore().querier()).Router()
+
+	rec := do(t, h, http.MethodGet, "/api/v1/channels/A/videos?page=0&page_size=100", "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", rec.Code, rec.Body.String())
+	}
+	page := decode[Page[VideoSummary]](t, rec)
+	if page.Total != 40 {
+		t.Errorf("total = %d, want 40 (stopped at TA's own page size?)", page.Total)
+	}
+	if len(page.Items) != 40 {
+		t.Errorf("items = %d, want 40", len(page.Items))
 	}
 }

@@ -81,17 +81,42 @@ func sortSummaries(items []VideoSummary, sortKey string) {
 }
 
 // fetchAll walks TA pages for one query up to maxListVideos.
+//
+// TubeArchivist chooses its own page size: `page_size` on the request is not
+// honoured by every version, and the response reports the size TA actually
+// used (12 by default). A page shorter than the one we asked for therefore
+// says nothing about whether more exist — reading it as "last page" capped
+// every list in Flimm at a single TA page, so a 369-video channel returned
+// twelve videos and a feed over a 10,000-video archive returned twelve too.
+//
+// Trust TA's own pagination instead, and stop on a page that adds nothing new
+// so a version that ignores `page` as well cannot spin.
 func (s *Server) fetchAll(ctx context.Context, q ta.VideoQuery) ([]ta.Video, error) {
 	q.PageSize = maxPageSize
 	var out []ta.Video
+	seen := make(map[string]bool)
 	for page := 1; len(out) < maxListVideos; page++ {
 		q.Page = page
 		res, err := s.ta.ListVideos(ctx, q)
 		if err != nil {
 			return nil, err
 		}
-		out = append(out, res.Data...)
-		if len(res.Data) == 0 || (res.Paginate.LastPage > 0 && page >= res.Paginate.LastPage) || len(res.Data) < q.PageSize {
+		added := 0
+		for _, v := range res.Data {
+			if seen[v.YoutubeID] {
+				continue
+			}
+			seen[v.YoutubeID] = true
+			out = append(out, v)
+			added++
+		}
+		if added == 0 {
+			break
+		}
+		if res.Paginate.LastPage > 0 && page >= res.Paginate.LastPage {
+			break
+		}
+		if res.Paginate.TotalHits > 0 && len(out) >= res.Paginate.TotalHits {
 			break
 		}
 	}
