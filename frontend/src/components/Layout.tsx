@@ -307,15 +307,15 @@ function FeedPickerSheet({ onClose }: { onClose: () => void }) {
 }
 
 // The mark: a play triangle with a ghost trail behind it — "flimmern", the
-// flicker of a screen. Below ~24px the trail stops reading, so the favicon
-// (frontend/public/favicon.svg) uses a badged variant instead of this one.
+// flicker of a screen. Same geometry as every other place it appears, which
+// scripts/make-icons.py renders from (the app icons, the tvOS layers, the
+// favicon); the viewBox is the glyph's own bounds, so the mark fills the box
+// it is given instead of floating in a third of it.
 function LogoMark() {
   return (
-    <svg className="flex-none text-accent" width="32" height="32" viewBox="0 0 64 64" fill="currentColor" stroke="currentColor" strokeWidth="6" strokeLinejoin="round" aria-hidden="true">
-      <g transform="translate(-1 0)">
-        <path d="M28 18L45 32L28 46Z" transform="translate(-7.5 0)" opacity="0.4" />
-        <path d="M28 18L45 32L28 46Z" />
-      </g>
+    <svg className="flex-none text-accent" width="30" height="29" viewBox="16.5 17.5 30 29" fill="currentColor" stroke="currentColor" strokeWidth="5" strokeLinejoin="round" aria-hidden="true">
+      <path d="M27 20L44 32L27 44Z" transform="translate(-8 0)" opacity="0.38" />
+      <path d="M27 20L44 32L27 44Z" />
     </svg>
   );
 }

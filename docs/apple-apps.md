@@ -24,6 +24,13 @@ What is there:
   App Icon & Top Shelf brand-assets catalogue, and **no** URL scheme, because
   the device grant never redirects back). Both take signing and Sentry from
   the gitignored `Config/Secrets.xcconfig`.
+- **Icon art is generated, not drawn.** `scripts/make-icons.py` renders the
+  iOS icon, the tvOS layered icon and top-shelf images, and the web favicon
+  from one definition of the mark (`brew install librsvg`, then
+  `python3 scripts/make-icons.py`). The glyph's size is stated there as a
+  fraction of each canvas, which is what keeps it the same weight everywhere;
+  edit the shape or the fractions and re-run rather than exporting PNGs by
+  hand.
 - `apple/Shared` — the app code that is genuinely platform-neutral and is
   compiled into both targets: `AppModel`, `Pager`/`PagerStore`, the `Fmt`
   formatting helpers, the palette, the authenticated `MediaImage` and
