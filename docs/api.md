@@ -262,15 +262,27 @@ resolve, so a stale pin can never wedge the sidebar.
 
 ### Page
 List endpoints take `page` (0-based) and `page_size` (default 30, max 100) and
-return `{ "items": [...], "page": 0, "page_size": 30, "total": 123 }`.
+return `{ "items": [...], "page": 0, "page_size": 30, "total": 123,
+"has_more": true }`.
 
-`total` is the length of the composed list, not TubeArchivist's hit count: the
-server merges the channels, applies the feed's filters and the user's watch and
-dismissal state, and pages the result. Composition reads at most 500 videos per
-query (`maxListVideos`), so a very large archive is truncated to the newest 500
-per channel — `unseen_count` can therefore read higher than any list. Note that
-TA paginates at a size it chooses (12 by default) and ignores the `page_size`
-Flimm sends, so a short page from TA never means the last one.
+**Page on `has_more`, never on `total`.** Video lists are composed lazily: the
+server merges the feed's channels, applies its filters and the user's watch and
+dismissal state, and stops as soon as it has one item past the window it was
+asked for. It therefore knows how far it walked but not what lies behind, so
+`total` is a **floor** while `has_more` is true, and exact only once it is
+false. A client that compares `(page + 1) * page_size` against `total` ends the
+list after its first page.
+
+There is no ceiling on how large a list can be. Composition is bounded only by
+`maxComposeVideos`, how many TubeArchivist rows a single request may walk while
+filling its window — reached only when the filters reject nearly everything,
+never by ordinary browsing.
+
+`unseen_count` on a feed is unrelated to any of this and can still read higher
+than a list; see the Feed section.
+
+Note that TA paginates at a size it chooses (12 by default) and ignores the
+`page_size` Flimm sends, so a short page from TA never means the last one.
 
 ## Endpoints
 

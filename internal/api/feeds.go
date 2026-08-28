@@ -437,17 +437,24 @@ func (s *Server) listFeedVideos(w http.ResponseWriter, r *http.Request) {
 		s.writeDBError(w, "load feed", err)
 		return
 	}
-	var items []VideoSummary
+	p := parsePaging(r)
+	// "Continue watching" is driven by the user's own in-progress events, a
+	// bounded list already: only the archive-wide views compose lazily.
 	if r.URL.Query().Get("view") == "continue" {
-		items, err = s.continueList(r.Context(), uid, o.ChannelIDs, o.IncludeShorts)
-	} else {
-		items, err = s.buildList(r.Context(), uid, o)
+		items, err := s.continueList(r.Context(), uid, o.ChannelIDs, o.IncludeShorts)
+		if err != nil {
+			s.writeTAError(w, "list feed videos", err)
+			return
+		}
+		writeJSON(w, http.StatusOK, slicePage(items, p))
+		return
 	}
+	prefix, more, err := s.buildWindow(r.Context(), uid, o, p.offset()+p.Size+1)
 	if err != nil {
 		s.writeTAError(w, "list feed videos", err)
 		return
 	}
-	writeJSON(w, http.StatusOK, slicePage(items, parsePaging(r)))
+	writeJSON(w, http.StatusOK, windowPage(prefix, more, p))
 }
 
 func (s *Server) markFeedSeen(w http.ResponseWriter, r *http.Request) {

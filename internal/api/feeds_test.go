@@ -68,8 +68,10 @@ func TestFeedVideosAllViewSortsAndOverlaysProgress(t *testing.T) {
 	if got := ids(page.Items); !reflect.DeepEqual(got, []string{"b1", "a1"}) {
 		t.Errorf("items = %v, want [b1 a1] (longest first)", got)
 	}
-	if page.Total != 4 {
-		t.Errorf("total = %d, want 4", page.Total)
+	// Composition is lazy: the server walked one item past the window and
+	// stopped, so total is a floor and has_more is what says "keep paging".
+	if !page.HasMore || page.Total < 3 {
+		t.Errorf("page 0 = total %d, has_more %v; want has_more with total >= 3", page.Total, page.HasMore)
 	}
 	a1 := page.Items[1]
 	if a1.Position != 300 || a1.Progress != 0.5 || a1.Watched || a1.LastPlayedAt == nil {
@@ -79,6 +81,10 @@ func TestFeedVideosAllViewSortsAndOverlaysProgress(t *testing.T) {
 	page = decode[Page[VideoSummary]](t, rec)
 	if got := ids(page.Items); !reflect.DeepEqual(got, []string{"a2", "b2"}) {
 		t.Errorf("page 1 = %v, want [a2 b2]", got)
+	}
+	// The last page walked the list out, so here total is exact.
+	if page.HasMore || page.Total != 4 {
+		t.Errorf("page 1 = total %d, has_more %v; want 4 and no more", page.Total, page.HasMore)
 	}
 }
 

@@ -22,6 +22,17 @@ const (
 	maxPageSize     = 100
 	// fanoutLimit bounds concurrent TA requests per API call.
 	fanoutLimit = 8
+	// overlayChunk is how many videos are overlaid with per-user state at a
+	// time while composing lazily: big enough that the database round trip is
+	// amortised, small enough that filling one page does not read far past it.
+	overlayChunk = 120
+
+	// maxComposeVideos bounds how many TA rows one request may walk while
+	// filling its window. Composition is lazy, so a normal page reads barely
+	// more than it returns — but a feed whose channels are entirely watched
+	// would otherwise walk the whole archive to discover it has nothing.
+	maxComposeVideos = 10000
+
 	// maxListVideos caps how many videos are pulled per channel (or for the
 	// everything feed) when building a merged list. Beyond this, older
 	// videos are unreachable through the feed — use search or the channel.
@@ -74,11 +85,17 @@ func decodeBody(r *http.Request, v any) error {
 }
 
 // Page is the common list envelope.
+//
+// `Total` is exact only when `HasMore` is false. Lists composed lazily stop as
+// soon as the requested window is full, so they know how far they have walked
+// but not how much is behind them — clients must page on `has_more`, not by
+// comparing an offset against `total`.
 type Page[T any] struct {
 	Items    []T   `json:"items"`
 	Page     int   `json:"page"`
 	PageSize int   `json:"page_size"`
 	Total    int64 `json:"total"`
+	HasMore  bool  `json:"has_more"`
 }
 
 type paging struct {
@@ -107,7 +124,26 @@ func slicePage[T any](items []T, p paging) Page[T] {
 	if out == nil {
 		out = []T{}
 	}
-	return Page[T]{Items: out, Page: p.Page, PageSize: p.Size, Total: int64(len(items))}
+	return Page[T]{Items: out, Page: p.Page, PageSize: p.Size, Total: int64(len(items)), HasMore: to < len(items)}
+}
+
+// windowPage wraps the result of a lazy compose: `prefix` is everything
+// composed up to and including the requested window, and `more` says the
+// streams had at least one item left over.
+func windowPage[T any](prefix []T, more bool, p paging) Page[T] {
+	from := min(p.offset(), len(prefix))
+	to := min(from+p.Size, len(prefix))
+	out := prefix[from:to]
+	if out == nil {
+		out = []T{}
+	}
+	return Page[T]{
+		Items:    out,
+		Page:     p.Page,
+		PageSize: p.Size,
+		Total:    int64(len(prefix)),
+		HasMore:  more || to < len(prefix),
+	}
 }
 
 // parallel runs fn over items with at most fanoutLimit in flight; the first

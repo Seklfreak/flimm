@@ -29,11 +29,18 @@ export const keys = {
     ["search", { q, scope, unseen, feed }] as const,
 };
 
-// Generic paged → infinite adapter for the { items, page, page_size, total } shape.
+// Generic paged → infinite adapter for the { items, page, page_size, total }
+// shape.
+//
+// `has_more` is the authority: the server composes lists lazily, stopping one
+// item past the window it was asked for, so `total` is only a floor while more
+// remains. Comparing an offset against it would end the list at the first
+// page. `total` stays the fallback for a response without the field.
 export function pageParams<T>() {
   return {
     initialPageParam: 0,
     getNextPageParam: (last: Page<T>) => {
+      if (last.has_more !== undefined) return last.has_more ? last.page + 1 : undefined;
       const seen = (last.page + 1) * last.page_size;
       return seen < last.total ? last.page + 1 : undefined;
     },
@@ -188,7 +195,8 @@ export function useAllChannels() {
       for (;;) {
         const p = await api.channels({ sort: "name", page, page_size: 100 });
         out.push(...p.items);
-        if ((p.page + 1) * p.page_size >= p.total || p.items.length === 0) break;
+        const more = p.has_more ?? (p.page + 1) * p.page_size < p.total;
+        if (!more || p.items.length === 0) break;
         page = p.page + 1;
       }
       return out;

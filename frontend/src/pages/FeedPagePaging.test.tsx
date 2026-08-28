@@ -79,6 +79,31 @@ describe("feed pagination", () => {
     await waitFor(() => expect(screen.getByText("Video number 11")).toBeTruthy(), { timeout: 3000 });
   });
 
+  // The server composes lazily, so `total` is a floor while more remains:
+  // a client that paged on the arithmetic would stop after the first page.
+  it("keeps paging while the server says has_more, whatever total says", async () => {
+    useFakeObserver();
+    const all = Array.from({ length: 9 }, (_, i) => video({ id: `vid${i}`, title: `Video number ${i}`, position: 0, progress: 0 }));
+    mockFetch({
+      "GET /api/v1/feeds": [feed()],
+      "GET /api/v1/feeds/f1": feed(),
+      "GET /api/v1/feeds/f1/videos": (url: string) => {
+        const page = Number(new URL(url, "http://x").searchParams.get("page") ?? 0);
+        const items = all.slice(page * 3, page * 3 + 3);
+        const has_more = (page + 1) * 3 < all.length;
+        // total is only ever "what has been walked so far", never the length.
+        return { items, page, page_size: 3, total: page * 3 + items.length, has_more };
+      },
+    });
+    renderWithProviders(
+      <Routes>
+        <Route path="/feeds/:id" element={<FeedPage />} />
+      </Routes>,
+      { route: "/feeds/f1" },
+    );
+    await waitFor(() => expect(screen.getByText("Video number 8")).toBeTruthy());
+  });
+
   it("stops observing once there is nothing left to load", async () => {
     useFakeObserver();
     mockFetch({

@@ -246,7 +246,10 @@ export interface Page<T> {
   items: T[];
   page: number;
   page_size: number;
+  /** Exact only when `has_more` is false — lists are composed lazily. */
   total: number;
+  /** Whether another page exists. Page on this, not on `total`. */
+  has_more?: boolean;
 }
 
 export interface Prefs {

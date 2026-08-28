@@ -13,6 +13,9 @@ final class Pager<Item: Codable & Sendable & Hashable & Identifiable> {
     typealias Fetch = @MainActor (_ page: Int) async throws -> Page<Item>
 
     private(set) var items: [Item] = []
+    /// The server's `total`, which is a **floor** while `hasMore` is true —
+    /// video lists are composed lazily and stop just past the window they were
+    /// asked for. Safe for capacity hints, not for showing a count.
     private(set) var total = 0
     private(set) var isLoading = false
     private(set) var isLoadingMore = false
