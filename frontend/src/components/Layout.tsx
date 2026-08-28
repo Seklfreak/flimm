@@ -52,10 +52,12 @@ function Sidebar() {
     <aside className="sticky top-0 hidden h-dvh w-[264px] flex-none flex-col gap-[26px] overflow-y-auto border-r border-hair px-5 py-8 md:flex">
       <Link
         to="/"
-        className="flex items-center gap-2.5 px-2.5 text-[22px] font-extrabold tracking-[-0.02em] text-ink no-underline hover:text-ink"
+        className="flex items-center gap-3 px-2.5 text-[28px] font-extrabold tracking-[-0.02em] text-ink no-underline hover:text-ink"
       >
         <LogoMark />
-        {config.app_name}
+        {/* A deployment can call itself anything (APP_NAME); at this size a
+            long one has to give way rather than push the mark off the rail. */}
+        <span className="min-w-0 truncate">{config.app_name}</span>
       </Link>
       <div className="flex flex-col gap-1">
         <div className="sec flex items-center justify-between px-2.5 pb-1">
@@ -309,7 +311,7 @@ function FeedPickerSheet({ onClose }: { onClose: () => void }) {
 // (frontend/public/favicon.svg) uses a badged variant instead of this one.
 function LogoMark() {
   return (
-    <svg className="flex-none text-accent" width="24" height="24" viewBox="0 0 64 64" fill="currentColor" stroke="currentColor" strokeWidth="6" strokeLinejoin="round" aria-hidden="true">
+    <svg className="flex-none text-accent" width="32" height="32" viewBox="0 0 64 64" fill="currentColor" stroke="currentColor" strokeWidth="6" strokeLinejoin="round" aria-hidden="true">
       <g transform="translate(-1 0)">
         <path d="M28 18L45 32L28 46Z" transform="translate(-7.5 0)" opacity="0.4" />
         <path d="M28 18L45 32L28 46Z" />
