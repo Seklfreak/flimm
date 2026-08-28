@@ -21,6 +21,11 @@ struct FeedEditorView: View {
     @State private var isSaving = false
     @State private var error: String?
     @State private var confirmDelete = false
+    /// The form is filled from the feed exactly once. `.task` runs again every
+    /// time this screen reappears — including on the way back from the channel
+    /// picker — and refilling there would throw away the selection the viewer
+    /// just made (and any name they had typed) before Save ever saw it.
+    @State private var hasLoaded = false
 
     private var isNew: Bool { feedId == nil }
 
@@ -83,7 +88,8 @@ struct FeedEditorView: View {
     }
 
     private func load() {
-        guard let feedId, let feed = app.feeds.first(where: { $0.id == feedId }) else { return }
+        guard !hasLoaded, let feedId, let feed = app.feeds.first(where: { $0.id == feedId }) else { return }
+        hasLoaded = true
         name = feed.name
         channelIds = Set(feed.channelIds)
         sort = feed.sort

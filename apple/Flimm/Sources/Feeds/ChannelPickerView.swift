@@ -32,7 +32,15 @@ struct ChannelPickerView: View {
             }
         }
         .listStyle(.plain)
-        .searchable(text: $searchText, prompt: "Search channels")
+        // Always on show. The default placement folds the field into the
+        // navigation bar, where it only appears if you happen to drag the list
+        // down — so a directory of hundreds of channels looks like it has no
+        // search at all.
+        .searchable(
+            text: $searchText,
+            placement: .navigationBarDrawer(displayMode: .always),
+            prompt: "Search channels"
+        )
         .navigationTitle(Fmt.plural(selection.count, "channel"))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {

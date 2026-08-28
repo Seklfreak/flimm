@@ -139,6 +139,12 @@ What is there:
     `contentOverlayView` — the tracks are authenticated sidecars an
     `AVPlayerItem` cannot fetch itself. Audio-only plays `audio_aac_url` with
     artwork in the overlay and `MPNowPlayingInfoCenter`.
+  - **An edit form fills itself once.** `.task` and `.onAppear` run again
+    every time a screen reappears, and in a `NavigationStack` that includes
+    coming back from a pushed child. A form that refills from the server there
+    silently throws away what the viewer just did in that child — which is how
+    picking channels for a feed, going back and pressing Save saved the old
+    list (`FeedEditorView.load()` now guards on `hasLoaded`).
   - **A glyph is not a tap target.** An `Image` inside a `Button` is only as
     tappable as the icon is drawn, which left the phone/iPad transport
     controls at 17–26pt against Apple's 44pt minimum — and worst on iPad,
