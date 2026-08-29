@@ -65,6 +65,20 @@ struct ContentView: View {
             app = AppModel(client: client)
         }
         player.configure(app: app, playback: playback)
+        openDebugVideo()
+    }
+
+    /// Opens a video straight from launch, so a screen that only exists during
+    /// playback can be reached in a simulator without tapping through the app:
+    ///
+    ///     SIMCTL_CHILD_FLIMM_PLAY_VIDEO=<video id> xcrun simctl launch <device> dev.winktech.flimm
+    ///
+    /// Debug builds only; the TV app has the same door (see `TVRootView`).
+    private func openDebugVideo() {
+        #if DEBUG
+        guard let id = ProcessInfo.processInfo.environment["FLIMM_PLAY_VIDEO"], !id.isEmpty else { return }
+        player.play(id)
+        #endif
     }
 }
 

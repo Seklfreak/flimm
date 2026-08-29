@@ -46,10 +46,20 @@ final class NavigationModel {
         case tab(Tab)
     }
 
-    var tab: Tab = .feeds
+    /// Debug builds can open straight onto a tab (`FLIMM_OPEN_TAB=settings`),
+    /// so a screen deep in the shell can be looked at in a simulator without
+    /// tapping through it. A shipped app always opens on Feeds.
+    var tab: Tab = {
+        #if DEBUG
+        if let raw = ProcessInfo.processInfo.environment["FLIMM_OPEN_TAB"], let tab = Tab(rawValue: raw) {
+            return tab
+        }
+        #endif
+        return .feeds
+    }()
     /// Which feed the Feeds screen shows; `nil` until the launch feed is known.
     var feedId: String?
-    /// The Feeds screen's Unseen/Continue/All override. `nil` means "whatever
+    /// The Feeds screen's Unseen/All override. `nil` means "whatever
     /// the feed's own `hide_seen` says" — the server's default, not ours.
     var feedView: FeedView?
     /// Driven by ⌘F and `/`; each screen scopes it to itself so only the

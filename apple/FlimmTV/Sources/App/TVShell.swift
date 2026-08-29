@@ -11,7 +11,17 @@ struct TVShell: View {
     @Environment(AppModel.self) private var app
     @Environment(TVPlayerCoordinator.self) private var player
 
-    @State private var tab: TVTab = .feeds
+    /// Debug builds can open straight onto a tab (`FLIMM_OPEN_TAB=settings`),
+    /// which is how a screen deep in the shell gets looked at in a simulator
+    /// without a remote. A shipped app always opens on Feeds.
+    @State private var tab: TVTab = {
+        #if DEBUG
+        if let raw = ProcessInfo.processInfo.environment["FLIMM_OPEN_TAB"], let tab = TVTab(rawValue: raw) {
+            return tab
+        }
+        #endif
+        return .feeds
+    }()
 
     var body: some View {
         TabView(selection: $tab) {

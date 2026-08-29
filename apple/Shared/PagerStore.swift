@@ -20,8 +20,17 @@ final class PagerStore {
     /// Enough for the screens a user moves between; the oldest is dropped.
     private let limit = 12
 
+    /// The cached list for `key`, if there is one *and* it ever loaded.
+    ///
+    /// A pager whose first load was cancelled — the screen asked for a
+    /// different list before this one answered, which a size-class flip or a
+    /// feed arriving a moment after the screen does — holds no items and never
+    /// will: nothing retries it, because every later pass finds it here and
+    /// hands it straight back. That was a feed reading "All caught up" over
+    /// four unwatched videos. A pager that loaded and *failed* is a different
+    /// thing and is kept: it carries an error the screen offers a retry for.
     func existing<Item>(_ key: String) -> Pager<Item>? {
-        guard let hit = cache[key] as? Pager<Item> else { return nil }
+        guard let hit = cache[key] as? Pager<Item>, hit.hasLoaded else { return nil }
         touch(key)
         return hit
     }
