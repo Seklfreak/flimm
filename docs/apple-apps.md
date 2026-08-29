@@ -24,6 +24,12 @@ What is there:
   App Icon & Top Shelf brand-assets catalogue, and **no** URL scheme, because
   the device grant never redirects back). Both take signing and Sentry from
   the gitignored `Config/Secrets.xcconfig`.
+- **The TV's pages are lit, not black.** `TVPageBackground` (in
+  `Shared/Palette.swift`) fills a tvOS page with a fall from `pageTop` to
+  `pageBottom` and a wide, weak wash of the brand blue off the top-left
+  corner. Flat black across a 65-inch panel reads as a hole with menus
+  floating in it — there is nothing for a row of cards to sit on — and both
+  effects are deliberately too subtle to compete with artwork.
 - **Icon art is generated, not drawn.** `scripts/make-icons.py` renders the
   iOS icon, the tvOS layered icon and top-shelf images, and the web favicon
   from one definition of the mark (`brew install librsvg`, then

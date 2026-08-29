@@ -37,7 +37,7 @@ struct TVRootView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Palette.background)
+        .background { TVPageBackground() }
         .task(id: sessionKey) { syncAppModel() }
     }
 

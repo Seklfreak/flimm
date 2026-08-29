@@ -2,6 +2,14 @@
 
 ## Done
 
+- **The Apple TV's pages have a ground** (2026-08-28) — every tvOS screen was
+  filled with pure black, which at 65 inches reads as a hole that the menus
+  float in. Pages now use the web client's `--c-bg` rather than black,
+  falling a few percent darker towards the bottom, with a wide, weak wash of
+  the brand blue off the top-left corner so the screen looks lit rather than
+  switched off. Both are far below what artwork or a video needs to sit on
+  top of.
+
 - **Subtitles that sit right and stop shouting** (2026-08-28) — the Apple TV
   drew its cues 120pt off the bottom whether or not anything was there, which
   read as floating in the middle of the picture; they now sit 60pt up and step
