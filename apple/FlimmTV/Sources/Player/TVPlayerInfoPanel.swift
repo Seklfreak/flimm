@@ -19,6 +19,11 @@ import SwiftUI
 /// cannot be made to fit does not belong here (which is why "Up next" is not:
 /// autoplay already decides what follows, and the transport bar can step).
 struct TVPlayerInfoPanel: View {
+    /// Shared with the blurred ground behind this, which has to line up with
+    /// it exactly. See `TVPlayerViewController.dressInfoPanel`.
+    static let groundRadius: CGFloat = 28
+    static let groundInset: CGFloat = 12
+
     @Bindable var model: TVWatchModel
 
     var body: some View {
@@ -33,13 +38,20 @@ struct TVPlayerInfoPanel: View {
         }
         .padding(.horizontal, 40)
         .padding(.vertical, 28)
-        // Fill whatever AVKit hands over: the ground behind this — a rounded,
-        // blurred one — is the hosting view's, so that it can be inset and
-        // curved without the content having to know (see
-        // `TVPlayerViewController.dressInfoPanel`). Filling the frame is still
-        // this view's job, or rows sit on moving picture wherever the content
-        // stops short.
+        // Fill whatever AVKit hands over — or rows sit on moving picture
+        // wherever the content stops short — and carry a translucent ground of
+        // its own: enough to read against on its own, with the blur behind it
+        // (`TVPlayerViewController.dressInfoPanel`) doing the rest. Drawn here
+        // rather than only in UIKit so the panel is never left transparent if
+        // AVKit rebuilds its hierarchy, and as a `background` rather than a
+        // clip, because tvOS grows a focused row past its bounds and clipping
+        // would cut it.
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(
+            Color.black.opacity(0.35),
+            in: RoundedRectangle(cornerRadius: TVPlayerInfoPanel.groundRadius, style: .continuous)
+        )
+        .padding(.horizontal, TVPlayerInfoPanel.groundInset)
     }
 
     private var header: some View {

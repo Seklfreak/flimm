@@ -57,9 +57,10 @@ struct TVPlayerOverlay: View {
     private var preparing: some View {
         ZStack {
             Color.black.opacity(0.8)
+            // No spinner of our own: AVKit is already showing one over an item
+            // that has nothing to play yet, and two spinners on one screen
+            // read as two things being waited for.
             VStack(spacing: 24) {
-                ProgressView()
-                    .scaleEffect(1.6)
                 Text(VideoQuality.preparingTitle(model.compatibleProgress))
                     .font(.title2.bold())
                 Text("""

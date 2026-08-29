@@ -69,6 +69,8 @@ struct TVPlayerViewController: UIViewControllerRepresentable {
         private var appliedNav: NavAvailability?
         /// Whether the Info tab has been pinned to the panel's width (once).
         private var pinnedInfoPanel = false
+        /// The panel's ground; see ``dressInfoPanel(_:)``.
+        private let infoPanelGround = UIVisualEffectView(effect: UIBlurEffect(style: .dark))
 
         nonisolated func playerViewController(
             _ playerViewController: AVPlayerViewController,
@@ -99,6 +101,9 @@ struct TVPlayerViewController: UIViewControllerRepresentable {
         /// what `itemGeneration` marks.
         func apply(to controller: AVPlayerViewController) {
             pinInfoPanelWidth()
+            // Re-checked rather than done once: AVKit builds the panel's
+            // hierarchy when the tab is first opened, and can rebuild it.
+            dressInfoPanel()
             let nav = NavAvailability(previous: model.canGoPrevious, next: model.canGoNext)
             if nav != appliedNav {
                 appliedNav = nav
@@ -131,38 +136,39 @@ struct TVPlayerViewController: UIViewControllerRepresentable {
                 host.leadingAnchor.constraint(equalTo: parent.leadingAnchor),
                 host.trailingAnchor.constraint(equalTo: parent.trailingAnchor)
             ])
-            dressInfoPanel(host)
         }
 
-        /// The panel's ground: a dark blur, corners rounded, with a light
-        /// wash of black over it so a bright frame underneath cannot take the
-        /// rows with it. Blur rather than a fill because the video is the
+        /// The frosted half of the panel's ground: a dark blur, rounded and
+        /// inset to sit exactly under the wash the panel itself draws. Blur
+        /// rather than a fill because the video is the
         /// thing being configured — quality, subtitles, speed — and a slab
         /// hides what those settings are being judged against. Inset a little
         /// from the panel's edges, because rounded corners read as rounded
         /// only when there is picture beside them.
-        private func dressInfoPanel(_ host: UIView) {
-            let ground = UIVisualEffectView(effect: UIBlurEffect(style: .dark))
+        ///
+        /// It goes into the panel's *parent*, behind the hosting view, rather
+        /// than inside it: a `UIHostingController` draws its SwiftUI content
+        /// into its own view's layer, so a subview added to that view — even
+        /// at index 0 — lands on top of the rows and hides every one of them.
+        private func dressInfoPanel() {
+            guard let host = infoPanel.viewIfLoaded, let parent = host.superview else { return }
+            guard infoPanelGround.superview !== parent else { return }
+
+            let ground = infoPanelGround
+            ground.removeFromSuperview()
             ground.translatesAutoresizingMaskIntoConstraints = false
-            ground.layer.cornerRadius = 28
+            ground.layer.cornerRadius = TVPlayerInfoPanel.groundRadius
             ground.layer.cornerCurve = .continuous
             ground.clipsToBounds = true
 
-            let tint = UIView()
-            tint.translatesAutoresizingMaskIntoConstraints = false
-            tint.backgroundColor = UIColor.black.withAlphaComponent(0.35)
-            ground.contentView.addSubview(tint)
-
-            host.insertSubview(ground, at: 0)
+            // The wash that makes the rows readable is the panel's own, so it
+            // survives this view not being there; the blur only frosts.
+            parent.insertSubview(ground, belowSubview: host)
             NSLayoutConstraint.activate([
-                ground.leadingAnchor.constraint(equalTo: host.leadingAnchor, constant: 12),
-                ground.trailingAnchor.constraint(equalTo: host.trailingAnchor, constant: -12),
+                ground.leadingAnchor.constraint(equalTo: host.leadingAnchor, constant: TVPlayerInfoPanel.groundInset),
+                ground.trailingAnchor.constraint(equalTo: host.trailingAnchor, constant: -TVPlayerInfoPanel.groundInset),
                 ground.topAnchor.constraint(equalTo: host.topAnchor),
-                ground.bottomAnchor.constraint(equalTo: host.bottomAnchor),
-                tint.leadingAnchor.constraint(equalTo: ground.contentView.leadingAnchor),
-                tint.trailingAnchor.constraint(equalTo: ground.contentView.trailingAnchor),
-                tint.topAnchor.constraint(equalTo: ground.contentView.topAnchor),
-                tint.bottomAnchor.constraint(equalTo: ground.contentView.bottomAnchor)
+                ground.bottomAnchor.constraint(equalTo: host.bottomAnchor)
             ])
         }
 
