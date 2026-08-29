@@ -33,12 +33,13 @@ struct TVPlayerInfoPanel: View {
         }
         .padding(.horizontal, 40)
         .padding(.vertical, 28)
-        // Fill whatever AVKit hands over, and paint the ground outside that
-        // frame: the panel opens over playing video, and a background sized to
-        // the content leaves rows sitting on moving picture wherever the
-        // content stops short.
+        // Fill whatever AVKit hands over: the ground behind this — a rounded,
+        // blurred one — is the hosting view's, so that it can be inset and
+        // curved without the content having to know (see
+        // `TVPlayerViewController.dressInfoPanel`). Filling the frame is still
+        // this view's job, or rows sit on moving picture wherever the content
+        // stops short.
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(Color.black.opacity(0.92))
     }
 
     private var header: some View {

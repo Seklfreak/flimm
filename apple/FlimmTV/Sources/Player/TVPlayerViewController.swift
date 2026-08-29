@@ -86,9 +86,12 @@ struct TVPlayerViewController: UIViewControllerRepresentable {
             self.infoPanel = UIHostingController(rootView: TVPlayerInfoPanel(model: model))
             super.init()
             infoPanel.title = "Flimm"
-            // The panel sits over playing video, and AVKit gives a custom tab
-            // no ground of its own — without this the rows are unreadable.
-            infoPanel.view.backgroundColor = UIColor.black.withAlphaComponent(0.92)
+            // The panel sits over playing video and AVKit gives a custom tab
+            // no ground of its own, so it gets one here — a blur rather than
+            // a black fill, which is both what the rest of tvOS does over
+            // video and what keeps the picture visible behind the settings
+            // you are changing. See `dressInfoPanel()`.
+            infoPanel.view.backgroundColor = .clear
         }
 
         /// Both properties belong to the *item*, not the controller, so they
@@ -127,6 +130,39 @@ struct TVPlayerViewController: UIViewControllerRepresentable {
             NSLayoutConstraint.activate([
                 host.leadingAnchor.constraint(equalTo: parent.leadingAnchor),
                 host.trailingAnchor.constraint(equalTo: parent.trailingAnchor)
+            ])
+            dressInfoPanel(host)
+        }
+
+        /// The panel's ground: a dark blur, corners rounded, with a light
+        /// wash of black over it so a bright frame underneath cannot take the
+        /// rows with it. Blur rather than a fill because the video is the
+        /// thing being configured — quality, subtitles, speed — and a slab
+        /// hides what those settings are being judged against. Inset a little
+        /// from the panel's edges, because rounded corners read as rounded
+        /// only when there is picture beside them.
+        private func dressInfoPanel(_ host: UIView) {
+            let ground = UIVisualEffectView(effect: UIBlurEffect(style: .dark))
+            ground.translatesAutoresizingMaskIntoConstraints = false
+            ground.layer.cornerRadius = 28
+            ground.layer.cornerCurve = .continuous
+            ground.clipsToBounds = true
+
+            let tint = UIView()
+            tint.translatesAutoresizingMaskIntoConstraints = false
+            tint.backgroundColor = UIColor.black.withAlphaComponent(0.35)
+            ground.contentView.addSubview(tint)
+
+            host.insertSubview(ground, at: 0)
+            NSLayoutConstraint.activate([
+                ground.leadingAnchor.constraint(equalTo: host.leadingAnchor, constant: 12),
+                ground.trailingAnchor.constraint(equalTo: host.trailingAnchor, constant: -12),
+                ground.topAnchor.constraint(equalTo: host.topAnchor),
+                ground.bottomAnchor.constraint(equalTo: host.bottomAnchor),
+                tint.leadingAnchor.constraint(equalTo: ground.contentView.leadingAnchor),
+                tint.trailingAnchor.constraint(equalTo: ground.contentView.trailingAnchor),
+                tint.topAnchor.constraint(equalTo: ground.contentView.topAnchor),
+                tint.bottomAnchor.constraint(equalTo: ground.contentView.bottomAnchor)
             ])
         }
 
