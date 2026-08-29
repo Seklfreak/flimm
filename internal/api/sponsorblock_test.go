@@ -172,7 +172,8 @@ func TestVideoDetailWatchEventUnaffected(t *testing.T) {
 	es.events["v1"] = sqlc.WatchEvent{VideoID: "v1", Position: 250, Duration: 1000}
 
 	d := decode[VideoDetail](t, do(t, h, http.MethodGet, "/api/v1/videos/v1", ""))
-	if d.Position != 250 || len(d.Sponsorblock) != 1 {
+	// 250 stored, resumed 15 earlier.
+	if d.Position != 235 || len(d.Sponsorblock) != 1 {
 		t.Errorf("detail position = %v, sponsorblock = %+v", d.Position, d.Sponsorblock)
 	}
 }

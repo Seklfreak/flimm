@@ -63,10 +63,21 @@ return 404 so existence isn't leaked. 502 when TA is unreachable, with
   "has_auto_subtitles": true,
   "watched": false,                    // TA watched flag
   "dismissed": false,                  // taken out of the feeds without watching it
-  "position": 561,                     // resume position in seconds, 0 if none
-  "progress": 0.38,                    // position/duration, 0 or 1 when watched
+  "position": 561,                     // where to resume, in seconds, 0 if none
+  "progress": 0.38,                    // how far the viewer got, 0 or 1 when watched
   "last_played_at": "2026-08-26T15:42:00Z"  // null if never played here
 }
+```
+
+`position` is a **resume point, not a bookmark**: it is 15 seconds behind the
+position last reported, so a viewer coming back lands a little before where
+they stopped rather than mid-sentence. The server owns the rewind so every
+client resumes alike and none implements it; the stored position (and what is
+written back to TubeArchivist) is untouched, and `progress` is computed before
+the rewind, so a card's bar still shows how far the viewer really got. A
+watched video keeps its recorded position — it is started over, not resumed.
+
+```
 ```
 `watched`, `position`, `progress`, `last_played_at` are per-user and come from
 Flimm's `watch_events` table, falling back to TA's watched flag when Flimm

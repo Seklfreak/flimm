@@ -393,6 +393,22 @@ func channelRef(c ta.Channel) ChannelRef {
 	return ChannelRef{ID: c.ChannelID, Name: c.ChannelName, ThumbURL: channelThumbURL(c.ChannelID)}
 }
 
+// resumeRewind is how far back playback picks up from where it was left.
+// Dropping straight into the middle of a sentence costs a viewer more than
+// fifteen seconds does, so the position *reported* to a client is that much
+// earlier than the one stored.
+//
+// It lives here, where the resume point is composed, rather than in four
+// players: the position written back (and on to TubeArchivist) is never
+// moved, and `progress` is computed before the rewind, so a card's bar still
+// shows how far the viewer actually got.
+const resumeRewind = 15
+
+// resumeFrom is where a client should start, given where playback stopped.
+func resumeFrom(position float64) float64 {
+	return max(0, position-resumeRewind)
+}
+
 // summarize builds the per-user VideoSummary: watch state from the user's
 // watch_event when there is one, else TA's flag / progress.
 func summarize(v ta.Video, ev *sqlc.WatchEvent) VideoSummary {
@@ -435,7 +451,12 @@ func summarize(v ta.Video, ev *sqlc.WatchEvent) VideoSummary {
 		if ev != nil {
 			out.Position = ev.Position
 		}
+		// A watched video is not resumed — every client starts it over — so
+		// there is nothing to rewind, and moving it would only misreport
+		// where the viewer got to.
+		return out
 	}
+	out.Position = resumeFrom(out.Position)
 	return out
 }
 
@@ -465,6 +486,9 @@ func summaryFromEvent(ev sqlc.WatchEvent) VideoSummary {
 		LastPlayedAt:  tsPtr(ev.LastPlayedAt),
 	}
 	out.Progress = progressOf(out.Watched, out.Position, out.Duration)
+	if !out.Watched {
+		out.Position = resumeFrom(out.Position)
+	}
 	return out
 }
 

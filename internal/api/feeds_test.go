@@ -74,7 +74,9 @@ func TestFeedVideosAllViewSortsAndOverlaysProgress(t *testing.T) {
 		t.Errorf("page 0 = total %d, has_more %v; want has_more with total >= 3", page.Total, page.HasMore)
 	}
 	a1 := page.Items[1]
-	if a1.Position != 300 || a1.Progress != 0.5 || a1.Watched || a1.LastPlayedAt == nil {
+	// Position is where playback resumes — the rewind off the 300 that was
+	// stored — while progress still reports how far the viewer actually got.
+	if a1.Position != 285 || a1.Progress != 0.5 || a1.Watched || a1.LastPlayedAt == nil {
 		t.Errorf("a1 overlay = %+v", a1)
 	}
 	rec = do(t, h, http.MethodGet, "/api/v1/feeds/"+feed.ID.String()+"/videos?view=all&page_size=2&page=1", "")

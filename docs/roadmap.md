@@ -2,6 +2,22 @@
 
 ## Done
 
+- **Resume gives back fifteen seconds** (2026-08-29) — coming back to a video
+  used to drop the viewer exactly where they stopped, which is usually the
+  middle of a sentence. The resume point reported by the API is now 15 seconds
+  earlier. It is done where the position is composed rather than in four
+  players — resume position is the server's to decide — so the web, phone,
+  iPad and TV all got it without a line of client code; what is stored, and
+  written back to TubeArchivist, is unchanged, and `progress` is still
+  computed from the true position so progress bars do not move.
+
+- **The Apple TV's video settings show the video** (2026-08-29) — the tvOS
+  info panel painted itself an opaque black slab with square corners over the
+  playing video, which is an odd way to present *quality*, *subtitles* and
+  *speed*: the thing being judged was hidden behind the judging. It is now a
+  dark blur with rounded corners, inset from the panel edges, so the picture
+  stays visible behind the settings that change it.
+
 - **The Apple TV's pages have a ground** (2026-08-28) — every tvOS screen was
   filled with pure black, which at 65 inches reads as a hole that the menus
   float in. Pages now use the web client's `--c-bg` rather than black,
@@ -19,9 +35,10 @@
   read as floating in the middle of the picture; they now sit 60pt up and step
   to 240 only while AVKit's transport bar is showing (its delegate is the only
   notice AVKit gives). The black plate behind the words is gone on all three
-  players — web `::cue`, the phone/iPad overlay and the TV's — replaced by two
-  shadows, which hold the same contrast over a bright scene without putting a
-  slab over the picture.
+  players — web `::cue`, the phone/iPad overlay and the TV's — and put back
+  the next day: shadows alone read as thinner over a bright scene, and the
+  plate is what the viewer had been reading against. The placement half of
+  this stands.
 
 - **Sessions that survive time away** (2026-08-28) — the Apple apps asked for
   a sign-in now and then, usually noticed right after an update because an
