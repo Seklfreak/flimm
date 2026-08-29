@@ -2,6 +2,18 @@
 
 ## Done
 
+- **Sessions that survive time away** (2026-08-28) — the Apple apps asked for
+  a sign-in now and then, usually noticed right after an update because an
+  update is what forces the cold launch that asks. Only `invalid_grant` ever
+  signs the apps out, so this was the refresh token dying: providers commonly
+  expire them after a month, and the apps renewed only when a screen asked for
+  data. They now renew on returning to the foreground
+  (`AuthSession.refreshIfNeeded()`), which keeps the provider's rotation
+  inside a live app and rolls the window forward with ordinary use, and a
+  refresh that cannot be written to the Keychain is reported instead of
+  swallowed — that case revokes the token on disk and would otherwise look
+  like a random logout a launch later.
+
 - **The mark fills its canvas** (2026-08-28) — the app icons carried a glyph
   at about a quarter of the icon, which reads as a small mark adrift in a blue
   square at the size a home screen actually shows it. Every piece of icon art

@@ -1,5 +1,8 @@
 import Foundation
 import Observation
+#if canImport(UIKit) && !os(macOS)
+import UIKit
+#endif
 
 /// The app's session: which server, whether we are signed in, and the
 /// ``APIClient`` to use once we are.
@@ -45,6 +48,9 @@ public final class AuthSession {
     private let redirectURI: URL
     private let tokenStore: TokenStore
     private var oidc: OIDCClient?
+    /// Assigned once, on the main actor, and read again only by `deinit`,
+    /// which Swift runs outside the actor — hence the annotation.
+    nonisolated(unsafe) private var foregroundObserver: (any NSObjectProtocol)?
 
     private static let serverKey = "flimm.server"
     /// Sent as the bearer token to a server running without auth. Any
@@ -64,6 +70,34 @@ public final class AuthSession {
         self.session = session
         self.authenticator = authenticator
         self.tokenStore = TokenStore(store: secrets)
+        observeForeground()
+    }
+
+    deinit {
+        if let foregroundObserver { NotificationCenter.default.removeObserver(foregroundObserver) }
+    }
+
+    /// Coming back to the app is the moment to renew, not the moment a screen
+    /// asks for data. Refreshing here keeps the rotation inside a live app —
+    /// a token renewed on the way in cannot be the one killed by the app being
+    /// replaced mid-refresh — and it keeps the window rolling forward for
+    /// someone who opens the app often but reads little.
+    private func observeForeground() {
+        #if canImport(UIKit) && !os(macOS)
+        foregroundObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.willEnterForegroundNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in await self?.refreshIfNeeded() }
+        }
+        #endif
+    }
+
+    /// Renew the access token if it is close to expiring. Silent: nothing on
+    /// screen asked for this, and only `invalid_grant` — which ``TokenStore``
+    /// reports through ``handleDefinitiveSignOut()`` — ends a session.
+    public func refreshIfNeeded() async {
+        guard state == .signedIn, requiresSignIn else { return }
+        await tokenStore.refreshIfStale()
     }
 
     /// The browser strategy where there is a browser. tvOS gets `nil` and the
@@ -220,7 +254,18 @@ public final class AuthSession {
             await tokenStore.onSignOut { [weak self] in
                 await self?.handleDefinitiveSignOut()
             }
+            await tokenStore.onPersistFailure { [weak self] error in
+                await self?.handlePersistFailure(error)
+            }
         }
+    }
+
+    /// A refresh that could not be stored. The session still works, but the
+    /// provider has already revoked the refresh token on disk, so the next
+    /// launch will have to sign in — worth saying now rather than letting it
+    /// look like a random logout later.
+    private func handlePersistFailure(_ error: any Error) {
+        lastError = "Couldn't save your session (\(error)). You may have to sign in again next time."
     }
 
     private func handleDefinitiveSignOut() {

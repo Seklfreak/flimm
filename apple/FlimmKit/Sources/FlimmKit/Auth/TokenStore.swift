@@ -8,6 +8,8 @@ import Foundation
 public actor TokenStore: TokenProvider {
     /// Raised once when the provider answers `invalid_grant`.
     public typealias SignOutHandler = @Sendable () async -> Void
+    /// Raised when refreshed tokens could not be written to the Keychain.
+    public typealias PersistFailureHandler = @Sendable (any Error) async -> Void
 
     private let store: any SecretStore
     private let key: String
@@ -18,6 +20,7 @@ public actor TokenStore: TokenProvider {
     private var clientProvider: (@Sendable () async throws -> OIDCClient)?
     private var tokens: OIDCTokens?
     private var signOut: SignOutHandler?
+    private var persistFailed: PersistFailureHandler?
     /// Concurrent 401s must produce one refresh, not one each.
     private var inFlight: Task<OIDCTokens, any Error>?
 
@@ -73,6 +76,14 @@ public actor TokenStore: TokenProvider {
         self.signOut = handler
     }
 
+    /// Called when a refresh succeeded but its tokens could not be stored.
+    /// Worth hearing about: the provider rotates the refresh token and revokes
+    /// the one we still have on disk, so a failed write is a session that
+    /// works until the app is next launched and then cannot be recovered.
+    public func onPersistFailure(_ handler: PersistFailureHandler?) {
+        self.persistFailed = handler
+    }
+
     public var hasSession: Bool { tokens != nil }
 
     public var current: OIDCTokens? { tokens }
@@ -87,6 +98,17 @@ public actor TokenStore: TokenProvider {
 
     public func refreshAccessToken() async throws -> String? {
         try await renew()?.accessToken
+    }
+
+    /// Renew ahead of need — on returning to the foreground, say — so the
+    /// rotation happens while the app is alive and settled rather than during
+    /// the burst of requests a cold launch fires, or not at all until the
+    /// token has been dead for weeks. Silent about everything: a failure here
+    /// was not asked for by anything on screen, and `renew()` already ends the
+    /// session on the one answer that means it is over.
+    public func refreshIfStale(within leeway: TimeInterval = 600) async {
+        guard let tokens, tokens.isExpired(leeway: leeway) else { return }
+        _ = try? await renew()
     }
 
     private func renew() async throws -> OIDCTokens? {
@@ -112,7 +134,11 @@ public actor TokenStore: TokenProvider {
                 tokenType: refreshed.tokenType,
                 expiresAt: refreshed.expiresAt
             )
-            try? adopt(merged)
+            do {
+                try adopt(merged)
+            } catch {
+                await persistFailed?(error)
+            }
             return merged
         } catch let error as OIDCError where error == .invalidGrant {
             clear()

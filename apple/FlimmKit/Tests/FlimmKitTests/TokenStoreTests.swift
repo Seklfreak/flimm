@@ -1,6 +1,8 @@
 import XCTest
 @testable import FlimmKit
 
+private struct KeychainRefused: Error {}
+
 final class TokenStoreTests: XCTestCase {
     private func tokens(expiresIn: TimeInterval, refresh: String? = "rt") -> OIDCTokens {
         OIDCTokens(accessToken: "at", refreshToken: refresh, idToken: nil, expiresAt: Date().addingTimeInterval(expiresIn))
@@ -17,6 +19,69 @@ final class TokenStoreTests: XCTestCase {
             redirectURI: URL(string: "dev.winktech.flimm://auth")!,
             session: session
         )
+    }
+
+    /// A ``SecretStore`` that reads but refuses to write — a Keychain that is
+    /// there but says no.
+    private final class WriteFailingStore: SecretStore, @unchecked Sendable {
+        private let inner = InMemorySecretStore()
+        func read(_ key: String) throws -> Data? { try inner.read(key) }
+        func write(_ key: String, _ value: Data) throws { throw KeychainRefused() }
+        func delete(_ key: String) throws { try inner.delete(key) }
+    }
+
+    /// Renewing ahead of need is what keeps the rotation inside a live app.
+    func testRefreshIfStaleRenewsATokenThatIsAboutToExpire() async throws {
+        let session = StubURLProtocol.session { _, _ in
+            (200, Data(#"{"access_token":"at-2","refresh_token":"rt-2","token_type":"Bearer","expires_in":600}"#.utf8))
+        }
+        let store = TokenStore(store: InMemorySecretStore())
+        await store.configure(client: client(session: session))
+        try await store.adopt(tokens(expiresIn: 120))
+
+        await store.refreshIfStale()
+
+        let current = await store.current
+        XCTAssertEqual(current?.accessToken, "at-2")
+        XCTAssertEqual(current?.refreshToken, "rt-2")
+    }
+
+    /// ...but a token with hours left is not spent on a round trip.
+    func testRefreshIfStaleLeavesAFreshTokenAlone() async throws {
+        let session = StubURLProtocol.session { _, _ in (500, Data()) }
+        let store = TokenStore(store: InMemorySecretStore())
+        await store.configure(client: client(session: session))
+        try await store.adopt(tokens(expiresIn: 3600))
+
+        await store.refreshIfStale()
+
+        let current = await store.current
+        XCTAssertEqual(current?.accessToken, "at")
+        XCTAssertTrue(StubURLProtocol.recorded.isEmpty)
+    }
+
+    /// The provider has revoked the refresh token we still hold, so a failed
+    /// write is a session that dies at the next launch. It must not be silent.
+    func testAFailedWriteIsReported() async throws {
+        let session = StubURLProtocol.session { _, _ in
+            (200, Data(#"{"access_token":"at-2","refresh_token":"rt-2","token_type":"Bearer","expires_in":600}"#.utf8))
+        }
+        let store = TokenStore(store: WriteFailingStore())
+        await store.configure(client: client(session: session))
+        let reported = Reported()
+        await store.onPersistFailure { _ in await reported.record() }
+
+        // adopt() throws here too; the refresh path is what has to report.
+        try? await store.adopt(tokens(expiresIn: 5))
+        _ = try? await store.refreshAccessToken()
+
+        let count = await reported.count
+        XCTAssertEqual(count, 1)
+    }
+
+    private actor Reported {
+        private(set) var count = 0
+        func record() { count += 1 }
     }
 
     func testPersistsAndReloads() async throws {

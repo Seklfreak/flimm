@@ -345,6 +345,18 @@ reach the provider, so the **server URL is the only thing a user enters**.
    TV, and the app has to say so plainly.
 3. Store tokens in the Keychain. Refresh tokens require the provider to grant
    `offline_access`; without it the app will silently log out.
+   **The refresh token is the session** — there is no cookie behind it — so
+   two things follow. The app renews on returning to the foreground
+   (`AuthSession.refreshIfNeeded()`), not only when a screen happens to ask
+   for data, so the rotation most providers do happens inside a live app and
+   the validity window keeps rolling forward for someone who opens the app
+   often. And a refresh whose tokens could not be *written* is reported
+   (`TokenStore.onPersistFailure`) rather than swallowed: the provider has
+   already revoked the token still on disk, so a silent failure here is a
+   sign-in screen at the next launch with nothing to explain it. A deployment
+   whose provider expires refresh tokens quickly will still sign people out
+   after that long away from the app — it is worth setting that lifetime to
+   something a TV app can survive.
 4. Send `Authorization: Bearer <token>` on every `/api/v1` request.
 
 **Media auth is the part that catches people.** `/media/*` accepts a Bearer
