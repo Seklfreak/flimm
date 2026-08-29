@@ -46,6 +46,25 @@ func taMediaPath(mediaURL string) string {
 	return "/media/" + strings.TrimPrefix(mediaURL, "/")
 }
 
+// rangeSource hands a derivation a way to read the archived file over the
+// loopback: byte ranges, and the TA token kept on this side of it.
+func (s *Server) rangeSource(src string) media.RangeSourceFunc {
+	return func(ctx context.Context, rangeHeader string) (*media.SourceStream, error) {
+		st, err := s.ta.OpenMediaRange(ctx, src, rangeHeader)
+		if err != nil {
+			return nil, err
+		}
+		return &media.SourceStream{
+			Body:          st.Body,
+			StatusCode:    st.StatusCode,
+			ContentLength: st.ContentLength,
+			ContentRange:  st.ContentRange,
+			AcceptRanges:  st.AcceptRanges,
+			ContentType:   st.ContentType,
+		}, nil
+	}
+}
+
 func (s *Server) mediaVideo(w http.ResponseWriter, r *http.Request) {
 	v, err := s.ta.GetVideo(r.Context(), chi.URLParam(r, "id"))
 	if err != nil {
@@ -233,20 +252,7 @@ func (s *Server) mediaFrame(w http.ResponseWriter, r *http.Request) {
 	src := taMediaPath(v.MediaURL)
 	name := media.FrameVariant + "-" + id + "-" + strconv.FormatInt(ms, 10) + media.FrameExt
 	path, err := s.mediaCache.Get(r.Context(), name,
-		media.Frame(s.ffmpegPath, float64(ms)/1000, s.log, func(ctx context.Context, rangeHeader string) (*media.SourceStream, error) {
-			st, err := s.ta.OpenMediaRange(ctx, src, rangeHeader)
-			if err != nil {
-				return nil, err
-			}
-			return &media.SourceStream{
-				Body:          st.Body,
-				StatusCode:    st.StatusCode,
-				ContentLength: st.ContentLength,
-				ContentRange:  st.ContentRange,
-				AcceptRanges:  st.AcceptRanges,
-				ContentType:   st.ContentType,
-			}, nil
-		}))
+		media.Frame(s.ffmpegPath, float64(ms)/1000, s.log, s.rangeSource(src)))
 	if err != nil {
 		// A frame that cannot be cut is not worth an error page: the client
 		// asked for a thumbnail, and the archive has one of its own. Serve
@@ -317,20 +323,7 @@ func (s *Server) mediaPreview(w http.ResponseWriter, r *http.Request) {
 	name := previewName(id)
 	src := taMediaPath(v.MediaURL)
 	s.mediaCache.StartDir(name, media.Preview(s.ffmpegPath, v.Player.Duration, s.log,
-		func(ctx context.Context, rangeHeader string) (*media.SourceStream, error) {
-			st, err := s.ta.OpenMediaRange(ctx, src, rangeHeader)
-			if err != nil {
-				return nil, err
-			}
-			return &media.SourceStream{
-				Body:          st.Body,
-				StatusCode:    st.StatusCode,
-				ContentLength: st.ContentLength,
-				ContentRange:  st.ContentRange,
-				AcceptRanges:  st.AcceptRanges,
-				ContentType:   st.ContentType,
-			}, nil
-		}))
+		s.rangeSource(src)))
 	dir := s.mediaCache.Dir(name)
 	if !media.PreviewReady(dir) {
 		// Being made, or it failed. Either way there is nothing to show yet.

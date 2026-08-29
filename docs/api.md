@@ -337,6 +337,7 @@ Prefs:
   "playback_speed": 1.0,
   "subtitle_lang": "en",               // language code, or "off"; defaults to "en"
   "subtitle_size": "small|medium|large",
+  "normalize_loudness": true,          // even out the volume between channels
   "skip_sponsors": true,               // the master switch for everything below
   "dearrow_titles": "off",             // "off" | "manual" | "all"
   "dearrow_thumbnails": "off",         // set independently of titles
@@ -364,6 +365,11 @@ the frame is cut from the deployment's own copy of the video (cached like any
 other derived media) and no third party is asked for a picture. That endpoint
 falls back to the archive's own thumbnail when a frame cannot be cut, and
 nothing is looked up at all unless a viewer asked for it — see `DEARROW_URL`.
+
+**Loudness normalisation** (`normalize_loudness`, on by default) is what makes
+the player apply `gain_db`. It is on where DeArrow is off, because it asks
+nobody anything, changes nothing about what a video *is*, and only ever turns a
+video down.
 
 `sponsor_actions` always comes back with **every** category the server knows,
 so a client can tell "left alone" from "this build predates the category". A
@@ -402,6 +408,7 @@ its default — send the whole map back, which is what the settings screens do.
 | GET | `/videos/{id}/similar` | VideoSummary[] (TA similar) |
 | GET | `/videos/{id}/comments` | TA comments passthrough |
 | GET | `/videos/{id}/chapters` | chapter markers for the scrubber (see below); cached per video |
+| GET | `/videos/{id}/loudness` | how loud the video is and the gain to play it at — `{ "state": "pending\|running\|done\|failed", "gain_db": -3.9, "target_lufs": -18, "measured_lufs": -14.1, "peak_dbtp": -3.8, "range_lu": 6.1 }`. The first call **starts the measurement** and answers `running` with a gain of 0; the numbers arrive on a later call. See [Loudness normalisation](#loudness-normalisation) |
 | POST | `/videos/{id}/progress` | `{ "position": 561 }` — heartbeat. Upserts watch_event; writes TA `/video/{id}/progress/`; at ≥90% (or ≤30 s remaining) marks watched. Returns `{ "position", "watched" }`. **Nothing is recorded below `MIN_PLAY_SECONDS`** unless the video completes or an event already exists — see below | Pass `?playlist=<id>` so the server can skip recording for music playlists.
 | POST | `/videos/{id}/watched` | `{ "watched": true\|false }` — writes TA `/watched/`; true completes the watch_event, false clears position and TA progress |
 | DELETE | `/videos/{id}/progress` | "Start over": position → 0, TA progress deleted, 204 |
@@ -628,6 +635,33 @@ and the scrub-preview stills under [Scrub previews](#scrub-previews).
 Clients choose the stream. `audio_only` on a playlist is the persisted
 intent; clients carry `audio=1` in the player URL so the choice survives
 next/previous, autoplay and a reload, exactly as the shuffle seed does.
+
+#### Loudness normalisation
+
+`GET /videos/{id}/loudness` measures a video once (ffmpeg's `loudnorm` in its
+measure-only mode, EBU R128) and says how many decibels to move it by. The
+`loudness` variant is a directory holding that one small JSON file; nothing is
+re-encoded and the archived file is never touched. `-vn` makes the pass cheap:
+the whole file is read either way, but only the audio is decoded.
+
+**The server computes the gain, not the clients.** It is the smaller of two
+limits — the distance to the **-18 LUFS** target, and the headroom to a -1.0
+dBTP ceiling — clamped so it is never a boost and never more than 15 dB of
+attenuation. Four clients each deciding a level is four ways for the same video
+to sound different on the TV and the phone.
+
+**It only ever turns a video down**, and that is a platform fact rather than a
+preference: `AVPlayer`'s volume tops out at 1.0 and an `AVAudioMix` does not
+apply to an HLS stream, so the Apple clients cannot amplify at all — a web
+client that could would then be louder than the TV playing the same video.
+Attenuating alone still removes the jump between a loud channel and a quiet
+one (YouTube attenuates above roughly -14 LUFS and boosts nothing, so an
+archive sits mostly between -14 and -25), and it can never clip.
+
+Clients ask once playback has begun, apply `gain_db` to the player's own volume
+— under the system volume, not instead of it — and leave a video alone while
+the measurement is running or when it failed. `normalize_loudness` is the
+preference that turns the whole thing off.
 
 #### Scrub previews
 

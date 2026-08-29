@@ -246,6 +246,7 @@ func (s *Server) Router() http.Handler {
 			r.Get("/videos/{id}/similar", s.similarVideos)
 			r.Get("/videos/{id}/comments", s.videoComments)
 			r.Get("/videos/{id}/chapters", s.getChapters)
+			r.Get("/videos/{id}/loudness", s.getVideoLoudness)
 			r.Post("/videos/{id}/progress", s.postProgress)
 			r.Delete("/videos/{id}/progress", s.deleteProgress)
 			r.Post("/videos/{id}/watched", s.postWatched)

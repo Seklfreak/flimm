@@ -34,6 +34,10 @@ public struct Prefs: Codable, Sendable, Hashable {
     /// applies both, so a title reads the same here as on the web.
     public var dearrowTitles: DeArrowSetting
     public var dearrowThumbnails: DeArrowSetting
+    /// Even out the difference between channels: the player applies the gain
+    /// from `GET /videos/{id}/loudness` rather than playing every video at
+    /// whatever level it was uploaded at. On unless the viewer turns it off.
+    public var normalizeLoudness: Bool
     /// "Everything" is read-only as a feed, so its three options live here.
     public var everythingSort: FeedSort
     public var everythingHideSeen: Bool
@@ -49,6 +53,7 @@ public struct Prefs: Codable, Sendable, Hashable {
         sponsorActions: [String: SponsorSetting] = SponsorSetting.defaults,
         dearrowTitles: DeArrowSetting = .off,
         dearrowThumbnails: DeArrowSetting = .off,
+        normalizeLoudness: Bool = true,
         everythingSort: FeedSort = .newest,
         everythingHideSeen: Bool = true,
         everythingIncludeShorts: Bool = false,
@@ -62,6 +67,7 @@ public struct Prefs: Codable, Sendable, Hashable {
         self.sponsorActions = sponsorActions
         self.dearrowTitles = dearrowTitles
         self.dearrowThumbnails = dearrowThumbnails
+        self.normalizeLoudness = normalizeLoudness
         self.everythingSort = everythingSort
         self.everythingHideSeen = everythingHideSeen
         self.everythingIncludeShorts = everythingIncludeShorts
@@ -84,6 +90,7 @@ public struct Prefs: Codable, Sendable, Hashable {
             ?? d.sponsorActions
         dearrowTitles = try c.decode(.dearrowTitles, or: d.dearrowTitles)
         dearrowThumbnails = try c.decode(.dearrowThumbnails, or: d.dearrowThumbnails)
+        normalizeLoudness = try c.decode(.normalizeLoudness, or: d.normalizeLoudness)
         everythingSort = try c.decode(.everythingSort, or: d.everythingSort)
         everythingHideSeen = try c.decode(.everythingHideSeen, or: d.everythingHideSeen)
         everythingIncludeShorts = try c.decode(.everythingIncludeShorts, or: d.everythingIncludeShorts)
@@ -102,6 +109,7 @@ public struct PrefsPatch: Codable, Sendable, Hashable {
     public var sponsorActions: [String: SponsorSetting]?
     public var dearrowTitles: DeArrowSetting?
     public var dearrowThumbnails: DeArrowSetting?
+    public var normalizeLoudness: Bool?
     public var everythingSort: FeedSort?
     public var everythingHideSeen: Bool?
     public var everythingIncludeShorts: Bool?
@@ -116,6 +124,7 @@ public struct PrefsPatch: Codable, Sendable, Hashable {
         sponsorActions: [String: SponsorSetting]? = nil,
         dearrowTitles: DeArrowSetting? = nil,
         dearrowThumbnails: DeArrowSetting? = nil,
+        normalizeLoudness: Bool? = nil,
         everythingSort: FeedSort? = nil,
         everythingHideSeen: Bool? = nil,
         everythingIncludeShorts: Bool? = nil,
@@ -129,6 +138,7 @@ public struct PrefsPatch: Codable, Sendable, Hashable {
         self.sponsorActions = sponsorActions
         self.dearrowTitles = dearrowTitles
         self.dearrowThumbnails = dearrowThumbnails
+        self.normalizeLoudness = normalizeLoudness
         self.everythingSort = everythingSort
         self.everythingHideSeen = everythingHideSeen
         self.everythingIncludeShorts = everythingIncludeShorts

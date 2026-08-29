@@ -70,7 +70,8 @@ final class WatchModel {
     @ObservationIgnored private var lastNowPlayingUpdate: Double = -10
     /// Mutes and unmutes for SponsorBlock `mute` segments, keeping the
     /// viewer's own mute setting intact.
-    @ObservationIgnored private var sponsorMute = SponsorMuteTracker()
+    @ObservationIgnored private let sponsors = SponsorRunner()
+    @ObservationIgnored private let loudness = LoudnessNormalizer()
     /// When the current run of attempts at the compatible rendition began. It
     /// rolls forward while the rendition actually plays, so a mid-playback
     /// stumble gets its own window rather than inheriting a spent one.
@@ -159,6 +160,7 @@ final class WatchModel {
     /// last is a real transcode of someone's CPU, which is why ``CodecGate``
     /// is the only thing allowed to choose it.
     private func startPlayback(_ detail: Video) async {
+        sponsors.reset()
         compatibleRetry?.cancel()
         compatibleRetry = nil
         steering.cancel()
@@ -229,6 +231,9 @@ final class WatchModel {
             duration: detail.duration
         )
         Analytics.play(videoID: detail.id, kind: detail.type.rawValue, audioOnly: audioOnly)
+        loudness.apply(videoID: detail.id, enabled: prefs.normalizeLoudness, client: client) { [weak self] gain in
+            self?.engine.setGain(dB: gain)
+        }
         if audioOnly { engine.detachPiP() }
         if usingCompatibleRendition {
             // "Waiting" is either overlay: nothing on screen yet, or a stall
@@ -474,44 +479,12 @@ final class WatchModel {
     func tearDown() async {
         compatibleRetry?.cancel()
         compatibleRetry = nil
+        loudness.cancel()
         steering.cancel()
         await reporter.stop()
         nowPlaying.unregister()
         engine.tearDown()
         NowPlayingController.deactivateAudioSession()
-    }
-
-    // MARK: - Wiring
-
-    /// Everything the server says about the job while it is steered or polled
-    /// lands here, so the overlay's percentage has one source.
-    private func wireSteering() {
-        steering.onStatus = { [weak self] status in
-            self?.compatibleState = status.state
-            self?.compatibleProgress = status.progress
-        }
-    }
-
-    private func wireEngine() {
-        engine.onEnded = { [weak self] in
-            guard let self else { return }
-            Task { await self.handleEnded() }
-        }
-        engine.onTick = { [weak self] time in
-            self?.handleTick(time)
-        }
-        engine.onFailed = { [weak self] _ in
-            self?.handleEngineFailure()
-        }
-    }
-
-    private func wireRemoteCommands() {
-        nowPlaying.isPlaying = { [weak self] in self?.engine.isPlaying ?? false }
-        nowPlaying.onPlay = { [weak self] in self?.resume() }
-        nowPlaying.onPause = { [weak self] in self?.pause() }
-        nowPlaying.onNext = { [weak self] in Task { await self?.goNext() } }
-        nowPlaying.onPrevious = { [weak self] in Task { await self?.goPrevious() } }
-        nowPlaying.onSeek = { [weak self] seconds in self?.seek(to: seconds) }
     }
 
     private func beginReporting() async {
@@ -560,7 +533,11 @@ final class WatchModel {
         }
         activeCue = WebVTT.cue(at: time, in: cues)?.text
         activeChapter = ChapterMath.index(of: time, in: chapters)
-        applySponsorSegments(at: time)
+        // SponsorBlock decides in FlimmKit, so the TV does exactly this too.
+        let sponsor = sponsors.tick(at: time, segments: video?.sponsorblock ?? [], prefs: prefs, isMuted: engine.isMuted)
+        if let to = sponsor.skipTo { engine.seek(to: to) }
+        if let muted = sponsor.muted { engine.setMuted(muted) }
+        if let label = sponsor.skippedLabel { lastSkippedSponsor = label }
         pushNowPlaying(force: false)
     }
 
@@ -580,20 +557,41 @@ final class WatchModel {
     }
 }
 
+// MARK: - Wiring
+
+/// The wiring done once in `init`: the steering callbacks, the engine's
+/// callbacks and the remote-control commands. In an extension so the class
+/// body stays about what a watching session *is* rather than how it is
+/// hooked up.
 private extension WatchModel {
-    /// SponsorBlock for one tick: seek past a `skip` segment, mute a `mute`
-    /// one, and hand the viewer their own mute setting back at its end. What
-    /// acts on what is ``SponsorRules``' decision, shared with the TV.
-    func applySponsorSegments(at time: Double) {
-        let segments = video?.sponsorblock ?? []
-        if let segment = SponsorRules.segmentToSkip(at: time, in: segments, prefs: prefs) {
-            lastSkippedSponsor = SponsorRules.label(segment.category)
-            engine.seek(to: segment.end)
+    /// Everything the server says about the job while it is steered or polled
+    /// lands here, so the overlay's percentage has one source.
+    func wireSteering() {
+        steering.onStatus = { [weak self] status in
+            self?.compatibleState = status.state
+            self?.compatibleProgress = status.progress
         }
-        if let muted = sponsorMute.mute(
-            at: time, in: segments, prefs: prefs, isMuted: engine.isMuted
-        ) {
-            engine.setMuted(muted)
+    }
+
+    func wireEngine() {
+        engine.onEnded = { [weak self] in
+            guard let self else { return }
+            Task { await self.handleEnded() }
         }
+        engine.onTick = { [weak self] time in
+            self?.handleTick(time)
+        }
+        engine.onFailed = { [weak self] _ in
+            self?.handleEngineFailure()
+        }
+    }
+
+    func wireRemoteCommands() {
+        nowPlaying.isPlaying = { [weak self] in self?.engine.isPlaying ?? false }
+        nowPlaying.onPlay = { [weak self] in self?.resume() }
+        nowPlaying.onPause = { [weak self] in self?.pause() }
+        nowPlaying.onNext = { [weak self] in Task { await self?.goNext() } }
+        nowPlaying.onPrevious = { [weak self] in Task { await self?.goPrevious() } }
+        nowPlaying.onSeek = { [weak self] seconds in self?.seek(to: seconds) }
     }
 }

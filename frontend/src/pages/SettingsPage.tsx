@@ -77,6 +77,16 @@ export default function SettingsPage() {
                 />
               </Row>
               <Row
+                label="Even out the volume"
+                hint="Measures each video once and turns the loud ones down, so you stop reaching for the volume between channels. Nothing is ever turned up, so nothing distorts."
+              >
+                <Toggle
+                  on={prefs.normalize_loudness !== false}
+                  onChange={(v) => set({ normalize_loudness: v })}
+                  label="Even out the volume"
+                />
+              </Row>
+              <Row
                 label="SponsorBlock"
                 hint="The master switch. Off, and no segment is skipped, muted or offered — they are still tinted on the timeline."
               >

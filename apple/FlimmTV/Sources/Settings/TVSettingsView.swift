@@ -106,6 +106,11 @@ struct TVSettingsView: View {
             TVOptionRow(title: "Playback speed", value: Fmt.speed(prefs.playbackSpeed)) {
                 Task { await app.updatePrefs(PrefsPatch(playbackSpeed: PlaybackSpeeds.next(after: prefs.playbackSpeed))) }
             }
+            Toggle("Even out the volume", isOn: bind(\.normalizeLoudness) { PrefsPatch(normalizeLoudness: $0) })
+            note("""
+            Measures each video once and turns the loud ones down, so you stop \
+            reaching for the volume between channels. Nothing is ever turned up.
+            """)
             Toggle("SponsorBlock", isOn: bind(\.skipSponsors) { PrefsPatch(skipSponsors: $0) })
             note("""
             The master switch. Off, and no segment is skipped, muted or \

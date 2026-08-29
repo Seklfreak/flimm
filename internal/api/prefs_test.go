@@ -3,6 +3,8 @@ package api
 import (
 	"context"
 	"net/http"
+	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -106,5 +108,34 @@ func TestSponsorActionsRejectNonsense(t *testing.T) {
 	// Categories the patch left out keep their defaults rather than vanishing.
 	if got.SponsorActions["outro"] != "ask" {
 		t.Errorf("outro = %q, want the default ask", got.SponsorActions["outro"])
+	}
+}
+
+// Every preference has to be patchable. `prefKeys` is a hand-written
+// allowlist, so a field added to Prefs without a line here comes back as
+// "unknown pref" from the only endpoint that sets it — which is exactly how
+// `normalize_loudness` shipped broken for an afternoon.
+func TestEveryPrefIsPatchable(t *testing.T) {
+	fields := reflect.VisibleFields(reflect.TypeOf(Prefs{}))
+	for _, f := range fields {
+		key := strings.Split(f.Tag.Get("json"), ",")[0]
+		if key == "" || key == "-" {
+			continue
+		}
+		if !prefKeys[key] {
+			t.Errorf("Prefs.%s is sent as %q, which PATCH /me/prefs rejects: add it to prefKeys", f.Name, key)
+		}
+	}
+	for key := range prefKeys {
+		found := false
+		for _, f := range fields {
+			if strings.Split(f.Tag.Get("json"), ",")[0] == key {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("prefKeys has %q, which is not a field of Prefs", key)
+		}
 	}
 }

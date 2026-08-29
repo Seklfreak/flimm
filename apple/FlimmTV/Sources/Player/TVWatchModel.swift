@@ -73,7 +73,8 @@ final class TVWatchModel {
     @ObservationIgnored private var lastNowPlayingUpdate: Double = -10
     /// Mutes and unmutes for SponsorBlock `mute` segments, keeping the
     /// viewer's own mute setting intact.
-    @ObservationIgnored private var sponsorMute = SponsorMuteTracker()
+    @ObservationIgnored private let sponsors = SponsorRunner()
+    @ObservationIgnored private let loudness = LoudnessNormalizer()
     /// Where to start, until the item reports `readyToPlay` and the seek can
     /// actually be issued. One seek, once — the compatible rendition is a
     /// complete VOD playlist from its first request, so seeking anywhere in it
@@ -172,6 +173,7 @@ final class TVWatchModel {
     /// choose it. `AVPlayerViewController` plays HLS natively, so nothing else
     /// about the screen changes.
     private func startPlayback(_ detail: Video) async {
+        sponsors.reset()
         compatibleRetry?.cancel()
         compatibleRetry = nil
         steering.cancel()
@@ -244,6 +246,10 @@ final class TVWatchModel {
         pendingSeek = resume > 0 ? resume : nil
         player.playImmediately(atRate: Float(prefs.playbackSpeed))
         Analytics.play(videoID: detail.id, kind: detail.type.rawValue, audioOnly: audioOnly)
+        // Play it at the level the server measured, exactly as the phone does.
+        loudness.apply(videoID: detail.id, enabled: prefs.normalizeLoudness, client: client) { [weak self] gain in
+            self?.player.volume = LoudnessGain.volume(forGainDB: gain)
+        }
         itemGeneration += 1
         if usingCompatibleRendition {
             // "Waiting" is either overlay: nothing on screen yet, or a stall
@@ -443,6 +449,7 @@ final class TVWatchModel {
     func tearDown() async {
         compatibleRetry?.cancel()
         compatibleRetry = nil
+        loudness.cancel()
         steering.cancel()
         await reporter.stop()
         if let timeObserver { player.removeTimeObserver(timeObserver) }
@@ -497,15 +504,10 @@ final class TVWatchModel {
             resumedFrom = nil
         }
         activeCue = WebVTT.cue(at: seconds, in: cues)?.text
-        let segments = video?.sponsorblock ?? []
-        if let segment = SponsorRules.segmentToSkip(at: seconds, in: segments, prefs: prefs) {
-            player.seek(to: CMTime(seconds: segment.end, preferredTimescale: 600))
-        }
-        if let muted = sponsorMute.mute(
-            at: seconds, in: segments, prefs: prefs, isMuted: player.isMuted
-        ) {
-            player.isMuted = muted
-        }
+        // The same decision the phone applies, from the same place.
+        let sponsor = sponsors.tick(at: seconds, segments: video?.sponsorblock ?? [], prefs: prefs, isMuted: player.isMuted)
+        if let to = sponsor.skipTo { player.seek(to: CMTime(seconds: to, preferredTimescale: 600)) }
+        if let muted = sponsor.muted { player.isMuted = muted }
         pushNowPlaying(force: false)
     }
 

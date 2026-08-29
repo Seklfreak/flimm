@@ -423,20 +423,7 @@ func (s *Server) hlsConfig(v *ta.Video, height int, from float64) media.HLSConfi
 		Registry:          s.hlsJobs,
 		From:              from,
 		SeekAheadSegments: s.seekAheadSegments,
-		Open: func(ctx context.Context, rangeHeader string) (*media.SourceStream, error) {
-			st, err := s.ta.OpenMediaRange(ctx, src, rangeHeader)
-			if err != nil {
-				return nil, err
-			}
-			return &media.SourceStream{
-				Body:          st.Body,
-				StatusCode:    st.StatusCode,
-				ContentLength: st.ContentLength,
-				ContentRange:  st.ContentRange,
-				AcceptRanges:  st.AcceptRanges,
-				ContentType:   st.ContentType,
-			}, nil
-		},
+		Open:              s.rangeSource(src),
 	}
 }
 

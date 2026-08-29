@@ -34,6 +34,14 @@ type spec struct {
 	height   int
 	chapters bool
 	sponsors bool
+	// levelDB moves the generated tone, in decibels, so the archive is not one
+	// uniform wall of sine at one level. It is what makes loudness
+	// normalisation visible: the measured loudness of a video, and therefore
+	// the gain the server hands a player, follows this number. lavfi's `sine`
+	// peaks at -18 dBFS and measures about -22 LUFS, so these are mostly
+	// *boosts*, and a video is loud or quiet relative to the -18 LUFS target
+	// the server normalises toward.
+	levelDB float64
 }
 
 // The catalogue is deliberately small and deliberately varied: enough shapes
@@ -48,45 +56,45 @@ var channelSpecs = []struct {
 		id:   "UC-fake-workshop",
 		name: "The Workshop",
 		videos: []spec{
-			{title: "Building a dovetail jig", seconds: 90, kind: "videos", codec: "avc1", height: 1080, chapters: true, sponsors: true},
-			{title: "Sharpening, properly", seconds: 60, kind: "videos", codec: "avc1", height: 720, chapters: true},
-			{title: "Shop tour 2026", seconds: 45, kind: "videos", codec: "avc1", height: 1080, sponsors: true},
-			{title: "One-minute finish test", seconds: 30, kind: "shorts", codec: "avc1", height: 720},
+			{title: "Building a dovetail jig", seconds: 90, kind: "videos", codec: "avc1", height: 1080, chapters: true, sponsors: true, levelDB: 8},
+			{title: "Sharpening, properly", seconds: 60, kind: "videos", codec: "avc1", height: 720, chapters: true, levelDB: 0},
+			{title: "Shop tour 2026", seconds: 45, kind: "videos", codec: "avc1", height: 1080, sponsors: true, levelDB: 14},
+			{title: "One-minute finish test", seconds: 30, kind: "shorts", codec: "avc1", height: 720, levelDB: 5},
 		},
 	},
 	{
 		id:   "UC-fake-kitchen",
 		name: "Slow Kitchen",
 		videos: []spec{
-			{title: "A loaf, start to finish", seconds: 75, kind: "videos", codec: "avc1", height: 1080, chapters: true, sponsors: true},
-			{title: "Stock, and what to do with it", seconds: 50, kind: "videos", codec: "avc1", height: 720, chapters: true},
+			{title: "A loaf, start to finish", seconds: 75, kind: "videos", codec: "avc1", height: 1080, chapters: true, sponsors: true, levelDB: 10},
+			{title: "Stock, and what to do with it", seconds: 50, kind: "videos", codec: "avc1", height: 720, chapters: true, levelDB: 2},
 			// The one nothing Apple can decode directly: playing it has to go
 			// through the compatible HLS rendition.
-			{title: "Knife skills (VP9 source)", seconds: 40, kind: "videos", codec: "vp09", height: 720},
+			{title: "Knife skills (VP9 source)", seconds: 40, kind: "videos", codec: "vp09", height: 720, levelDB: 6},
 			// Long enough to *resume* into. A video shorter than a couple of
 			// minutes is marked seen the moment playback gets anywhere near
 			// its end, so it can never carry a resume position — which is
 			// exactly what "does the transcode start where the viewer left
 			// off, or from the beginning?" needs to be answered by eye.
-			{title: "Braising, the long way (VP9 source)", seconds: 600, kind: "videos", codec: "vp09", height: 720, chapters: true},
+			{title: "Braising, the long way (VP9 source)", seconds: 600, kind: "videos", codec: "vp09", height: 720, chapters: true, levelDB: 7},
 		},
 	},
 	{
 		id:   "UC-fake-signals",
 		name: "Signals & Noise",
 		videos: []spec{
-			{title: "What a Fourier transform is for", seconds: 80, kind: "videos", codec: "avc1", height: 1080, chapters: true},
-			{title: "Live: filter design questions", seconds: 60, kind: "streams", codec: "avc1", height: 720},
-			{title: "Aliasing, seen", seconds: 35, kind: "videos", codec: "avc1", height: 1080, sponsors: true},
+			{title: "What a Fourier transform is for", seconds: 80, kind: "videos", codec: "avc1", height: 1080, chapters: true, levelDB: -1},
+			{title: "Live: filter design questions", seconds: 60, kind: "streams", codec: "avc1", height: 720, levelDB: 12},
+			{title: "Aliasing, seen", seconds: 35, kind: "videos", codec: "avc1", height: 1080, sponsors: true, levelDB: 3},
 		},
 	},
 	{
 		id:   "UC-fake-tapes",
 		name: "Field Tapes",
 		videos: []spec{
-			{title: "Harbour at six in the morning", seconds: 55, kind: "videos", codec: "avc1", height: 1080},
-			{title: "Rain on a tin roof", seconds: 45, kind: "videos", codec: "avc1", height: 720},
-			{title: "Night bus", seconds: 40, kind: "videos", codec: "avc1", height: 720},
+			{title: "Harbour at six in the morning", seconds: 55, kind: "videos", codec: "avc1", height: 1080, levelDB: -3},
+			{title: "Rain on a tin roof", seconds: 45, kind: "videos", codec: "avc1", height: 720, levelDB: 9},
+			{title: "Night bus", seconds: 40, kind: "videos", codec: "avc1", height: 720, levelDB: 1},
 		},
 	},
 }

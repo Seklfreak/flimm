@@ -92,6 +92,12 @@ func (m *Media) encode(ctx context.Context, path, title string, s spec) error {
 		args = append(args, "-i", meta, "-map_metadata", "2")
 	}
 	args = append(args, "-map", "0:v", "-map", "1:a")
+	// Each video is generated at its own level, so the archive has quiet ones
+	// and loud ones — which is the only way the loudness measurement, and the
+	// gain a player applies from it, mean anything here.
+	if s.levelDB != 0 {
+		args = append(args, "-af", fmt.Sprintf("volume=%.1fdB", s.levelDB))
+	}
 	// Rate-capped on purpose. `ultrafast` with no rate control encodes a test
 	// pattern at ~15 Mbit/s, which made a 45-second clip 88 MB and the whole
 	// fixture a gigabyte — slow to generate, slow to serve, and pointless for

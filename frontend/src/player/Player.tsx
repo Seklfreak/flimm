@@ -5,6 +5,7 @@ import { refreshMediaSession, retryMediaUrl } from "@/lib/media";
 import { trackPlay } from "@/lib/analytics";
 import { useCueLift, useCueSize } from "./cueSize";
 import { usePreviewTiles } from "./preview";
+import { useLoudnessGain } from "./loudness";
 import { CheckIcon, HeadphonesIcon, MediaImg, Popover, Spinner } from "@/components/ui";
 import { useChapters } from "@/lib/queries";
 import { useSponsorSkip } from "./useSponsorSkip";
@@ -304,6 +305,10 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(function Player(
   // is what starts a full decode of the file server-side, and a video someone
   // opened and closed again does not need one.
   const previewTiles = usePreviewTiles(video.preview_url, playing || time > 0);
+  // Loudness normalisation: the server measures the video and says how far to
+  // turn it down, and the element's volume is where that lands. Asking starts
+  // the measurement, so it waits for playback like the previews do.
+  useLoudnessGain(el, video.id, prefs.normalize_loudness !== false && (playing || time > 0));
   const sponsorActions = prefs.sponsor_actions ?? {};
   useSponsorSkip(el, video.sponsorblock, prefs.skip_sponsors, sponsorActions);
   // A category the viewer set to "ask" is a button, not a jump: offered while

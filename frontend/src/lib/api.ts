@@ -97,6 +97,19 @@ export interface ChaptersResponse {
   chapters: Chapter[];
 }
 
+/** `GET /videos/{id}/loudness` — how loud a video was measured to be, and the
+ *  gain a player applies to it. `gain_db` is never positive: no client can
+ *  amplify uniformly, so normalisation only ever turns a video down. Only
+ *  `state: "done"` carries numbers. */
+export interface Loudness {
+  state: "pending" | "running" | "done" | "failed";
+  gain_db: number;
+  target_lufs: number;
+  measured_lufs: number;
+  peak_dbtp: number;
+  range_lu: number;
+}
+
 export interface VideoPlaylistRef {
   id: string;
   name: string;
@@ -280,6 +293,10 @@ export interface Prefs {
   dearrow_titles: DeArrowSetting;
   /** Crowd-sourced thumbnails, set independently of titles. */
   dearrow_thumbnails: DeArrowSetting;
+  /** Even out the difference between channels: the player applies the gain
+   *  from `GET /videos/{id}/loudness` instead of playing every video at
+   *  whatever level it was uploaded at. */
+  normalize_loudness: boolean;
   everything_sort: FeedSort;
   everything_hide_seen: boolean;
   everything_include_shorts: boolean;
@@ -425,6 +442,9 @@ export const api = {
     req<Page<VideoSummary>>(`/videos/${id}/up-next${qs({ ...ctx, page, page_size: PAGE_SIZE })}`),
   nav: (id: string, ctx: PlayContext) => req<NavResponse>(`/videos/${id}/nav${qs(ctx)}`),
   chapters: (id: string) => req<ChaptersResponse>(`/videos/${id}/chapters`),
+  // Asking is what starts the analysis pass; the answer turns up on a later
+  // call, exactly like a rendition's state.
+  loudness: (id: string) => req<Loudness>(`/videos/${id}/loudness`),
   // Starts (or re-aims) a compatible rendition without waiting. `height` picks
   // the rung; `from` is the resume position, so the encoder produces the part
   // that is about to be watched first. Idempotent — it is also the progress

@@ -80,13 +80,17 @@ struct SettingsView: View {
                     Text(Fmt.speed(speed)).tag(speed)
                 }
             }
+            Toggle("Even out the volume", isOn: bind(\.normalizeLoudness) { PrefsPatch(normalizeLoudness: $0) })
             Toggle("SponsorBlock", isOn: bind(\.skipSponsors) { PrefsPatch(skipSponsors: $0) })
         } header: {
             Text("Playback")
         } footer: {
             Text("""
-            The master switch. Off, and no segment is skipped, muted or \
-            offered — they are still tinted on the scrubber.
+            Evening out the volume measures each video once and turns the loud \
+            ones down, so you stop reaching for the volume between channels; \
+            nothing is ever turned up. SponsorBlock is the master switch: off, \
+            and no segment is skipped, muted or offered — they are still \
+            tinted on the scrubber.
             """)
         }
     }

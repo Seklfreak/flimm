@@ -2,6 +2,57 @@
 
 ## Done
 
+- **Loudness normalisation** (2026-08-29) — one EBU R128 pass per video
+  (ffmpeg's `loudnorm`, measure-only, `-vn` so only the audio is decoded), the
+  numbers cached like any other derived media, and `GET /videos/{id}/loudness`
+  handing every client the same number of decibels to apply. Nothing is
+  re-encoded and the archived file is never touched.
+
+  The gain is computed on the server — the smaller of the distance to a -18
+  LUFS target and the headroom to a -1 dBTP ceiling — because four clients each
+  deciding a level is four ways for one video to sound different on the TV and
+  the phone. It **only ever turns a video down**, which is a platform fact
+  rather than a preference: `AVPlayer`'s volume stops at 1.0 and an audio mix
+  does not apply to an HLS stream, so the Apple clients cannot amplify, and a
+  web client that could would be louder than the TV playing the same video.
+  Attenuation alone still removes the jump between a loud channel and a quiet
+  one, and it can never clip.
+
+  On by default, unlike DeArrow: it asks nobody anything and changes nothing
+  about what a video *is*. Web, iPhone, iPad and Apple TV all apply it to the
+  player's own volume, under the system volume rather than instead of it, and
+  all four get the switch in Settings. `cmd/fake-ta` now generates each video
+  at its own level, so the whole thing is exercisable offline — which is how
+  the `PATCH /me/prefs` allowlist turned out to reject the new preference, a
+  bug no unit test had an opinion about and every settings screen would have
+  hit.
+
+- **Native Apple apps** (2026-08-29) — iPhone, iPadOS and Apple TV, three
+  targets over one **FlimmKit** Swift package (models, API client, OIDC +
+  Keychain auth, playback context, progress heartbeat, WebVTT, chapter and
+  SponsorBlock maths), talking to the same `/api/v1` backend. The server URL
+  is the only setup; OIDC settings come from `GET /api/v1/config`. The plan
+  is [apple-apps.md](apple-apps.md), and it held up.
+
+  The phone and iPad are one target: a `NavigationSplitView` sidebar and
+  adaptive grids over the very same screens, a player with the chapter list
+  and up next beside the video, the web client's keyboard shortcuts, and one
+  navigation model behind both shells — because iPad multitasking flips the
+  size class mid-flow. The player is a custom shell over `AVPlayerLayer`
+  rather than `VideoPlayer`, which is what buys the chapter ticks,
+  SponsorBlock tints, self-rendered subtitles and scrub previews on the
+  scrubber. tvOS is `AVPlayerViewController` instead, carrying Flimm's
+  chapters as navigation markers and SponsorBlock as interstitials; feeds are
+  read-only there, because editing belongs where there is a keyboard. Sign-in
+  on the TV is the **OIDC device authorization grant** — tvOS has no browser,
+  so there is no fallback — which the provider has to enable for the same
+  client id (see [deploy.md](deploy.md#native-apps)).
+
+  Both schemes ship to **TestFlight** from CI on every release. One backend
+  gap turned up on the way — `/media/audio/{id}.webm` is Opus in WebM, which
+  AVFoundation cannot decode — and is closed: `audio_aac_url`
+  (`/media/audio/{id}.m4a`) is the native audio rendition.
+
 - **Scrub preview thumbnails** (2026-08-29) — dragging the scrubber now shows
   the frame you are dragging to. One sprite sheet of 160px stills per video
   plus a WebVTT track saying which tile covers which second, derived on demand
@@ -450,40 +501,11 @@
 
 ## Next
 
-- **Native Apple apps** — iOS, iPadOS and tvOS in SwiftUI, sharing one Swift
-  package (API client, models, playback state) and talking to the same
-  `/api/v1` backend. Server URL is the only setup; OIDC settings come from
-  `GET /api/v1/config`. **Plan: [apple-apps.md](apple-apps.md)** — read it
-  before starting; the codec question should be settled first. See
-  [design.md](design.md#platforms) for the per-platform layout.
-
-  *In progress:* the **iPhone, iPad and Apple TV apps** are built and live in `apple/`
-  on the shared **FlimmKit** package (models, API client, OIDC + Keychain
-  auth, playback context, progress heartbeat, WebVTT and chapter/SponsorBlock
-  maths), with a `macos-26` CI job. It covers onboarding, the four sections,
-  search, the feed and playlist editors, and a custom `AVPlayer` shell with
-  resume, chapters, SponsorBlock, subtitles, Picture in Picture and
-  audio-only playback. The **iPad layout** is done: a `NavigationSplitView`
-  sidebar and adaptive grids over the very same screens, a player with the
-  chapter list and up next beside the video, and the web client's keyboard
-  shortcuts — one navigation model behind both shells, because iPad
-  multitasking flips the size class mid-flow. The **tvOS app** is done too: a
-  second target (`FlimmTV`) over the same package, a top tab bar with
-  focus-driven grids, and `AVPlayerViewController` carrying Flimm's chapters
-  as navigation markers and SponsorBlock as interstitials. Feeds are
-  read-only there — editing stays on the phone, iPad and web. Sign-in is the
-  **OIDC device authorization grant**, which the provider has to enable for
-  the same client id (see [deploy.md](deploy.md#native-apps)); tvOS has no
-  browser, so there is no fallback. Still to come: **TestFlight**.
-  One backend gap turned up on the way — `/media/audio/{id}.webm` is Opus in
-  WebM, which AVFoundation cannot decode — and is now closed: use
-  `audio_aac_url` (`/media/audio/{id}.m4a`) on Apple platforms.
+Nothing in flight. Items are promoted here from **Ideas** below when they
+are picked up.
 
 ## Ideas
 
-- **Loudness normalisation** — one EBU R128 (`loudnorm`) analysis pass per
-  video, the gain stored and applied by the player, so channels stop being at
-  wildly different volumes. Matters most for the audio-only music path.
 - **Silence and black-frame detection** — an intro/outro heuristic for the long
   tail of videos SponsorBlock has never seen, derived locally.
 - **Transcripts (Whisper)** — generate subtitles for videos the archive has

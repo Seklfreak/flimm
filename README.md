@@ -34,7 +34,13 @@ One container image: a Go backend with the React frontend embedded.
   subtitle hit jumps straight to that timestamp.
 - **Player** — archived and auto-generated subtitle tracks, SponsorBlock
   segment skipping, scrub previews (drag the scrubber and see the frame you
-  are dragging to), playback speed, autoplay with context-aware *Up next*.
+  are dragging to), loudness normalisation, playback speed, autoplay with
+  context-aware *Up next*.
+- **An even volume across channels** — each video is measured once (EBU R128)
+  and the loud ones are turned down to a common target, so you stop reaching
+  for the volume between one channel and the next. The measurement is made
+  from your own copy of the file and nothing is re-encoded; the gain is
+  decided on the server, so every client applies the same one.
 - **Settings** — autoplay, speed, sponsor skipping, subtitle language and size,
   the Everything-feed options and the theme, all stored per user and shared
   with the native apps.

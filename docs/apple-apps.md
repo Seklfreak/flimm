@@ -80,8 +80,9 @@ What is there:
     a 10 s heartbeat that flushes on pause, seek, background and dismiss,
     context-carrying previous/next and autoplay, shuffle by new seed starting
     at `nav.first`, chapter ticks plus a chapter list, SponsorBlock tints with
-    auto-skip on the `skip_sponsors` preference, self-rendered WebVTT
-    subtitles, scrub-preview stills above the thumb while dragging (the sheet
+    auto-skip on the `skip_sponsors` preference, loudness normalisation applied
+    to `AVPlayer.volume` (``LoudnessNormalizer`` in FlimmKit, which the TV
+    drives identically), self-rendered WebVTT subtitles, scrub-preview stills above the thumb while dragging (the sheet
     and track from `preview_url`, cropped with `CGImage.cropping`; the parsing
     is `ScrubPreview` in FlimmKit, shared with nothing yet and identical to the
     web's), playback speed, Picture in Picture, landscape full screen, and

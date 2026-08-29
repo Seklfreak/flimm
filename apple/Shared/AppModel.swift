@@ -117,6 +117,7 @@ final class AppModel {
         if let value = patch.subtitleLang { next.subtitleLang = value }
         if let value = patch.subtitleSize { next.subtitleSize = value }
         if let value = patch.skipSponsors { next.skipSponsors = value }
+        if let value = patch.normalizeLoudness { next.normalizeLoudness = value }
         if let value = patch.everythingSort { next.everythingSort = value }
         if let value = patch.everythingHideSeen { next.everythingHideSeen = value }
         if let value = patch.everythingIncludeShorts { next.everythingIncludeShorts = value }

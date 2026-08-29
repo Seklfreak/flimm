@@ -263,6 +263,28 @@ type HistoryEntry struct {
 	State    string       `json:"state"`
 }
 
+// LoudnessInfo is `GET /videos/{id}/loudness`: how loud a video was measured
+// to be, and the gain a player should apply to it.
+type LoudnessInfo struct {
+	// State is pending|running|done|failed for the measurement pass. Only
+	// `done` carries numbers; the others carry a GainDB of 0, which is the
+	// honest thing to apply when nothing is known.
+	State string `json:"state"`
+	// GainDB is what to apply, in decibels — the whole point of the endpoint.
+	// Never positive: see the note in internal/media/loudness.go.
+	GainDB float64 `json:"gain_db"`
+	// TargetLUFS is the programme loudness that gain aims at. Always present,
+	// so a client can say what it is doing without hardcoding it.
+	TargetLUFS float64 `json:"target_lufs"`
+	// MeasuredLUFS, PeakDBTP and RangeLU are the measurement itself. Nothing
+	// has to read them — the gain is derived from them here — but a client
+	// showing "this video is 6 dB loud" or a person debugging a strange one
+	// needs them.
+	MeasuredLUFS float64 `json:"measured_lufs"`
+	PeakDBTP     float64 `json:"peak_dbtp"`
+	RangeLU      float64 `json:"range_lu"`
+}
+
 // ---- prefs ----
 
 type Prefs struct {
@@ -287,8 +309,12 @@ type Prefs struct {
 	// not its frames, or the other way round. Each is "off", "manual" (only
 	// what a person submitted and the crowd voted on) or "all" (that, and what
 	// DeArrow generates when nobody submitted anything).
-	DeArrowTitles           string `json:"dearrow_titles"`
-	DeArrowThumbnails       string `json:"dearrow_thumbnails"`
+	DeArrowTitles     string `json:"dearrow_titles"`
+	DeArrowThumbnails string `json:"dearrow_thumbnails"`
+	// NormalizeLoudness evens out the difference between channels: the player
+	// applies the gain from `GET /videos/{id}/loudness` instead of playing
+	// every video at whatever level it was uploaded at.
+	NormalizeLoudness       bool   `json:"normalize_loudness"`
 	EverythingSort          string `json:"everything_sort"`
 	EverythingHideSeen      bool   `json:"everything_hide_seen"`
 	EverythingIncludeShorts bool   `json:"everything_include_shorts"`
@@ -307,8 +333,13 @@ func defaultPrefs() Prefs {
 		// and what it looks like — a strong opinion to hold on someone's
 		// behalf — and it involves asking a third party (by hash prefix)
 		// about the videos being browsed. It is opted into.
-		DeArrowTitles:      dearrowOff,
-		DeArrowThumbnails:  dearrowOff,
+		DeArrowTitles:     dearrowOff,
+		DeArrowThumbnails: dearrowOff,
+		// On, unlike DeArrow: this asks nobody anything, changes nothing about
+		// what a video *is*, and undoes a real daily annoyance — reaching for
+		// the volume between one channel and the next. It only ever turns a
+		// video down, and one switch turns it off.
+		NormalizeLoudness:  true,
 		EverythingSort:     "newest",
 		EverythingHideSeen: true,
 		Theme:              "system",
@@ -365,7 +396,8 @@ var (
 		"autoplay": true, "playback_speed": true, "subtitle_lang": true, "subtitle_size": true,
 		"skip_sponsors": true, "sponsor_actions": true,
 		"dearrow_titles": true, "dearrow_thumbnails": true,
-		"everything_sort": true, "everything_hide_seen": true,
+		"normalize_loudness": true,
+		"everything_sort":    true, "everything_hide_seen": true,
 		"everything_include_shorts": true, "theme": true,
 	}
 )

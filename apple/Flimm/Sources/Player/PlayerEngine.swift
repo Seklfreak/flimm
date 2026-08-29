@@ -126,6 +126,17 @@ final class PlayerEngine {
     /// Mute driven by something other than the viewer — a SponsorBlock `mute`
     /// segment. Separate from ``toggleMute()`` so what the segment restores
     /// afterwards is the viewer's own setting.
+    /// Plays at the level the server measured for this video.
+    ///
+    /// `AVPlayer.volume` is the app's own gain, under the system volume rather
+    /// than instead of it, and nothing else in the player writes it — so this
+    /// is where loudness normalisation lands. A gain of 0 dB restores the
+    /// archived level, which is what turning the preference off has to do at
+    /// once rather than on the next video.
+    func setGain(dB gainDB: Double) {
+        player.volume = LoudnessGain.volume(forGainDB: gainDB)
+    }
+
     func setMuted(_ muted: Bool) {
         player.isMuted = muted
         isMuted = muted

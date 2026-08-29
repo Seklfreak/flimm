@@ -530,6 +530,15 @@ func clearDir(dir string) error {
 // relative output names land inside the cache entry. Nothing is piped in: the
 // input is the loopback URL in args.
 func runFFmpegIn(ctx context.Context, ffmpegPath, dir string, args []string, log *slog.Logger) error {
+	_, err := runFFmpegOutput(ctx, ffmpegPath, dir, args, log)
+	return err
+}
+
+// runFFmpegOutput is runFFmpegIn for a run whose *output* matters: ffmpeg
+// writes everything it has to say — including a filter's measurements — to
+// stderr, so an analysis pass reads what a transcode only checks the exit code
+// of. The returned text is scrubbed like the logged one.
+func runFFmpegOutput(ctx context.Context, ffmpegPath, dir string, args []string, log *slog.Logger) (string, error) {
 	// ffmpegPath comes from configuration and every argument is a literal, a
 	// number this package computed or a loopback URL with a random nonce — no
 	// request data, and no token, reaches argv.
@@ -544,17 +553,18 @@ func runFFmpegIn(ctx context.Context, ffmpegPath, dir string, args []string, log
 	cmd.WaitDelay = 10 * time.Second
 	runErr := cmd.Run()
 
-	if msg := strings.TrimSpace(stderr.String()); msg != "" && log != nil {
-		log.Debug("ffmpeg", "entry", filepath.Base(dir), "stderr", scrubSecrets(msg))
+	out := scrubSecrets(strings.TrimSpace(stderr.String()))
+	if out != "" && log != nil {
+		log.Debug("ffmpeg", "entry", filepath.Base(dir), "stderr", out)
 	}
 	if runErr != nil {
-		msg := scrubSecrets(strings.TrimSpace(stderr.String()))
+		msg := out
 		if len(msg) > 500 {
 			msg = msg[:500]
 		}
-		return fmt.Errorf("ffmpeg: %w: %s", runErr, msg)
+		return out, fmt.Errorf("ffmpeg: %w: %s", runErr, msg)
 	}
-	return nil
+	return out, nil
 }
 
 // secretPattern matches the shapes a credential could take if one ever reached

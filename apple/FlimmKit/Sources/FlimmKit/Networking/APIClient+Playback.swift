@@ -46,6 +46,12 @@ extension APIClient {
         try await get("/videos/\(esc(id))/chapters")
     }
 
+    /// How loud a video is, and the gain to play it at. Asking is what starts
+    /// the measurement server-side; see ``LoudnessGain``.
+    public func loudness(_ id: String) async throws -> LoudnessInfo {
+        try await get("/videos/\(esc(id))/loudness")
+    }
+
     /// The playback heartbeat.
     ///
     /// `playlistId` is the *context* being played from, not the video's

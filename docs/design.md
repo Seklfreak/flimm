@@ -63,6 +63,14 @@ feeds without leaving the page.
   position.
 - Seen state and resume position are written back to TubeArchivist, so the
   stock TA UI stays consistent.
+- **Videos play at an even volume.** Each one is measured once against a
+  broadcast loudness target, and the loud ones are turned down to meet it, so
+  moving between channels stops meaning reaching for the volume. Only *down*:
+  nothing is amplified, because the platforms cannot all do it and a video that
+  sounded louder on the web than on the TV would be a worse problem than the
+  one being fixed. Quiet videos are left as they are. One switch turns it off,
+  and it is on by default — it asks nobody anything and changes nothing about
+  what a video *is*.
 - **Dragging the scrubber shows the frame you are dragging to**, so finding a
   moment is looking rather than guessing-and-seeking. The stills are derived
   from the deployment's own copy of the video, once per video and only once
