@@ -9,9 +9,12 @@ public enum FeedSort: String, Codable, Sendable, CaseIterable {
 
 /// `view=` on `GET /feeds/{id}/videos`. Omitting it lets the feed's own
 /// `hideSeen` decide, which is what the sidebar does.
+///
+/// There is no "in progress" case: the unseen view opens with the videos the
+/// viewer is part-way through, so a filter for them would list what is already
+/// at the top of the list it filters.
 public enum FeedView: String, Codable, Sendable, CaseIterable {
     case unseen
-    case `continue`
     case all
 }
 

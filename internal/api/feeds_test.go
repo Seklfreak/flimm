@@ -3,8 +3,11 @@ package api
 import (
 	"context"
 	"net/http"
+	"net/url"
 	"reflect"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -203,5 +206,81 @@ func TestCreateFeedPinsAndStoresChannels(t *testing.T) {
 	rec = do(t, h, http.MethodPost, "/api/v1/feeds", `{"name":"x","sort":"random"}`)
 	if rec.Code != http.StatusBadRequest {
 		t.Errorf("invalid sort: status = %d", rec.Code)
+	}
+}
+
+// An unseen feed opens with what the viewer is part-way through: those are the
+// videos they came back for, and there is no separate "Continue" filter to go
+// and find them in any more.
+func TestUnseenFeedOpensWithWhatIsInProgress(t *testing.T) {
+	feed := sqlc.Feed{ID: uuid.New(), Name: "Home", Sort: "newest", HideSeen: true, IncludeShorts: true}
+	_, es, h := feedFixture(t, feed, []string{"A", "B"})
+	// a1 is the oldest video in the feed, so a plain unseen list would put it
+	// last; half-watched, it belongs at the top.
+	es.events["a1"] = sqlc.WatchEvent{
+		VideoID: "a1", ChannelID: "A", Position: 120, Duration: 600,
+		LastPlayedAt: pgtype.Timestamptz{Time: time.Now(), Valid: true},
+	}
+
+	rec := do(t, h, http.MethodGet, "/api/v1/feeds/"+feed.ID.String()+"/videos?view=unseen&page_size=10", "")
+	page := decode[Page[VideoSummary]](t, rec)
+	got := ids(page.Items)
+	if len(got) == 0 || got[0] != "a1" {
+		t.Fatalf("items = %v, want a1 first (in progress)", got)
+	}
+	// ...and only once: the tail must not list it again further down.
+	if count := strings.Count(strings.Join(got, ","), "a1"); count != 1 {
+		t.Errorf("a1 appears %d times in %v", count, got)
+	}
+}
+
+// The head is not a page of its own: whatever room is left goes to the rest of
+// the unseen list, and paging carries on across the join.
+func TestUnseenFeedPagesThroughTheHeadIntoTheTail(t *testing.T) {
+	feed := sqlc.Feed{ID: uuid.New(), Name: "Home", Sort: "newest", HideSeen: true, IncludeShorts: true}
+	_, es, h := feedFixture(t, feed, []string{"A", "B"})
+	es.events["a1"] = sqlc.WatchEvent{
+		VideoID: "a1", ChannelID: "A", Position: 120, Duration: 600,
+		LastPlayedAt: pgtype.Timestamptz{Time: time.Now(), Valid: true},
+	}
+
+	rec := do(t, h, http.MethodGet, "/api/v1/feeds/"+feed.ID.String()+"/videos?view=unseen&page_size=2", "")
+	first := decode[Page[VideoSummary]](t, rec)
+	if got := ids(first.Items); len(got) != 2 || got[0] != "a1" {
+		t.Fatalf("page 0 = %v, want a1 and one more", got)
+	}
+	if !first.HasMore || first.NextCursor == "" {
+		t.Fatalf("page 0 = %+v, want more to follow", first)
+	}
+
+	rec = do(t, h, http.MethodGet,
+		"/api/v1/feeds/"+feed.ID.String()+"/videos?view=unseen&page_size=2&cursor="+url.QueryEscape(first.NextCursor), "")
+	second := decode[Page[VideoSummary]](t, rec)
+	for _, id := range ids(second.Items) {
+		if id == "a1" {
+			t.Errorf("page 1 = %v, showing the in-progress video twice", ids(second.Items))
+		}
+	}
+	if len(second.Items) == 0 {
+		t.Error("page 1 is empty; the tail should carry on from the head")
+	}
+}
+
+// A feed showing everything is not reordered: "in progress first" is what the
+// unseen view is for.
+func TestTheAllViewIsNotReordered(t *testing.T) {
+	feed := sqlc.Feed{ID: uuid.New(), Name: "Home", Sort: "newest", HideSeen: true, IncludeShorts: true}
+	_, es, h := feedFixture(t, feed, []string{"A", "B"})
+	es.events["a1"] = sqlc.WatchEvent{
+		VideoID: "a1", ChannelID: "A", Position: 120, Duration: 600,
+		LastPlayedAt: pgtype.Timestamptz{Time: time.Now(), Valid: true},
+	}
+
+	rec := do(t, h, http.MethodGet, "/api/v1/feeds/"+feed.ID.String()+"/videos?view=all&page_size=10", "")
+	page := decode[Page[VideoSummary]](t, rec)
+	// Newest first, so the newest video leads and the half-watched oldest one
+	// stays where the feed's own sort puts it.
+	if got := ids(page.Items); len(got) == 0 || got[0] != "b2" {
+		t.Errorf("items = %v, want the feed's own order (b2 newest first)", got)
 	}
 }

@@ -105,7 +105,7 @@ export function pinnedFeed(feeds: Feed[] | undefined): Feed | undefined {
   return feeds.find((f) => f.pinned) ?? feeds.find((f) => f.id !== EVERYTHING_ID) ?? feeds[0];
 }
 
-export function useFeedVideos(id: string, view: "unseen" | "continue" | "all" | undefined) {
+export function useFeedVideos(id: string, view: "unseen" | "all" | undefined) {
   return useInfiniteQuery({
     queryKey: keys.feedVideos(id, view),
     queryFn: ({ pageParam }) => api.feedVideos(id, view, pageParam),

@@ -324,6 +324,9 @@ func visible(it VideoSummary, o listOpts) bool {
 	if o.UnseenOnly && it.Watched {
 		return false
 	}
+	if o.ExcludeIDs[it.ID] {
+		return false
+	}
 	if o.DropDismissed && it.Dismissed {
 		return false
 	}
@@ -343,6 +346,9 @@ type listCursor struct {
 	Fingerprint uint64      `json:"f"`
 	Positions   []streamPos `json:"s"`
 	Before      int         `json:"n"`
+	// Head is how many of the list's in-progress items have been served. Only
+	// an unseen feed has any; everything else leaves it zero.
+	Head int `json:"h,omitempty"`
 }
 
 // fingerprint identifies the list a cursor belongs to. Positions are aligned
@@ -359,8 +365,8 @@ func fingerprint(o listOpts) uint64 {
 	return h.Sum64()
 }
 
-func encodeCursor(o listOpts, pos []streamPos, before int) string {
-	raw, err := json.Marshal(listCursor{Fingerprint: fingerprint(o), Positions: pos, Before: before})
+func encodeCursor(o listOpts, pos []streamPos, before, head int) string {
+	raw, err := json.Marshal(listCursor{Fingerprint: fingerprint(o), Positions: pos, Before: before, Head: head})
 	if err != nil {
 		return ""
 	}
@@ -396,6 +402,20 @@ func (s *Server) listVideosPage(
 	o listOpts,
 	p paging,
 ) (Page[VideoSummary], error) {
+	return s.listVideosPageAfterHead(ctx, uid, o, p, 0, 0)
+}
+
+// listVideosPageAfterHead is listVideosPage for a list that has a head in
+// front of it — the in-progress videos an unseen feed opens with. `head` is
+// how many of those there are in total, and `served` how many this page has
+// already emitted; both ride the cursor so the next page knows where it is.
+func (s *Server) listVideosPageAfterHead(
+	ctx context.Context,
+	uid uuid.UUID,
+	o listOpts,
+	p paging,
+	head, served int,
+) (Page[VideoSummary], error) {
 	var from []streamPos
 	before := 0
 	skip := 0
@@ -423,11 +443,11 @@ func (s *Server) listVideosPage(
 		PageSize: p.Size,
 		// A floor, not a length: composition stopped as soon as the window was
 		// full. `before` keeps it climbing across cursor pages.
-		Total:   int64(before + len(prefix)),
+		Total:   int64(head + before + len(prefix)),
 		HasMore: more || hi < len(prefix),
 	}
 	if page.HasMore && len(window) > 0 {
-		page.NextCursor = encodeCursor(o, window[len(window)-1].pos, before+hi)
+		page.NextCursor = encodeCursor(o, window[len(window)-1].pos, before+hi, served)
 	}
 	return page, nil
 }

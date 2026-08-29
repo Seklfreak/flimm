@@ -36,6 +36,11 @@ type listOpts struct {
 	// every feed view and never for a channel, a playlist or search: those are
 	// where a dismissed video is found again and put back.
 	DropDismissed bool
+	// ExcludeIDs are videos this list has already shown somewhere above it —
+	// the in-progress head of an unseen feed. Deliberately *not* part of a
+	// cursor's fingerprint: a video finishing mid-scroll changes this set, and
+	// that must not invalidate the cursor a client is holding.
+	ExcludeIDs map[string]bool
 }
 
 // taSort maps an API sort to TA's sort/order pair.

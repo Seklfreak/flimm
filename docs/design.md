@@ -47,6 +47,10 @@ feeds without leaving the page.
   still show it, marked, which is where a viewer puts one back. Every client
   offers an undo without navigating away, because the action is one tap from a
   card and easy to hit by accident.
+- **An unseen feed opens with what you are part-way through**, most recently
+  played first, and then runs into the rest of the unseen videos. Those are
+  the ones a viewer came back for, which is why there is no separate "in
+  progress" filter to go and find them in.
 - **Resume is automatic**, and starts 15 seconds before where playback
   stopped, because landing in the middle of a sentence costs more than the
   seconds do. A chip in the top-left says where playback resumed from, with

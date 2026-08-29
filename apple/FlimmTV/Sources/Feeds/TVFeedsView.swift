@@ -79,7 +79,6 @@ struct TVFeedsView: View {
         HStack(spacing: 18) {
             Picker("Show", selection: Binding(get: { view }, set: { feedView = $0 })) {
                 Text("Unseen").tag(FeedView.unseen)
-                Text("Continue").tag(FeedView.continue)
                 Text("All").tag(FeedView.all)
             }
             .pickerStyle(.segmented)

@@ -347,7 +347,7 @@ Prefs:
 | PUT | `/feeds/{id}` | full update; `pinned:true` unpins the others |
 | DELETE | `/feeds/{id}` | 204; never touches channels/videos |
 | POST | `/feeds/reorder` | `{ "ids": [...] }` |
-| GET | `/feeds/{id}/videos` | query `view=unseen\|continue\|all` (default: feed's `hide_seen` → unseen else all), paged |
+| GET | `/feeds/{id}/videos` | query `view=unseen\|all` (default: feed's `hide_seen` → unseen else all), paged. **`view=unseen` opens with the videos the viewer is part-way through**, most recently played first, then the rest of the unseen feed; each appears once, and paging carries across the join. `view=continue` is accepted for clients built before that and answers with those in-progress videos alone |
 | POST | `/feeds/{id}/mark-seen` | marks every currently unseen video in the feed watched; 204 |
 
 ### Channels

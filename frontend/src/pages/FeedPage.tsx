@@ -8,9 +8,10 @@ import { EmptyState, ErrorState, InfiniteSentinel, Segmented, Spinner } from "@/
 import { DismissedCard, VideoCard, VideoGrid } from "@/components/VideoCard";
 import { FeedEditor } from "@/components/FeedEditor";
 
+// No "In progress" filter: the unseen view opens with what is half-watched,
+// so there is nothing left for it to find (docs/api.md, `view=`).
 const VIEWS: { value: FeedView; label: string }[] = [
   { value: "unseen", label: "Unseen" },
-  { value: "continue", label: "In progress" },
   { value: "all", label: "Everything" },
 ];
 
@@ -113,7 +114,7 @@ export default function FeedPage({ editing = false }: { editing?: boolean }) {
           <ErrorState message={videos.error.message} retry={() => videos.refetch()} />
         ) : items.length === 0 ? (
           <EmptyState
-            title={effectiveView === "unseen" ? "All caught up" : effectiveView === "continue" ? "Nothing in progress" : "No videos here yet"}
+            title={effectiveView === "unseen" ? "All caught up" : "No videos here yet"}
             hint={effectiveView === "unseen" && total === 0 ? "Everything in this feed has been seen." : undefined}
             action={
               effectiveView !== "all" ? (

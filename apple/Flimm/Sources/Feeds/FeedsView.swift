@@ -137,7 +137,6 @@ struct FeedsView: View {
         Menu {
             Picker("Show", selection: Binding(get: { feedView }, set: { nav.feedView = $0 })) {
                 Text("Unseen").tag(FeedView.unseen)
-                Text("Continue watching").tag(FeedView.continue)
                 Text("All").tag(FeedView.all)
             }
             Divider()

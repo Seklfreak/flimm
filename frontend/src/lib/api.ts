@@ -297,7 +297,7 @@ export interface SearchResult {
   playlists: { total: number; items: (PlaylistSummary & { match_count: number })[] };
 }
 
-export type FeedView = "unseen" | "continue" | "all";
+export type FeedView = "unseen" | "all";
 export type ChannelSort = "name" | "videos" | "unseen" | "last_upload";
 export type HistoryFilter = "all" | "in_progress" | "seen";
 

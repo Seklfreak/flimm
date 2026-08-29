@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"slices"
 	"sync/atomic"
 
 	"github.com/go-chi/chi/v5"
@@ -438,8 +439,10 @@ func (s *Server) listFeedVideos(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	p := parsePaging(r)
-	// "Continue watching" is driven by the user's own in-progress events, a
-	// bounded list already: only the archive-wide views compose lazily.
+	// `view=continue` was its own filter once. The videos it listed now open
+	// the unseen view instead, so the parameter is kept only for clients built
+	// before that — it answers with the same in-progress videos, which are the
+	// head of the list those clients would get from `view=unseen` today.
 	if r.URL.Query().Get("view") == "continue" {
 		items, err := s.continueList(r.Context(), uid, o.ChannelIDs, o.IncludeShorts)
 		if err != nil {
@@ -449,12 +452,86 @@ func (s *Server) listFeedVideos(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, slicePage(items, p))
 		return
 	}
-	page, err := s.listVideosPage(r.Context(), uid, o, p)
+	page, err := s.listFeedPage(r.Context(), uid, o, p)
 	if err != nil {
 		s.writeListError(w, "list feed videos", err)
 		return
 	}
 	writeJSON(w, http.StatusOK, page)
+}
+
+// listFeedPage is one page of a feed.
+//
+// An unseen feed opens with what the viewer is part-way through, most recently
+// played first, and continues into the rest of the unseen videos. Half-watched
+// videos are the ones a viewer came back for; making them the top of the list
+// is why there is no longer a separate "Continue" filter to go and find them
+// in. Every other view is the plain lazily-composed list.
+//
+// The in-progress head is bounded (it comes from the viewer's own events) and
+// is composed eagerly; the tail is the same lazy walk as before, minus the
+// videos the head already showed. How much of the head a page has served rides
+// the cursor, so a head longer than one page still pages properly.
+func (s *Server) listFeedPage(ctx context.Context, uid uuid.UUID, o listOpts, p paging) (Page[VideoSummary], error) {
+	if !o.UnseenOnly {
+		return s.listVideosPage(ctx, uid, o, p)
+	}
+	head, err := s.continueList(ctx, uid, o.ChannelIDs, o.IncludeShorts)
+	if err != nil {
+		return Page[VideoSummary]{}, err
+	}
+	if len(head) == 0 {
+		return s.listVideosPage(ctx, uid, o, p)
+	}
+	o.ExcludeIDs = make(map[string]bool, len(head))
+	for _, it := range head {
+		o.ExcludeIDs[it.ID] = true
+	}
+
+	served, err := s.headServed(p, o, len(head))
+	if err != nil {
+		return Page[VideoSummary]{}, err
+	}
+	from := head[min(served, len(head)):]
+	if len(from) >= p.Size {
+		// This page is head all the way. The cursor it hands back has no
+		// stream positions, so the next one starts the tail at its beginning.
+		items := from[:p.Size]
+		return Page[VideoSummary]{
+			Items:      items,
+			Page:       p.Page,
+			PageSize:   p.Size,
+			Total:      int64(len(head)),
+			HasMore:    true,
+			NextCursor: encodeCursor(o, nil, 0, served+p.Size),
+		}, nil
+	}
+
+	// The head runs out inside this page; the rest of it comes from the tail.
+	tail := p
+	tail.Size = p.Size - len(from)
+	if p.Cursor == "" {
+		tail.Page = max(0, (p.offset()-len(head)+tail.Size-1)/max(tail.Size, 1))
+	}
+	page, err := s.listVideosPageAfterHead(ctx, uid, o, tail, len(head), len(head))
+	if err != nil {
+		return Page[VideoSummary]{}, err
+	}
+	page.Items = append(slices.Clone(from), page.Items...)
+	page.Page, page.PageSize = p.Page, p.Size
+	return page, nil
+}
+
+// headServed is how many in-progress videos the pages before this one showed.
+func (s *Server) headServed(p paging, o listOpts, head int) (int, error) {
+	if p.Cursor == "" {
+		return min(p.offset(), head), nil
+	}
+	c, err := decodeCursor(p.Cursor, o)
+	if err != nil {
+		return 0, err
+	}
+	return min(c.Head, head), nil
 }
 
 func (s *Server) markFeedSeen(w http.ResponseWriter, r *http.Request) {

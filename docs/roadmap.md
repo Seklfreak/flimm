@@ -2,6 +2,23 @@
 
 ## Done
 
+- **Unseen opens with what you were watching** (2026-08-29) — the videos a
+  viewer is part-way through now head the unseen view of every feed, most
+  recently played first, and the "In progress" / "Continue" filter is gone
+  from all four clients: it listed exactly what is now at the top of the list
+  it filtered. Composed on the server, so no client had to learn the order —
+  the in-progress head is eager and bounded, the tail is the same lazy walk
+  minus what the head showed, and how much of the head a page served rides
+  the cursor, so a head longer than one page still pages without repeats.
+
+- **A cancelled request is no longer an error on screen** (2026-08-29) — the
+  phone could open on "Something went wrong: cancelled" where a feed should
+  be. `URLSession` reports a cancelled task as `URLError.cancelled` rather
+  than `CancellationError`, so the pager's cancellation branch never caught
+  it, and because the failed pager is cached by key it never retried either.
+  `APIError` has a `cancelled` case now, and a cancelled load leaves the
+  screen alone.
+
 - **A resumed transcode starts at the resume point** (2026-08-29) — a video
   the device cannot decode is converted on demand, and that conversion was
   supposed to begin where the viewer left off. For any source whose *audio*
