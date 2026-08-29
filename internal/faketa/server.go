@@ -1,6 +1,8 @@
 package faketa
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"log/slog"
 	"net/http"
@@ -67,6 +69,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /media/", s.serveMedia)
 	// TA's thumbnail cache, which Flimm proxies /media/thumb/* to.
 	mux.HandleFunc("GET /cache/", s.serveThumb)
+	// Not TubeArchivist's: DeArrow's branding endpoint, so a dev stack can
+	// exercise crowd-sourced titles and thumbnails without asking the real
+	// service about videos that do not exist. Point DEARROW_URL here.
+	mux.HandleFunc("GET /api/branding/{prefix}", s.branding)
 	return s.logging(mux)
 }
 
@@ -623,4 +629,43 @@ func writeJSON(w http.ResponseWriter, status int, body any) {
 
 func notFound(w http.ResponseWriter) {
 	writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
+}
+
+// branding answers DeArrow's `/api/branding/{prefix}` for the fake catalogue.
+//
+// It speaks the real service's shape, including the part that makes the real
+// one privacy-preserving: the request carries four characters of a hash, and
+// the answer covers *every* video whose id starts with them. Here that is at
+// most a handful, since the catalogue is small.
+func (s *Server) branding(w http.ResponseWriter, r *http.Request) {
+	prefix := strings.ToLower(r.PathValue("prefix"))
+	out := map[string]any{}
+	for _, v := range s.videos() {
+		sum := sha256.Sum256([]byte(v.YoutubeID))
+		if !strings.HasPrefix(hex.EncodeToString(sum[:]), prefix) {
+			continue
+		}
+		b, ok := brandingFor(v.YoutubeID)
+		if !ok {
+			// In the prefix but with nothing said about it: the service still
+			// answers, with an entry that has no submissions.
+			out[v.YoutubeID] = map[string]any{"titles": []any{}, "thumbnails": []any{}, "randomTime": 0.5}
+			continue
+		}
+		titles := []any{}
+		if b.Title != "" {
+			titles = append(titles, map[string]any{"title": b.Title, "original": false, "votes": 3, "locked": false})
+		}
+		if b.TitleOriginal {
+			titles = append(titles, map[string]any{"title": "", "original": true, "votes": 4, "locked": false})
+		}
+		thumbnails := []any{}
+		if b.ThumbnailAt != nil {
+			thumbnails = append(thumbnails, map[string]any{
+				"timestamp": *b.ThumbnailAt, "original": false, "votes": 2, "locked": false,
+			})
+		}
+		out[v.YoutubeID] = map[string]any{"titles": titles, "thumbnails": thumbnails, "randomTime": b.RandomTime}
+	}
+	writeJSON(w, http.StatusOK, out)
 }

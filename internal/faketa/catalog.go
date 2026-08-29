@@ -275,3 +275,38 @@ func specFor(id string) (spec, string, bool) {
 	}
 	return spec{}, "", false
 }
+
+// Branding is the fake's DeArrow data for one video: what the crowd would have
+// said about it. Only some videos have any, which is the interesting case —
+// "manual" has to leave the rest alone, and "all" has to fill them in.
+type Branding struct {
+	// Title a person submitted, or "" for none.
+	Title string
+	// TitleOriginal marks a crowd that voted to keep the uploader's title.
+	TitleOriginal bool
+	// ThumbnailAt is the second of the video someone picked, or nil for none.
+	ThumbnailAt *float64
+	// RandomTime is what DeArrow would suggest on its own, as a fraction.
+	RandomTime float64
+}
+
+// brandingFor is the fake's opinion about each video. Deliberately a mix:
+//
+//   - a shouted title with a submitted replacement *and* a submitted frame,
+//   - a shouted title nobody has touched, which only "all" tidies,
+//   - a video where the crowd voted to keep the original,
+//   - and everything else, which has nothing at all.
+func brandingFor(videoID string) (Branding, bool) {
+	at := func(s float64) *float64 { return &s }
+	switch videoID {
+	case "workshop0xx":
+		return Branding{Title: "Building a dovetail jig, start to finish", ThumbnailAt: at(21), RandomTime: 0.4}, true
+	case "kitchen0xxx":
+		return Branding{ThumbnailAt: at(33), RandomTime: 0.2}, true
+	case "signals0xxx":
+		return Branding{TitleOriginal: true, RandomTime: 0.6}, true
+	case "tapes0xxxxx":
+		return Branding{RandomTime: 0.35}, true
+	}
+	return Branding{}, false
+}

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -12,7 +13,13 @@ import (
 )
 
 func (s *Server) loadPrefs(r *http.Request, uid uuid.UUID) (Prefs, error) {
-	raw, err := s.q.GetPrefs(r.Context(), uid)
+	return s.prefsFor(r.Context(), uid)
+}
+
+// prefsFor is loadPrefs for the paths that hold a context rather than a
+// request — every list, which needs to know what the viewer asked to be shown.
+func (s *Server) prefsFor(ctx context.Context, uid uuid.UUID) (Prefs, error) {
+	raw, err := s.q.GetPrefs(ctx, uid)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return defaultPrefs(), nil
 	}

@@ -272,6 +272,11 @@ export interface Prefs {
    *  button in the player) or "off". The server sends every category it
    *  knows, so a missing one means a category this client predates. */
   sponsor_actions: Record<string, string>;
+  /** Crowd-sourced titles: "off", "manual" (submissions only) or "all"
+   *  (submissions, and a tidied original where there are none). */
+  dearrow_titles: DeArrowSetting;
+  /** Crowd-sourced thumbnails, set independently of titles. */
+  dearrow_thumbnails: DeArrowSetting;
   everything_sort: FeedSort;
   everything_hide_seen: boolean;
   everything_include_shorts: boolean;
@@ -303,6 +308,8 @@ export interface SearchResult {
 }
 
 export type FeedView = "unseen" | "all";
+
+export type DeArrowSetting = "off" | "manual" | "all";
 export type ChannelSort = "name" | "videos" | "unseen" | "last_upload";
 export type HistoryFilter = "all" | "in_progress" | "seen";
 

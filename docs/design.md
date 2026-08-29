@@ -80,6 +80,16 @@ feeds without leaving the page.
   by default, because an intro is occasionally exactly what someone came for.
   Every client reads the same setting, so a category changed on the phone
   behaves that way on the TV tonight.
+- **Titles and thumbnails can come from DeArrow**, the crowd-sourced companion
+  to SponsorBlock, and the two are separate settings: a viewer may trust what
+  people wrote and not the frames they picked. *Manual* uses submissions only;
+  *All* also tidies a shouted title and takes the frame DeArrow suggests where
+  nobody submitted one. Both are **off** by default — rewriting what every
+  video is called is a strong opinion to hold on someone's behalf. A
+  crowd-sourced thumbnail is cut from the deployment's own copy of the video,
+  because DeArrow hands out a timestamp rather than an image: no third-party
+  image fetch, and it works with the archive offline. The server applies both,
+  so a video is called the same thing on the phone and on the TV.
 - **The highlight** — where a contributor marked "this is where the video
   actually starts" — is a marker on the timeline and a *Jump to the highlight*
   control while playback is still before it. It is never taken automatically,

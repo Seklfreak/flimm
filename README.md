@@ -171,6 +171,7 @@ All configuration is via environment variables.
 | `MEDIA_VAAPI_DEVICE` | no | DRM render node for VAAPI; default `/dev/dri/renderD128` |
 | `SPONSORBLOCK_URL` | no | SponsorBlock server segments are fetched from; default `https://sponsor.ajay.app`. Set it **empty** to disable the lookup and use TubeArchivist's download-time snapshot instead (an offline deploy) |
 | `SPONSORBLOCK_CATEGORIES` | no | comma-separated list restricting what is asked for; by default everything the service offers is fetched and each client decides what to do with it |
+| `DEARROW_URL` | no | DeArrow server for crowd-sourced titles and thumbnails; default `https://sponsor.ajay.app`. Set it **empty** to disable the lookup for the whole deployment. Nothing is asked for until a viewer turns titles or thumbnails on in Settings — both are off by default — and the lookup sends a hash prefix, never a video id |
 | `SENTRY_DSN` | no | backend error reporting |
 | `VITE_SENTRY_DSN` | no | frontend error reporting; a **build arg**, baked into the bundle at image build time (not a runtime env var) |
 | `VITE_UMAMI_URL`, `VITE_UMAMI_WEBSITE_ID` | no | self-hosted [Umami](https://umami.is) analytics for the web app; **build args**, baked in at image build time. See [Analytics](#analytics) |

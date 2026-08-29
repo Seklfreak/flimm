@@ -20,6 +20,7 @@ import (
 	"github.com/Seklfreak/flimm/internal/api"
 	"github.com/Seklfreak/flimm/internal/config"
 	"github.com/Seklfreak/flimm/internal/db"
+	"github.com/Seklfreak/flimm/internal/dearrow"
 	"github.com/Seklfreak/flimm/internal/media"
 	"github.com/Seklfreak/flimm/internal/obs"
 	"github.com/Seklfreak/flimm/internal/sponsorblock"
@@ -139,6 +140,21 @@ func main() {
 		log.Info("sponsorblock disabled; using the TubeArchivist snapshot")
 	}
 
+	// Titles and thumbnails from the same project, asked for the same way (a
+	// hash prefix, never the id). Nothing is looked up until a viewer turns
+	// one of them on in their preferences.
+	var deClient *dearrow.Client
+	if cfg.DeArrowURL != "" {
+		deClient = dearrow.New(dearrow.Options{
+			BaseURL:   cfg.DeArrowURL,
+			UserAgent: "flimm/" + version,
+			Log:       log,
+		})
+		log.Info("dearrow", "url", cfg.DeArrowURL)
+	} else {
+		log.Info("dearrow disabled; titles and thumbnails come from the archive")
+	}
+
 	srv := api.NewServer(api.Options{
 		Pool:              pool,
 		TA:                client,
@@ -154,6 +170,7 @@ func main() {
 		MinPlaySeconds:    cfg.MinPlaySeconds,
 		MediaCache:        mediaCache,
 		Sponsorblock:      sbClient,
+		DeArrow:           deClient,
 		FFmpegPath:        cfg.FFmpegPath,
 		HWAccel:           hwaccel,
 		SegmentWait:       cfg.MediaSegmentWait,

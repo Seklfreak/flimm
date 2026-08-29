@@ -19,6 +19,7 @@ struct SettingsView: View {
             serverSection
             playbackSection
             sponsorSection
+            dearrowSection
             qualitySection
             subtitleSection
             everythingSection
@@ -112,6 +113,28 @@ struct SettingsView: View {
                 Off leaves it alone.
                 """)
             }
+        }
+    }
+
+    /// Crowd-sourced titles and thumbnails, each on its own: a viewer may
+    /// trust what people wrote and not the frames they picked.
+    private var dearrowSection: some View {
+        Section {
+            Picker("Titles", selection: bind(\.dearrowTitles) { PrefsPatch(dearrowTitles: $0) }) {
+                ForEach(DeArrowSetting.allCases, id: \.self) { Text($0.label).tag($0) }
+            }
+            Picker("Thumbnails", selection: bind(\.dearrowThumbnails) { PrefsPatch(dearrowThumbnails: $0) }) {
+                ForEach(DeArrowSetting.allCases, id: \.self) { Text($0.label).tag($0) }
+            }
+        } header: {
+            Text("DeArrow")
+        } footer: {
+            Text("""
+            Crowd-sourced titles and thumbnails. Manual uses what people \
+            submitted and voted on; All also tidies a shouted title and picks \
+            a frame where nobody has. The frame is cut from your own copy of \
+            the video — DeArrow supplies a timestamp, never an image.
+            """)
         }
     }
 

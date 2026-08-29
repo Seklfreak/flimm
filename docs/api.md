@@ -337,6 +337,8 @@ Prefs:
   "subtitle_lang": "en",               // language code, or "off"; defaults to "en"
   "subtitle_size": "small|medium|large",
   "skip_sponsors": true,               // the master switch for everything below
+  "dearrow_titles": "off",             // "off" | "manual" | "all"
+  "dearrow_thumbnails": "off",         // set independently of titles
   "sponsor_actions": {                 // per category: "skip" | "ask" | "off"
     "sponsor": "skip", "selfpromo": "skip", "interaction": "skip",
     "intro": "ask", "outro": "ask", "preview": "ask",
@@ -346,6 +348,21 @@ Prefs:
   "theme": "system|light|dark"
 }
 ```
+
+**DeArrow** (`dearrow_titles`, `dearrow_thumbnails`) is applied by the server,
+so a video is called the same thing in every client and every list — feed,
+search, history, up next and the player. `manual` uses what people submitted
+and the crowd voted on; `all` also takes what DeArrow generates where nobody
+has: a title with the shouting taken out, and the frame the service suggests.
+A crowd that voted to *keep* the original is obeyed by both. The two are
+separate preferences because they are separate things to want.
+
+A crowd-sourced thumbnail comes back as a `thumb_url` of
+`/media/frame/{id}/{ms}.jpg` — DeArrow returns a timestamp, not an image, so
+the frame is cut from the deployment's own copy of the video (cached like any
+other derived media) and no third party is asked for a picture. That endpoint
+falls back to the archive's own thumbnail when a frame cannot be cut, and
+nothing is looked up at all unless a viewer asked for it — see `DEARROW_URL`.
 
 `sponsor_actions` always comes back with **every** category the server knows,
 so a client can tell "left alone" from "this build predates the category". A
@@ -539,6 +556,7 @@ and `feed` filter the video results in the backend.
 | `GET /media/hls/{id}/{height}/seg00000.m4s` | a media segment (`video/iso.segment`). A segment the encoder has not reached **blocks** until it lands, up to `MEDIA_SEGMENT_WAIT` (60 s), then 503 + `Retry-After: 2`; a request far ahead of the encoder also re-aims it. 404 for a segment past the end of the video or of a rendition nothing is deriving; 502 if the transcode failed |
 | `GET /media/hls/{id}/master.m3u8`, `/index.m3u8`, `/init.mp4`, `/seg00000.m4s` | the same files without a height: a **legacy alias** for the 1080p rendition, kept for clients written before the ladder. It serves that rendition's cache entry rather than one of its own. New clients use `hls_variants` |
 | `GET /media/subtitles/{id}/{lang}.vtt` | TA subtitle track |
+| `GET /media/frame/{id}/{ms}.jpg` | derived: one still, cut on first request and cached — what a DeArrow thumbnail resolves to |
 | `GET /media/thumb/video/{id}` | TA `/cache/videos/…` |
 | `GET /media/thumb/channel/{id}` and `/media/thumb/channel/{id}/banner` | TA `/cache/channels/…` |
 | `GET /media/thumb/playlist/{id}` | TA `/cache/playlists/…` |

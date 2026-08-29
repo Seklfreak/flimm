@@ -276,21 +276,34 @@ type Prefs struct {
 	// mention takes its default; the categories that mark an instant rather
 	// than a range — the highlight — are not in it at all, because a point of
 	// interest is only ever offered.
-	SponsorActions          map[string]string `json:"sponsor_actions"`
-	EverythingSort          string            `json:"everything_sort"`
-	EverythingHideSeen      bool              `json:"everything_hide_seen"`
-	EverythingIncludeShorts bool              `json:"everything_include_shorts"`
-	Theme                   string            `json:"theme"`
+	SponsorActions map[string]string `json:"sponsor_actions"`
+	// DeArrowTitles and DeArrowThumbnails are set independently, because they
+	// are independent things to want: a viewer may trust the crowd's words and
+	// not its frames, or the other way round. Each is "off", "manual" (only
+	// what a person submitted and the crowd voted on) or "all" (that, and what
+	// DeArrow generates when nobody submitted anything).
+	DeArrowTitles           string `json:"dearrow_titles"`
+	DeArrowThumbnails       string `json:"dearrow_thumbnails"`
+	EverythingSort          string `json:"everything_sort"`
+	EverythingHideSeen      bool   `json:"everything_hide_seen"`
+	EverythingIncludeShorts bool   `json:"everything_include_shorts"`
+	Theme                   string `json:"theme"`
 }
 
 func defaultPrefs() Prefs {
 	return Prefs{
-		Autoplay:           true,
-		PlaybackSpeed:      1.0,
-		SubtitleLang:       defaultSubtitleLang,
-		SubtitleSize:       "medium",
-		SkipSponsors:       true,
-		SponsorActions:     defaultSponsorActions(),
+		Autoplay:       true,
+		PlaybackSpeed:  1.0,
+		SubtitleLang:   defaultSubtitleLang,
+		SubtitleSize:   "medium",
+		SkipSponsors:   true,
+		SponsorActions: defaultSponsorActions(),
+		// Off by default, both. DeArrow rewrites what every video is called
+		// and what it looks like — a strong opinion to hold on someone's
+		// behalf — and it involves asking a third party (by hash prefix)
+		// about the videos being browsed. It is opted into.
+		DeArrowTitles:      dearrowOff,
+		DeArrowThumbnails:  dearrowOff,
 		EverythingSort:     "newest",
 		EverythingHideSeen: true,
 		Theme:              "system",
@@ -326,6 +339,19 @@ const (
 
 var validSponsorActions = map[string]bool{sponsorSkip: true, sponsorAsk: true, sponsorOff: true}
 
+// What a DeArrow preference can be.
+const (
+	// dearrowOff leaves the archive's own title and thumbnail alone.
+	dearrowOff = "off"
+	// dearrowManual uses only what a person submitted and the crowd voted on.
+	dearrowManual = "manual"
+	// dearrowAll adds what DeArrow generates when nobody has submitted: a
+	// title tidied of shouting, and a frame the service picked itself.
+	dearrowAll = "all"
+)
+
+var validDeArrow = map[string]bool{dearrowOff: true, dearrowManual: true, dearrowAll: true}
+
 var (
 	validSorts         = map[string]bool{"newest": true, "oldest": true, "shortest": true, "longest": true}
 	validSubtitleSizes = map[string]bool{"small": true, "medium": true, "large": true}
@@ -333,6 +359,7 @@ var (
 	prefKeys           = map[string]bool{
 		"autoplay": true, "playback_speed": true, "subtitle_lang": true, "subtitle_size": true,
 		"skip_sponsors": true, "sponsor_actions": true,
+		"dearrow_titles": true, "dearrow_thumbnails": true,
 		"everything_sort": true, "everything_hide_seen": true,
 		"everything_include_shorts": true, "theme": true,
 	}
@@ -363,6 +390,12 @@ func (p Prefs) validate() error {
 	}
 	if !validThemes[p.Theme] {
 		return fmt.Errorf("invalid theme")
+	}
+	if !validDeArrow[p.DeArrowTitles] {
+		return fmt.Errorf("invalid dearrow_titles")
+	}
+	if !validDeArrow[p.DeArrowThumbnails] {
+		return fmt.Errorf("invalid dearrow_thumbnails")
 	}
 	for category, action := range p.SponsorActions {
 		if !validSponsorActions[action] {
@@ -407,6 +440,12 @@ func parsePrefs(raw []byte) Prefs {
 		}
 		if !validThemes[p.Theme] {
 			p.Theme = d.Theme
+		}
+		if !validDeArrow[p.DeArrowTitles] {
+			p.DeArrowTitles = d.DeArrowTitles
+		}
+		if !validDeArrow[p.DeArrowThumbnails] {
+			p.DeArrowThumbnails = d.DeArrowThumbnails
 		}
 		if p.PlaybackSpeed <= 0 || p.PlaybackSpeed > 4 {
 			p.PlaybackSpeed = d.PlaybackSpeed

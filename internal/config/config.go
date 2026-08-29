@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Seklfreak/flimm/internal/dearrow"
 	"github.com/Seklfreak/flimm/internal/sponsorblock"
 )
 
@@ -79,6 +80,12 @@ type Config struct {
 	// everything the service offers and lets each client decide.
 	SponsorblockCategories []string
 
+	// DeArrowURL is the DeArrow server crowd-sourced titles and thumbnails
+	// are read from — the same project as SponsorBlock, and by default the
+	// same host. Empty disables the lookup outright, whatever a viewer has in
+	// their preferences, which is what an offline deployment wants.
+	DeArrowURL string
+
 	// PublicURL is the browser-facing origin: the cookie's Secure flag follows
 	// its scheme and it is the CORS allowed origin.
 	PublicURL string
@@ -121,6 +128,7 @@ func Load() (*Config, error) {
 		MediaVAAPIDevice:       os.Getenv("MEDIA_VAAPI_DEVICE"),
 		SponsorblockURL:        strings.TrimRight(envOrDefault("SPONSORBLOCK_URL", sponsorblock.DefaultBaseURL), "/"),
 		SponsorblockCategories: splitCSV(os.Getenv("SPONSORBLOCK_CATEGORIES")),
+		DeArrowURL:             strings.TrimRight(envOrDefault("DEARROW_URL", dearrow.DefaultBaseURL), "/"),
 		PublicURL:              strings.TrimRight(os.Getenv("PUBLIC_URL"), "/"),
 		CORSOrigins:            splitCSV(os.Getenv("CORS_ORIGINS")),
 		AppName:                getenvDefault("APP_NAME", "Flimm"),
@@ -164,6 +172,11 @@ func Load() (*Config, error) {
 	if cfg.SponsorblockURL != "" {
 		if _, err := url.Parse(cfg.SponsorblockURL); err != nil {
 			return nil, fmt.Errorf("invalid SPONSORBLOCK_URL: %w", err)
+		}
+	}
+	if cfg.DeArrowURL != "" {
+		if _, err := url.Parse(cfg.DeArrowURL); err != nil {
+			return nil, fmt.Errorf("invalid DEARROW_URL: %w", err)
 		}
 	}
 	return cfg, nil

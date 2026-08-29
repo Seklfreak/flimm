@@ -168,6 +168,16 @@ func (s *Server) overlay(ctx context.Context, uid uuid.UUID, videos []ta.Video) 
 		item.Dismissed = dismissed[v.YoutubeID]
 		out = append(out, item)
 	}
+	// Titles and thumbnails last, over the finished summaries: every list in
+	// the API is built here, so this is the one place a video can be renamed
+	// and the clients cannot disagree about what it is called.
+	if s.dearrow != nil {
+		prefs, err := s.prefsFor(ctx, uid)
+		if err != nil {
+			return nil, err
+		}
+		s.applyBranding(ctx, prefs, out)
+	}
 	return out, nil
 }
 
@@ -329,7 +339,29 @@ func (s *Server) continueList(ctx context.Context, uid uuid.UUID, channelIDs []s
 		}
 		kept = append(kept, it)
 	}
+	// This list is built from watch events rather than through `overlay`, so
+	// the titles and thumbnails have to be asked for here too — otherwise the
+	// in-progress head of a feed is the one row on the page still carrying
+	// the archive's own name for a video.
+	if err := s.brandList(ctx, uid, kept); err != nil {
+		return nil, err
+	}
 	return kept, nil
+}
+
+// brandList applies a viewer's DeArrow preferences to summaries built outside
+// `overlay` — the in-progress list and history, which start from the user's
+// own events rather than from a TubeArchivist page.
+func (s *Server) brandList(ctx context.Context, uid uuid.UUID, items []VideoSummary) error {
+	if s.dearrow == nil || len(items) == 0 {
+		return nil
+	}
+	prefs, err := s.prefsFor(ctx, uid)
+	if err != nil {
+		return err
+	}
+	s.applyBranding(ctx, prefs, items)
+	return nil
 }
 
 // ---- video endpoints ----

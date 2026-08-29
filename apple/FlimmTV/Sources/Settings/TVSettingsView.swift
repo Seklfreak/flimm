@@ -29,6 +29,26 @@ struct TVSettingsView: View {
     /// Explanatory text, held to a readable measure. A tvOS list row is nearly
     /// 1800pt wide; a paragraph that uses all of it is a 200-character line to
     /// read from a sofa.
+    /// Crowd-sourced titles and thumbnails, each on its own row because they
+    /// are set apart from each other.
+    private var dearrowSection: some View {
+        Section {
+            TVOptionRow(title: "Titles", value: prefs.dearrowTitles.label) {
+                Task { await app.updatePrefs(PrefsPatch(dearrowTitles: prefs.dearrowTitles.next)) }
+            }
+            TVOptionRow(title: "Thumbnails", value: prefs.dearrowThumbnails.label) {
+                Task { await app.updatePrefs(PrefsPatch(dearrowThumbnails: prefs.dearrowThumbnails.next)) }
+            }
+            note("""
+            Crowd-sourced titles and thumbnails. Manual uses what people submitted and voted on; \
+            All also tidies a shouted title and picks a frame where nobody has. The frame is cut \
+            from your own copy of the video — DeArrow supplies a timestamp, never an image.
+            """)
+        } header: {
+            Text("DeArrow")
+        }
+    }
+
     /// A remote has no picker, so a row cycles: Skip → Ask → Off → Skip. The
     /// whole map goes back, because the server replaces what it is sent.
     private func cycleSponsor(_ category: String) {
@@ -58,6 +78,7 @@ struct TVSettingsView: View {
     var body: some View {
         List {
             playbackSection
+            dearrowSection
             qualitySection
             subtitleSection
             everythingSection

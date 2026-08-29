@@ -29,6 +29,11 @@ public struct Prefs: Codable, Sendable, Hashable {
     /// every category it knows, so a missing one is a category this build
     /// predates — treated as ``SponsorSetting/off``, never guessed at.
     public var sponsorActions: [String: SponsorSetting]
+    /// Crowd-sourced titles from DeArrow, and — set separately, because they
+    /// are separate things to want — crowd-sourced thumbnails. The server
+    /// applies both, so a title reads the same here as on the web.
+    public var dearrowTitles: DeArrowSetting
+    public var dearrowThumbnails: DeArrowSetting
     /// "Everything" is read-only as a feed, so its three options live here.
     public var everythingSort: FeedSort
     public var everythingHideSeen: Bool
@@ -42,6 +47,8 @@ public struct Prefs: Codable, Sendable, Hashable {
         subtitleSize: SubtitleSize = .medium,
         skipSponsors: Bool = true,
         sponsorActions: [String: SponsorSetting] = SponsorSetting.defaults,
+        dearrowTitles: DeArrowSetting = .off,
+        dearrowThumbnails: DeArrowSetting = .off,
         everythingSort: FeedSort = .newest,
         everythingHideSeen: Bool = true,
         everythingIncludeShorts: Bool = false,
@@ -53,6 +60,8 @@ public struct Prefs: Codable, Sendable, Hashable {
         self.subtitleSize = subtitleSize
         self.skipSponsors = skipSponsors
         self.sponsorActions = sponsorActions
+        self.dearrowTitles = dearrowTitles
+        self.dearrowThumbnails = dearrowThumbnails
         self.everythingSort = everythingSort
         self.everythingHideSeen = everythingHideSeen
         self.everythingIncludeShorts = everythingIncludeShorts
@@ -73,6 +82,8 @@ public struct Prefs: Codable, Sendable, Hashable {
         sponsorActions = (try? c.decodeIfPresent([String: String].self, forKey: .sponsorActions))
             .map { raw in raw?.mapValues { SponsorSetting(rawValue: $0) ?? .off } ?? d.sponsorActions }
             ?? d.sponsorActions
+        dearrowTitles = try c.decode(.dearrowTitles, or: d.dearrowTitles)
+        dearrowThumbnails = try c.decode(.dearrowThumbnails, or: d.dearrowThumbnails)
         everythingSort = try c.decode(.everythingSort, or: d.everythingSort)
         everythingHideSeen = try c.decode(.everythingHideSeen, or: d.everythingHideSeen)
         everythingIncludeShorts = try c.decode(.everythingIncludeShorts, or: d.everythingIncludeShorts)
@@ -89,6 +100,8 @@ public struct PrefsPatch: Codable, Sendable, Hashable {
     public var subtitleSize: SubtitleSize?
     public var skipSponsors: Bool?
     public var sponsorActions: [String: SponsorSetting]?
+    public var dearrowTitles: DeArrowSetting?
+    public var dearrowThumbnails: DeArrowSetting?
     public var everythingSort: FeedSort?
     public var everythingHideSeen: Bool?
     public var everythingIncludeShorts: Bool?
@@ -101,6 +114,8 @@ public struct PrefsPatch: Codable, Sendable, Hashable {
         subtitleSize: SubtitleSize? = nil,
         skipSponsors: Bool? = nil,
         sponsorActions: [String: SponsorSetting]? = nil,
+        dearrowTitles: DeArrowSetting? = nil,
+        dearrowThumbnails: DeArrowSetting? = nil,
         everythingSort: FeedSort? = nil,
         everythingHideSeen: Bool? = nil,
         everythingIncludeShorts: Bool? = nil,
@@ -112,6 +127,8 @@ public struct PrefsPatch: Codable, Sendable, Hashable {
         self.subtitleSize = subtitleSize
         self.skipSponsors = skipSponsors
         self.sponsorActions = sponsorActions
+        self.dearrowTitles = dearrowTitles
+        self.dearrowThumbnails = dearrowThumbnails
         self.everythingSort = everythingSort
         self.everythingHideSeen = everythingHideSeen
         self.everythingIncludeShorts = everythingIncludeShorts
@@ -144,6 +161,36 @@ public enum SponsorSetting: String, Codable, Sendable, Hashable, CaseIterable {
         "sponsor", "selfpromo", "interaction",
         "intro", "outro", "preview", "filler", "music_offtopic", "exclusive_access",
     ]
+}
+
+/// What a viewer wants from DeArrow, for titles and for thumbnails
+/// separately.
+///
+/// `manual` is what people submitted and the crowd voted on. `all` adds what
+/// DeArrow generates where nobody has submitted anything: a title with the
+/// shouting taken out, and a frame it picked itself. Both are applied by the
+/// server, so every client shows a video under the same name.
+public enum DeArrowSetting: String, Codable, Sendable, Hashable, CaseIterable {
+    case off
+    case manual
+    case all
+
+    public var label: String {
+        switch self {
+        case .off: "Off"
+        case .manual: "Manual"
+        case .all: "All"
+        }
+    }
+
+    /// The next setting a row cycles to, for a remote that has no picker.
+    public var next: DeArrowSetting {
+        switch self {
+        case .off: .manual
+        case .manual: .all
+        case .all: .off
+        }
+    }
 }
 
 /// `GET /me`.

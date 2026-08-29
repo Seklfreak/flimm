@@ -7,6 +7,7 @@ import (
 	"net/http/httputil"
 	"os"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
@@ -193,3 +194,83 @@ func (s *Server) serveDerivedAudio(w http.ResponseWriter, r *http.Request, varia
 	w.Header().Set("Cache-Control", "private, max-age=3600")
 	http.ServeContent(w, r, id+ext, st.ModTime(), f)
 }
+
+// mediaFrame serves one still of a video, cut on first request and cached.
+//
+// This is what a DeArrow thumbnail resolves to: the service returns a
+// *timestamp*, and the frame is taken from the archive's own copy of the
+// video. No third party is asked for an image, nothing is fetched at render
+// time, and a thumbnail keeps working with the archive offline — which is why
+// this belongs in Flimm rather than in a browser extension.
+//
+// The path carries milliseconds so an entry is keyed by an integer: a cache
+// keyed on a float is a cache that misses on rounding.
+func (s *Server) mediaFrame(w http.ResponseWriter, r *http.Request) {
+	if s.mediaCache == nil {
+		writeError(w, http.StatusNotFound, "not found")
+		return
+	}
+	id := chi.URLParam(r, "id")
+	if !validMediaID.MatchString(id) {
+		writeError(w, http.StatusNotFound, "not found")
+		return
+	}
+	ms, err := strconv.ParseInt(chi.URLParam(r, "ms"), 10, 64)
+	if err != nil || ms < 0 || ms > maxFrameMillis {
+		writeError(w, http.StatusBadRequest, "ms must be a position in the video")
+		return
+	}
+	v, err := s.ta.GetVideo(r.Context(), id)
+	if err != nil {
+		s.writeTAError(w, "get video", err)
+		return
+	}
+	if v.MediaURL == "" {
+		writeError(w, http.StatusNotFound, "not found")
+		return
+	}
+	src := taMediaPath(v.MediaURL)
+	name := media.FrameVariant + "-" + id + "-" + strconv.FormatInt(ms, 10) + media.FrameExt
+	path, err := s.mediaCache.Get(r.Context(), name,
+		media.Frame(s.ffmpegPath, float64(ms)/1000, s.log, func(ctx context.Context, rangeHeader string) (*media.SourceStream, error) {
+			st, err := s.ta.OpenMediaRange(ctx, src, rangeHeader)
+			if err != nil {
+				return nil, err
+			}
+			return &media.SourceStream{
+				Body:          st.Body,
+				StatusCode:    st.StatusCode,
+				ContentLength: st.ContentLength,
+				ContentRange:  st.ContentRange,
+				AcceptRanges:  st.AcceptRanges,
+				ContentType:   st.ContentType,
+			}, nil
+		}))
+	if err != nil {
+		// A frame that cannot be cut is not worth an error page: the client
+		// asked for a thumbnail, and the archive has one of its own. Serve
+		// that instead of leaving a hole in the grid.
+		s.log.Debug("derive frame", "video", id, "ms", ms, "err", err)
+		s.mediaVideoThumb(w, r)
+		return
+	}
+	f, err := os.Open(path) //nolint:gosec // path is the cache dir plus a validated id
+	if err != nil {
+		writeError(w, http.StatusNotFound, "not found")
+		return
+	}
+	defer f.Close()
+	st, err := f.Stat()
+	if err != nil {
+		writeError(w, http.StatusNotFound, "not found")
+		return
+	}
+	w.Header().Set("Content-Type", media.FrameType)
+	// A frame of a fixed timestamp of an archived file never changes.
+	w.Header().Set("Cache-Control", "private, max-age=86400, immutable")
+	http.ServeContent(w, r, id+media.FrameExt, st.ModTime(), f)
+}
+
+// maxFrameMillis is a day, which is longer than anything TubeArchivist holds
+// and short enough that a silly `ms` is refused rather than handed to ffmpeg.
+const maxFrameMillis = 24 * 60 * 60 * 1000

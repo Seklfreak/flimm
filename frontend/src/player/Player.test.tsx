@@ -61,6 +61,8 @@ const prefs: Prefs = {
   subtitle_size: "medium",
   skip_sponsors: true,
   sponsor_actions: { sponsor: "skip", selfpromo: "skip", interaction: "skip", intro: "ask", outro: "ask" },
+  dearrow_titles: "off" as const,
+  dearrow_thumbnails: "off" as const,
   everything_sort: "newest",
   everything_hide_seen: true,
   everything_include_shorts: false,

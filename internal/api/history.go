@@ -64,6 +64,20 @@ func (s *Server) listHistory(w http.ResponseWriter, r *http.Request) {
 		s.writeTAError(w, "resolve history videos", err)
 		return
 	}
+	// History is built from the viewer's own events, not from a TubeArchivist
+	// page, so it misses `overlay` — and a video has to be called the same
+	// thing here as in the feed it was played from.
+	videos := make([]VideoSummary, len(items))
+	for i, it := range items {
+		videos[i] = it.Video
+	}
+	if err := s.brandList(r.Context(), uid, videos); err != nil {
+		s.writeDBError(w, "load prefs", err)
+		return
+	}
+	for i := range items {
+		items[i].Video = videos[i]
+	}
 	writeJSON(w, http.StatusOK, Page[HistoryEntry]{Items: items, Page: p.Page, PageSize: p.Size, Total: total})
 }
 

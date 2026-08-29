@@ -22,6 +22,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/Seklfreak/flimm/internal/db/sqlc"
+	"github.com/Seklfreak/flimm/internal/dearrow"
 	"github.com/Seklfreak/flimm/internal/media"
 	"github.com/Seklfreak/flimm/internal/sponsorblock"
 	"github.com/Seklfreak/flimm/internal/ta"
@@ -60,6 +61,9 @@ type Options struct {
 	// Sponsorblock fetches segments from a SponsorBlock server; nil falls
 	// back to the snapshot TubeArchivist indexed at download time.
 	Sponsorblock *sponsorblock.Client
+	// DeArrow supplies crowd-sourced titles and thumbnails; nil disables them
+	// for the deployment, whatever a viewer's preferences say.
+	DeArrow *dearrow.Client
 	// FFmpegPath is the ffmpeg binary used for derivations.
 	FFmpegPath string
 	// HWAccel is the hardware-transcode decision made at start-up; the zero
@@ -106,6 +110,7 @@ type Server struct {
 	taHealth taHealth
 	// sponsorblock is the segment source; nil uses TA's snapshot.
 	sponsorblock *sponsorblock.Client
+	dearrow      *dearrow.Client
 	// minPlaySeconds gates recording a watch event; see Options.
 	minPlaySeconds float64
 	mediaCache     *media.Cache
@@ -149,6 +154,7 @@ func NewServer(o Options) *Server {
 		frontend:       o.Frontend,
 		chapters:       newChaptersCache(),
 		sponsorblock:   o.Sponsorblock,
+		dearrow:        o.DeArrow,
 		minPlaySeconds: cmp.Or(o.MinPlaySeconds, defaultMinPlaySeconds),
 		mediaCache:     o.MediaCache,
 		ffmpegPath:     cmp.Or(o.FFmpegPath, "ffmpeg"),
@@ -267,6 +273,7 @@ func (s *Server) Router() http.Handler {
 	r.Route("/media", func(r chi.Router) {
 		r.Use(s.mediaAuthMiddleware)
 		r.Get("/video/{id}.mp4", s.mediaVideo)
+		r.Get("/frame/{id}/{ms}.jpg", s.mediaFrame)
 		r.Get("/audio/{id}.webm", s.mediaAudio)
 		r.Get("/audio/{id}.m4a", s.mediaAudioAAC)
 		// One route for the playlist and every segment: AVPlayer re-sends the

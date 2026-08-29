@@ -1,4 +1,4 @@
-import { EVERYTHING_ID, type FeedSort, type Prefs } from "@/lib/api";
+import { EVERYTHING_ID, type DeArrowSetting, type FeedSort, type Prefs } from "@/lib/api";
 import { useMe, useUpdatePrefs } from "@/lib/queries";
 import { useConfig } from "@/lib/config";
 import { PageHeader } from "@/components/Layout";
@@ -28,6 +28,12 @@ const SPONSOR_CATEGORIES = [
   "filler",
   "music_offtopic",
   "exclusive_access",
+];
+
+const DEARROW_OPTIONS = [
+  { value: "off", label: "Off" },
+  { value: "manual", label: "Manual" },
+  { value: "all", label: "All" },
 ];
 
 // "Skip" jumps it, "Ask" offers a button in the player, "Off" leaves it alone.
@@ -95,6 +101,29 @@ export default function SettingsPage() {
                 ))}
               </Section>
             )}
+
+            <Section title="DeArrow">
+              <Row
+                label="Titles"
+                hint="Crowd-sourced titles from DeArrow. Manual uses what people submitted and voted on; All also tidies a shouted title nobody has replaced."
+              >
+                <Segmented
+                  value={prefs.dearrow_titles}
+                  onChange={(v) => set({ dearrow_titles: v as DeArrowSetting })}
+                  options={DEARROW_OPTIONS}
+                />
+              </Row>
+              <Row
+                label="Thumbnails"
+                hint="Set apart from titles. The frame is cut from your own copy of the video — DeArrow supplies a timestamp, never an image."
+              >
+                <Segmented
+                  value={prefs.dearrow_thumbnails}
+                  onChange={(v) => set({ dearrow_thumbnails: v as DeArrowSetting })}
+                  options={DEARROW_OPTIONS}
+                />
+              </Row>
+            </Section>
 
             <Section title="Subtitles">
               <Row label="Language" hint="The track picked by default when a video has one.">

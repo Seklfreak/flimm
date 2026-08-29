@@ -2,6 +2,27 @@
 
 ## Done
 
+- **DeArrow** (2026-08-29) — crowd-sourced titles and thumbnails, from
+  SponsorBlock's sister project and asked for the same way: four characters of
+  a hash, never the video id. Titles and thumbnails are **separate**
+  preferences, each *off*, *manual* or *all*, because they are separate things
+  to want — and the manual/all split is DeArrow's own: submissions people
+  voted on, versus what the service generates where nobody submitted anything
+  (a title with the shouting taken out, a frame it picked itself). A crowd
+  that voted to keep the original is obeyed by both.
+
+  The thumbnail half is the part that fits Flimm better than it fits a browser
+  extension, and it worked out as the idea claimed: DeArrow returns a
+  *timestamp*, and since the archive holds the file, the server cuts that frame
+  with ffmpeg — an input seek over the range-capable loopback, so a frame
+  twenty minutes in reads a few hundred kilobytes — and caches it like any
+  other derived media. No image is fetched from anyone, and it works with the
+  archive offline. Applied on the server for every list, including the ones
+  built from watch events rather than a TubeArchivist page: the first version
+  missed those, and the in-progress row at the top of a feed was the one card
+  still carrying the archive's own name. `cmd/fake-ta` serves
+  `/api/branding/{prefix}` now, so the whole thing is exercisable offline.
+
 - **SponsorBlock, per category** (2026-08-29) — one "skip sponsors" switch
   decided everything, with a hardcoded set of categories that acted and the
   rest tinted and ignored. Each category is now the viewer's own: **Skip**
@@ -437,15 +458,6 @@
 
 ## Ideas
 
-- **DeArrow** — crowd-sourced de-clickbaited titles and thumbnails, from the
-  same project and the same hash-prefix API (`/api/branding/{prefix}`). The
-  thumbnail half fits Flimm better than it fits a browser extension: DeArrow
-  returns a *timestamp*, not an image, and Flimm holds the video file, so the
-  server can cut that frame with ffmpeg through the derived-media cache instead
-  of calling a third-party thumbnail service — no image fetch, works offline,
-  and the same "the server decides so clients cannot drift" rule as the
-  rendition ladder. Titles would be a preference in `PATCH /me/prefs` (original
-  vs. improved), not a per-client toggle.
 - **Scrub preview thumbnails** — a sprite sheet and a WebVTT track derived once
   per video into the media cache. Web and the phone/iPad draw it above the
   scrubber; tvOS gets it for free, because `AVPlayerViewController` renders
