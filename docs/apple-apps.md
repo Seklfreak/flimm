@@ -81,7 +81,10 @@ What is there:
     context-carrying previous/next and autoplay, shuffle by new seed starting
     at `nav.first`, chapter ticks plus a chapter list, SponsorBlock tints with
     auto-skip on the `skip_sponsors` preference, self-rendered WebVTT
-    subtitles, playback speed, Picture in Picture, landscape full screen, and
+    subtitles, scrub-preview stills above the thumb while dragging (the sheet
+    and track from `preview_url`, cropped with `CGImage.cropping`; the parsing
+    is `ScrubPreview` in FlimmKit, shared with nothing yet and identical to the
+    web's), playback speed, Picture in Picture, landscape full screen, and
     audio-only mode with `MPNowPlayingInfoCenter` / `MPRemoteCommandCenter`.
   - **Search** — sectioned results with subtitle hits that open the player at
     their timestamp.
@@ -152,6 +155,13 @@ What is there:
     `contentOverlayView` — the tracks are authenticated sidecars an
     `AVPlayerItem` cannot fetch itself. Audio-only plays `audio_aac_url` with
     artwork in the overlay and `MPNowPlayingInfoCenter`.
+  - **Scrub previews are the TV's one stated gap.** The web, phone and iPad
+    draw `preview_url`'s stills above the scrubber; the TV cannot be handed
+    them, because the scrubber there is `AVPlayerViewController`'s and AVKit
+    exposes no way to supply trick-play images — it generates its own from the
+    asset, which it does for the archived file and not for an HLS rendition
+    without an I-frame playlist. Nothing is derived for the TV, so a viewer who
+    only ever watches there never pays for a sheet.
   - **"Not interested" is one action in one place.** `apple/Shared/DismissAction.swift`
     holds both the round trip and the context-menu row, because `.contextMenu`
     is the same SwiftUI API on iOS and tvOS — only the gesture that opens it

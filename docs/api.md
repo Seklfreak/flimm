@@ -115,6 +115,7 @@ resume is the default action, and `t=` only exists to jump to a subtitle hit.
     { "height": 720,  "url": "/media/hls/yt-id/720/master.m3u8",  "state": "running", "codec": "h264", "hls_progress": 0.37 },
     { "height": 480,  "url": "/media/hls/yt-id/480/master.m3u8",  "state": "pending", "codec": "h264", "hls_progress": 0 }
   ],
+  "preview_url": "/media/preview/yt-id/preview.vtt", // scrub-preview stills, see Derived media
   "youtube_url": "https://www.youtube.com/watch?v=yt-id",
   "streams": [ { "type": "video", "codec": "avc1", "width": 1920, "height": 1080, "bitrate": 4500000 },
                { "type": "audio", "codec": "mp4a", "width": 0, "height": 0, "bitrate": 130000 } ],
@@ -557,6 +558,8 @@ and `feed` filter the video results in the backend.
 | `GET /media/hls/{id}/master.m3u8`, `/index.m3u8`, `/init.mp4`, `/seg00000.m4s` | the same files without a height: a **legacy alias** for the 1080p rendition, kept for clients written before the ladder. It serves that rendition's cache entry rather than one of its own. New clients use `hls_variants` |
 | `GET /media/subtitles/{id}/{lang}.vtt` | TA subtitle track |
 | `GET /media/frame/{id}/{ms}.jpg` | derived: one still, cut on first request and cached — what a DeArrow thumbnail resolves to |
+| `GET /media/preview/{id}/preview.vtt` | derived: the scrub-preview track (`text/vtt`), one cue per still, each pointing at its rectangle of the sheet as `sheet.jpg#xywh=x,y,w,h`. The first request **starts the derivation** and answers **404** (`Cache-Control: no-store`) until both files are on disk; a client scrubs without pictures and asks again |
+| `GET /media/preview/{id}/sheet.jpg` | derived: the sprite sheet those cues cut from (`image/jpeg`). Same 404-until-ready rule. Both are `private, max-age=86400, immutable` once served |
 | `GET /media/thumb/video/{id}` | TA `/cache/videos/…` |
 | `GET /media/thumb/channel/{id}` and `/media/thumb/channel/{id}/banner` | TA `/cache/channels/…` |
 | `GET /media/thumb/playlist/{id}` | TA `/cache/playlists/…` |
@@ -581,7 +584,8 @@ the media segments), and there is one per offered height: `hls-1080`,
 There are two audio variants. They carry the same audio; they differ only in
 what can decode them, so a client picks one and never both. The video variants
 are described under
-[Compatible video renditions (HLS)](#compatible-video-renditions-hls) below.
+[Compatible video renditions (HLS)](#compatible-video-renditions-hls) below,
+and the scrub-preview stills under [Scrub previews](#scrub-previews).
 
 - `GET /media/audio/{id}.webm` is the `audio` variant. The archived audio is
   already Opus, so it is **remuxed, not re-encoded** (`-vn -c:a copy`): no
@@ -624,6 +628,30 @@ are described under
 Clients choose the stream. `audio_only` on a playlist is the persisted
 intent; clients carry `audio=1` in the player URL so the choice survives
 next/previous, autoplay and a reload, exactly as the shuffle seed does.
+
+#### Scrub previews
+
+`preview_url` on the video detail is a WebVTT track of stills — the picture a
+player shows above the scrubber while it is being dragged. The `preview`
+variant is a directory holding two files: `sheet.jpg`, a sprite sheet of small
+stills, and `preview.vtt`, one cue per still pointing at its rectangle of that
+sheet (`sheet.jpg#xywh=x,y,w,h`, the fragment convention every player that
+does this speaks). A sheet rather than a thousand files because a drag moves
+through dozens of positions a second, and one image already in the client's
+memory answers all of them.
+
+The stills are 160px wide, ten to a row, at most 200 of them and never closer
+together than two seconds — so a three-minute video gets one every two seconds
+and a two-hour one gets one every 36, both in a sheet of a few hundred KB. The
+track is written **after** the sheet, so its presence is what "ready" means:
+a job that died halfway leaves a sheet no client can be handed.
+
+It is the most expensive derivation per unit of use — a full decode of the
+file, because stills at a *regular* interval are not the keyframes the encoder
+happened to leave — so nothing derives it until a player asks, and the clients
+only ask once playback has actually begun. Asking is what starts it: the first
+request is a 404 and the answer arrives on a later one. Nothing waits on it;
+a scrubber with no stills is still a scrubber.
 
 #### Compatible video renditions (HLS)
 

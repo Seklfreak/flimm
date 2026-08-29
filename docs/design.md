@@ -63,6 +63,13 @@ feeds without leaving the page.
   position.
 - Seen state and resume position are written back to TubeArchivist, so the
   stock TA UI stays consistent.
+- **Dragging the scrubber shows the frame you are dragging to**, so finding a
+  moment is looking rather than guessing-and-seeking. The stills are derived
+  from the deployment's own copy of the video, once per video and only once
+  someone is actually watching it: it is the most expensive thing the server
+  derives, and a video nobody scrubs never costs it. Apple TV is the exception,
+  and a deliberate one — its scrubber belongs to AVKit, which draws its own
+  stills and takes none from us.
 - The subtitle picker is the CC button in the controls: Off, archived tracks,
   and auto-generated tracks marked *auto*, plus size. Cues are white on a
   dark plate — tried without one, and the plate is what makes them readable

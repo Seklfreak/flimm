@@ -149,6 +149,9 @@ export interface Video extends Omit<VideoSummary, "channel"> {
   /** The same audio as AAC in MP4, for players that cannot decode Opus in
    *  WebM. The web player stays on `audio_url`; optional on older servers. */
   audio_aac_url?: string;
+  /** The WebVTT track of scrub-preview stills. Optional only because a server
+   *  older than the feature has none; a 404 means "not derived yet". */
+  preview_url?: string;
   /** The default compatible rendition. Optional here only because a server
    *  older than the feature has none. */
   hls_url?: string;

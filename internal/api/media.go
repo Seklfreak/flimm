@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -274,3 +275,87 @@ func (s *Server) mediaFrame(w http.ResponseWriter, r *http.Request) {
 // maxFrameMillis is a day, which is longer than anything TubeArchivist holds
 // and short enough that a silly `ms` is refused rather than handed to ffmpeg.
 const maxFrameMillis = 24 * 60 * 60 * 1000
+
+// previewName is the cache directory holding a video's scrub-preview sheet and
+// its track.
+func previewName(id string) string { return media.PreviewVariant + "-" + id }
+
+func previewTrackURL(id string) string {
+	return "/media/preview/" + id + "/" + media.PreviewTrackName
+}
+
+// mediaPreview serves the scrub-preview track and its sheet, and starts the
+// derivation on the first request for either.
+//
+// A player asking for the track is the signal that someone is watching this
+// video: nothing derives a preview for an archive nobody has opened, which is
+// the only reason a full decode per video is affordable at all.
+//
+// While it is being made the answer is 404. That is deliberate: a scrubber
+// without pictures is a scrubber, and a player that waited on this would be a
+// player that opened slowly.
+func (s *Server) mediaPreview(w http.ResponseWriter, r *http.Request) {
+	if s.mediaCache == nil {
+		writeError(w, http.StatusNotFound, "not found")
+		return
+	}
+	id := chi.URLParam(r, "id")
+	file := chi.URLParam(r, "file")
+	if !validMediaID.MatchString(id) || (file != media.PreviewTrackName && file != media.PreviewSheetName) {
+		writeError(w, http.StatusNotFound, "not found")
+		return
+	}
+	v, err := s.ta.GetVideo(r.Context(), id)
+	if err != nil {
+		s.writeTAError(w, "get video", err)
+		return
+	}
+	if v.MediaURL == "" || v.Player.Duration <= 0 {
+		writeError(w, http.StatusNotFound, "not found")
+		return
+	}
+	name := previewName(id)
+	src := taMediaPath(v.MediaURL)
+	s.mediaCache.StartDir(name, media.Preview(s.ffmpegPath, v.Player.Duration, s.log,
+		func(ctx context.Context, rangeHeader string) (*media.SourceStream, error) {
+			st, err := s.ta.OpenMediaRange(ctx, src, rangeHeader)
+			if err != nil {
+				return nil, err
+			}
+			return &media.SourceStream{
+				Body:          st.Body,
+				StatusCode:    st.StatusCode,
+				ContentLength: st.ContentLength,
+				ContentRange:  st.ContentRange,
+				AcceptRanges:  st.AcceptRanges,
+				ContentType:   st.ContentType,
+			}, nil
+		}))
+	dir := s.mediaCache.Dir(name)
+	if !media.PreviewReady(dir) {
+		// Being made, or it failed. Either way there is nothing to show yet.
+		w.Header().Set("Cache-Control", "no-store")
+		writeError(w, http.StatusNotFound, "preview not ready")
+		return
+	}
+	s.mediaCache.TouchDir(name)
+	f, err := os.Open(filepath.Join(dir, file)) //nolint:gosec // dir is the cache, file is one of two literals
+	if err != nil {
+		writeError(w, http.StatusNotFound, "not found")
+		return
+	}
+	defer f.Close()
+	st, err := f.Stat()
+	if err != nil {
+		writeError(w, http.StatusNotFound, "not found")
+		return
+	}
+	if file == media.PreviewTrackName {
+		w.Header().Set("Content-Type", "text/vtt; charset=utf-8")
+	} else {
+		w.Header().Set("Content-Type", media.FrameType)
+	}
+	// The stills of an archived file never change.
+	w.Header().Set("Cache-Control", "private, max-age=86400, immutable")
+	http.ServeContent(w, r, file, st.ModTime(), f)
+}

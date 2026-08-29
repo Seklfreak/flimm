@@ -1,5 +1,6 @@
 import FlimmKit
 import SwiftUI
+import UIKit
 
 /// The transport bar's timeline: played position, buffered-agnostic track,
 /// SponsorBlock tints and chapter boundary ticks, with a draggable thumb.
@@ -11,6 +12,9 @@ struct ScrubberView: View {
     let duration: Double
     let chapters: [Chapter]
     let sponsors: [SponsorSegment]
+    /// The scrub-preview stills, empty until the server has derived them.
+    var preview: [PreviewTile] = []
+    var previewSheet: UIImage?
     let onScrub: (Double) -> Void
     let onCommit: (Double) -> Void
 
@@ -64,6 +68,10 @@ struct ScrubberView: View {
                     .offset(x: width * fraction - (dragValue == nil ? 6 : 9))
                     .shadow(radius: 2)
             }
+            // The still for wherever the drag is, held above the bar. It is an
+            // overlay rather than a row above it so the transport chrome does
+            // not change height when a video has previews and another has not.
+            .overlay(alignment: .topLeading) { previewOverlay(width: width) }
             // Drawn 22pt tall, dragged over 44: a thin bar is the right look
             // and the wrong target, so the touch area is grown and the layout
             // pulled back by the same amount (below) so nothing moves.
@@ -89,6 +97,51 @@ struct ScrubberView: View {
         .frame(height: 44)
         .padding(.vertical, -(44 - PlayerMetrics.scrubberBar) / 2)
         .animation(.easeOut(duration: 0.12), value: dragValue == nil)
+    }
+
+    /// The still above the thumb, while a drag is in progress and only then:
+    /// a picture that followed the playhead would be a distraction, and this
+    /// is the one moment a viewer is asking "what is *there*".
+    @ViewBuilder
+    private func previewOverlay(width: CGFloat) -> some View {
+        if let target = dragValue,
+           let tile = ScrubPreview.tile(at: target, in: preview),
+           let sheet = previewSheet,
+           let still = Self.crop(sheet, to: tile.rect) {
+            let size = CGSize(width: Self.previewWidth, height: Self.previewWidth * tile.rect.height / tile.rect.width)
+            VStack(spacing: 3) {
+                Image(uiImage: still)
+                    .resizable()
+                    .frame(width: size.width, height: size.height)
+                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .strokeBorder(.white.opacity(0.35), lineWidth: 1)
+                    )
+                Text(Fmt.duration(target))
+                    .font(.caption2.monospacedDigit().weight(.semibold))
+                    .foregroundStyle(.white)
+            }
+            .shadow(radius: 8)
+            // Centred on the thumb, but never pushed off either end of the bar.
+            .offset(
+                x: min(max(width * fraction - size.width / 2, 0), max(width - size.width, 0)),
+                y: -(size.height + 24)
+            )
+            .allowsHitTesting(false)
+            .transition(.opacity)
+        }
+    }
+
+    /// How wide the still is drawn. The sheet's own tiles are 160px, so this
+    /// is life size and never upscaled.
+    private static let previewWidth: CGFloat = 160
+
+    /// `cropping` returns a view onto the same pixels rather than a copy, so
+    /// doing this per drag update costs nothing to speak of.
+    private static func crop(_ image: UIImage, to rect: CGRect) -> UIImage? {
+        guard let cgImage = image.cgImage?.cropping(to: rect) else { return nil }
+        return UIImage(cgImage: cgImage, scale: image.scale, orientation: image.imageOrientation)
     }
 }
 

@@ -274,6 +274,7 @@ func (s *Server) Router() http.Handler {
 		r.Use(s.mediaAuthMiddleware)
 		r.Get("/video/{id}.mp4", s.mediaVideo)
 		r.Get("/frame/{id}/{ms}.jpg", s.mediaFrame)
+		r.Get("/preview/{id}/{file}", s.mediaPreview)
 		r.Get("/audio/{id}.webm", s.mediaAudio)
 		r.Get("/audio/{id}.m4a", s.mediaAudioAAC)
 		// One route for the playlist and every segment: AVPlayer re-sends the

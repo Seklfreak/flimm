@@ -396,6 +396,7 @@ func (s *Server) getVideo(w http.ResponseWriter, r *http.Request) {
 		MediaURL:     "/media/video/" + v.YoutubeID + ".mp4",
 		AudioURL:     "/media/audio/" + v.YoutubeID + media.AudioExt,
 		AudioAACURL:  "/media/audio/" + v.YoutubeID + media.AudioAACExt,
+		PreviewURL:   previewTrackURL(v.YoutubeID),
 		HLSURL:       hlsURL(v.YoutubeID, media.HLSDefaultOffered(v.Height())),
 		HLSState:     string(s.hlsState(v.YoutubeID, media.HLSDefaultOffered(v.Height()))),
 		HLSVariants:  s.hlsVariants(v.YoutubeID, v.Height()),

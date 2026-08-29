@@ -123,6 +123,11 @@ type VideoDetail struct {
 	// Always present — HLSState says whether it is ready. Clients that pick a
 	// quality use HLSVariants instead.
 	HLSURL string `json:"hls_url"`
+	// PreviewURL is the WebVTT track of scrub-preview stills — the picture a
+	// player shows above the scrubber while it is dragged. Always present:
+	// asking for it is what starts deriving it, and a 404 means "not yet",
+	// which a player answers by scrubbing without pictures and asking again.
+	PreviewURL string `json:"preview_url"`
 	// HLSState is pending|running|done|failed for that rendition. Pending
 	// means nobody has asked for it yet.
 	HLSState string `json:"hls_state"`

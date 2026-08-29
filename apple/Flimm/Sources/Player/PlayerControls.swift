@@ -38,6 +38,7 @@ struct PlayerControls: View {
     var isFullScreen = false
     let onClose: () -> Void
     let onToggleFullScreen: () -> Void
+    let scrubPreview: ScrubPreviewState
 
     @Binding var isVisible: Bool
     @Environment(\.horizontalSizeClass) private var sizeClass
@@ -268,6 +269,8 @@ struct PlayerControls: View {
                 duration: model.engine.duration,
                 chapters: model.chapters,
                 sponsors: model.video?.sponsorblock ?? [],
+                preview: scrubPreview.tiles,
+                previewSheet: scrubPreview.sheet,
                 onScrub: { _ in },
                 onCommit: { model.seek(to: $0) }
             )

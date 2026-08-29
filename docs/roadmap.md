@@ -2,6 +2,29 @@
 
 ## Done
 
+- **Scrub preview thumbnails** (2026-08-29) — dragging the scrubber now shows
+  the frame you are dragging to. One sprite sheet of 160px stills per video
+  plus a WebVTT track saying which tile covers which second, derived on demand
+  into the media cache like every other derivation, and served from
+  `/media/preview/{id}/…`. A sheet rather than a still per second because a
+  drag asks for dozens of positions a second and one image in memory answers
+  all of them; a regular interval rather than the keyframes, because a grid
+  the track can describe is the whole point, which is what makes this a full
+  decode of the file and the most expensive thing in the cache per unit of
+  use. So nothing is derived until a viewer is actually watching: the web
+  player and the phone both ask only once playback has begun, and asking is
+  what starts it — the first request 404s and the stills turn up a moment
+  later, with the scrubber working perfectly well in the meantime.
+
+  The web draws the tile as a `background-position` window into the sheet; the
+  phone and iPad crop it with `CGImage.cropping`, which is a view onto the same
+  pixels rather than a copy, and show it above the thumb with the target time
+  under it. Both read the same track through the same rules
+  (`ScrubPreview` in FlimmKit, `player/preview.ts` on the web). **tvOS is the
+  stated exception**: its scrubber is `AVPlayerViewController`'s, which draws
+  its own trick-play stills from the asset and has no API to hand a sheet to —
+  see [apple-apps.md](apple-apps.md).
+
 - **DeArrow** (2026-08-29) — crowd-sourced titles and thumbnails, from
   SponsorBlock's sister project and asked for the same way: four characters of
   a hash, never the video id. Titles and thumbnails are **separate**
@@ -458,10 +481,6 @@
 
 ## Ideas
 
-- **Scrub preview thumbnails** — a sprite sheet and a WebVTT track derived once
-  per video into the media cache. Web and the phone/iPad draw it above the
-  scrubber; tvOS gets it for free, because `AVPlayerViewController` renders
-  trick-play images natively.
 - **Loudness normalisation** — one EBU R128 (`loudnorm`) analysis pass per
   video, the gain stored and applied by the player, so channels stop being at
   wildly different volumes. Matters most for the audio-only music path.

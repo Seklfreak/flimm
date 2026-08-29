@@ -14,13 +14,28 @@ struct WatchView: View {
     @Environment(\.verticalSizeClass) private var verticalSizeClass
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
+    @Environment(AppModel.self) private var app
+
     @State private var controlsVisible = true
+    @State private var scrubPreview = ScrubPreviewState()
     @State private var hideTask: Task<Void, Never>?
     @FocusState private var keyboardFocused: Bool
 
     /// Landscape on a phone is full-screen video; so is the explicit toggle.
     private var isFullScreen: Bool {
         player.isFullScreen || verticalSizeClass == .compact
+    }
+
+    /// The stills to load, or nil while there is nothing to load them for:
+    /// no video, no preview on this backend, or playback not started yet.
+    private var scrubPreviewPath: String? {
+        guard let model = player.model, model.engine.currentTime > 0 else { return nil }
+        return model.video?.scrubPreviewPath
+    }
+
+    private func loadScrubPreview() async {
+        guard let path = scrubPreviewPath else { return }
+        await scrubPreview.load(path: path, client: app.client)
     }
 
     /// Side-by-side only where there is room for it.
@@ -45,6 +60,11 @@ struct WatchView: View {
             }
         }
         .background(Palette.background)
+        // Only once playback has actually begun: asking for the stills is what
+        // makes the server derive them, and a video opened and abandoned in two
+        // seconds should not cost a full decode. The key is nil until then, so
+        // the task runs on the transition and once per video.
+        .task(id: scrubPreviewPath) { await loadScrubPreview() }
         .statusBarHidden(isFullScreen)
         .navigationTitle(player.model?.video?.title ?? "")
         .navigationBarTitleDisplayMode(.inline)
@@ -199,6 +219,7 @@ struct WatchView: View {
                     isFullScreen: isFullScreen,
                     onClose: close,
                     onToggleFullScreen: { player.isFullScreen.toggle() },
+                    scrubPreview: scrubPreview,
                     isVisible: $controlsVisible
                 )
                 if let resumed = model.resumedFrom, controlsVisible {

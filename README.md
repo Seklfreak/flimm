@@ -33,7 +33,8 @@ One container image: a Go backend with the React frontend embedded.
 - **Search** across titles, channels, playlists **and subtitle text**; a
   subtitle hit jumps straight to that timestamp.
 - **Player** — archived and auto-generated subtitle tracks, SponsorBlock
-  segment skipping, playback speed, autoplay with context-aware *Up next*.
+  segment skipping, scrub previews (drag the scrubber and see the frame you
+  are dragging to), playback speed, autoplay with context-aware *Up next*.
 - **Settings** — autoplay, speed, sponsor skipping, subtitle language and size,
   the Everything-feed options and the theme, all stored per user and shared
   with the native apps.

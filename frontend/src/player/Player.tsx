@@ -4,6 +4,7 @@ import { fmtDuration } from "@/lib/format";
 import { refreshMediaSession, retryMediaUrl } from "@/lib/media";
 import { trackPlay } from "@/lib/analytics";
 import { useCueLift, useCueSize } from "./cueSize";
+import { usePreviewTiles } from "./preview";
 import { CheckIcon, HeadphonesIcon, MediaImg, Popover, Spinner } from "@/components/ui";
 import { useChapters } from "@/lib/queries";
 import { useSponsorSkip } from "./useSponsorSkip";
@@ -299,6 +300,10 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(function Player(
   // cues sit a couple of lines above the bottom edge rather than on it.
   useCueSize(el, prefs.subtitle_size);
   useCueLift(el);
+  // Scrub previews, once the player is actually playing: asking for the track
+  // is what starts a full decode of the file server-side, and a video someone
+  // opened and closed again does not need one.
+  const previewTiles = usePreviewTiles(video.preview_url, playing || time > 0);
   const sponsorActions = prefs.sponsor_actions ?? {};
   useSponsorSkip(el, video.sponsorblock, prefs.skip_sponsors, sponsorActions);
   // A category the viewer set to "ask" is a button, not a jump: offered while
@@ -646,7 +651,14 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(function Player(
       <div
         className={`absolute inset-x-0 bottom-0 flex flex-col gap-2.5 bg-gradient-to-t from-black/75 to-transparent px-4 pb-3 pt-6 transition-opacity ${showControls ? "opacity-100" : "opacity-0"}`}
       >
-        <Scrubber time={time} duration={duration} chapters={chapters} sponsorblock={video.sponsorblock} onSeek={seekTo} />
+        <Scrubber
+          time={time}
+          duration={duration}
+          chapters={chapters}
+          sponsorblock={video.sponsorblock}
+          onSeek={seekTo}
+          preview={previewTiles}
+        />
         <div className="flex items-center gap-4 text-[12px] font-bold">
           {nav && (
             <button onClick={nav.onPrev} disabled={!nav.onPrev} aria-label="Previous video" className="disabled:opacity-35">
