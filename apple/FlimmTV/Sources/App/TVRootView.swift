@@ -57,5 +57,21 @@ struct TVRootView: View {
             app = AppModel(client: client)
         }
         player.configure(app: app, playback: playback)
+        openDebugVideo()
+    }
+
+    /// Opens a video straight from launch, so a screen that only exists during
+    /// playback — the compatible-rendition wait, the info panel, the subtitle
+    /// placement — can be reached in a simulator without a remote:
+    ///
+    ///     xcrun simctl launch --console <device> dev.winktech.flimm.tv
+    ///     # with SIMCTL_CHILD_FLIMM_PLAY_VIDEO=<video id> in the environment
+    ///
+    /// Debug builds only; a shipped app has no such door.
+    private func openDebugVideo() {
+        #if DEBUG
+        guard let id = ProcessInfo.processInfo.environment["FLIMM_PLAY_VIDEO"], !id.isEmpty else { return }
+        player.play(id)
+        #endif
     }
 }

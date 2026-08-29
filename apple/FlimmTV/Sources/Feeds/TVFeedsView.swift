@@ -111,6 +111,7 @@ struct TVFeedsView: View {
             ScrollView(.horizontal) {
                 HStack(spacing: 18) {
                     ForEach(app.feeds) { candidate in
+                        let isCurrent = candidate.id == feed?.id
                         Button {
                             if feedId != candidate.id { feedView = nil }
                             feedId = candidate.id
@@ -118,14 +119,20 @@ struct TVFeedsView: View {
                             HStack(spacing: 10) {
                                 if candidate.pinned { Image(systemName: "pin.fill") }
                                 Text(candidate.name)
+                                    .fontWeight(isCurrent ? .bold : .regular)
                                 TVUnseenBadge(count: candidate.unseenCount)
                             }
+                            // The chip is drawn inside the label so the fill
+                            // wraps the words rather than the button's own
+                            // frame: a 25%-accent capsule behind a borderless
+                            // button was invisible from a sofa, which left
+                            // nothing saying which feed you were looking at.
+                            .padding(.horizontal, 24)
+                            .padding(.vertical, 12)
+                            .background(isCurrent ? Palette.accent : Palette.raised, in: Capsule())
+                            .foregroundStyle(isCurrent ? Color.white : Color.primary)
                         }
                         .buttonStyle(.borderless)
-                        .background(
-                            candidate.id == feed?.id ? Palette.accent.opacity(0.25) : Color.clear,
-                            in: Capsule()
-                        )
                     }
                 }
                 .padding(.vertical, 10)

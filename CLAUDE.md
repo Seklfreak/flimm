@@ -123,6 +123,45 @@ change is not done when it works on the platform you happened to start on.
 - Progress heartbeats go through `POST /videos/{id}/progress`; on a media 401
   call `POST /session/media` once and retry.
 
+## See it work before calling it done
+
+**A user-visible change is confirmed against the dev stack, not reasoned
+about.** Tests and a clean build say the code compiles and the logic holds;
+they say nothing about whether a panel is readable, a caption sits where it
+should, or a screen shows two spinners. The stack exists precisely so that
+can be checked, and every platform can reach it:
+
+```sh
+go run ./cmd/fake-ta   # :8001, with real playable media (see the README)
+TA_URL=http://localhost:8001 TA_TOKEN=dev SPONSORBLOCK_URL= \
+  AUTH_DISABLED=true PUBLIC_URL=http://localhost:8080 \
+  DATABASE_URL=... MEDIA_TOKEN_SECRET=dev go run ./cmd/server
+```
+
+- **Web**: `cd frontend && npm run dev`, then drive it in a browser.
+- **iPhone / iPad / Apple TV**: run the target in a simulator and connect it to
+  `http://localhost:8080` — `AUTH_DISABLED=true` means no sign-in step. Two
+  things make this work without a human at the keyboard: the stored server can
+  be written straight into the app container
+  (`xcrun simctl spawn <dev> defaults write dev.winktech.flimm.tv flimm.server
+  -data <hex of {"baseURL":…,"config":…}>`), and the TV app opens a video
+  directly in **Debug** builds when `FLIMM_PLAY_VIDEO=<id>` is in its
+  environment (`SIMCTL_CHILD_FLIMM_PLAY_VIDEO=… xcrun simctl launch …`), which
+  is the only way to reach a screen that exists during playback.
+- **A screen that only appears while something is slow** — the
+  compatible-rendition wait, most of all — can be held open by taking the
+  single transcode slot first: run the server with `MEDIA_TRANSCODE_JOBS=1`,
+  `POST /videos/<id>/hls?height=480`, then play the same video, whose 720
+  rendition now has to queue.
+- The fake's catalogue is built for exactly this: a running-timer picture so a
+  seek or a resume can be checked by eye, embedded chapters, SponsorBlock
+  segments, WebVTT subtitles that name their own timestamps, and a VP9 video
+  Apple hardware cannot decode, which is the only way to reach the codec gate
+  and the compatible-rendition wait.
+
+Screenshot what changed. If a change genuinely cannot be reached this way, say
+so plainly rather than implying it was seen.
+
 ## Before committing
 
 - Backend: `golangci-lint run ./... && go build ./... && go test ./...`
