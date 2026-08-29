@@ -2,6 +2,18 @@
 
 ## Done
 
+- **A resumed transcode starts at the resume point** (2026-08-29) — a video
+  the device cannot decode is converted on demand, and that conversion was
+  supposed to begin where the viewer left off. For any source whose *audio*
+  could be copied — which is most of them — it began at zero instead: the
+  attempt ladder marked a copy rung as "one pass over the whole video", a rule
+  that belongs to a *video* copy (a stream copy can only cut on the source's
+  own keyframes), and applied it when only the audio was being copied. The
+  effect was a viewer resuming an hour in and waiting for the encoder to walk
+  there from the beginning. Found by watching the dev stack rather than
+  reading the code: `ffmpeg` had no `-ss` and wrote `seg00000` for a request
+  that asked for 4:45.
+
 - **Resume gives back fifteen seconds** (2026-08-29) — coming back to a video
   used to drop the viewer exactly where they stopped, which is usually the
   middle of a sentence. The resume point reported by the API is now 15 seconds

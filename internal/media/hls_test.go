@@ -294,16 +294,34 @@ func TestHLSArgsMixedCopyAndEncode(t *testing.T) {
 	}
 }
 
-// The copy rung can only ever produce the whole rendition: a stream copy cuts
+// A *video* copy can only ever produce the whole rendition: a stream copy cuts
 // on the source's own keyframes, not on the 4 s grid, so a partial range would
 // produce segments the playlist does not describe.
-func TestCopyRungIsAlwaysASingleRun(t *testing.T) {
+func TestAVideoCopyIsASingleRun(t *testing.T) {
 	attempts := hlsAttempts(HLSSource{VideoCodec: "avc1", Height: 720, AudioCodec: "mp4a"}, 720,
 		HWAccel{VAAPI: true, Device: DefaultVAAPIDevice})
 	for _, a := range attempts {
 		if (a.name == "copy") != a.singleRun {
 			t.Errorf("attempt %q: singleRun = %v", a.name, a.singleRun)
 		}
+	}
+}
+
+// ...but copying only the audio does not make it one. The video is still being
+// encoded, onto the same grid, so the run starts where the planner asked —
+// which for a resumed video is the part the viewer is waiting for. Treating
+// this as a single run encoded the whole video from zero first.
+func TestAnAudioOnlyCopyStillHonoursThePlan(t *testing.T) {
+	// VP9 at 720p: the video has to be encoded, the AAC audio can be copied.
+	attempts := hlsAttempts(HLSSource{VideoCodec: "vp09", Height: 720, AudioCodec: "mp4a"}, 720, HWAccel{})
+	if len(attempts) == 0 || attempts[0].name != "copy" {
+		t.Fatalf("attempts = %+v, want the copy rung first", attempts)
+	}
+	if attempts[0].audioCodec != "copy" || attempts[0].videoCodec == "copy" {
+		t.Fatalf("attempt = %+v, want an audio-only copy", attempts[0])
+	}
+	if attempts[0].singleRun {
+		t.Error("an audio-only copy must not force a pass over the whole video")
 	}
 }
 

@@ -190,12 +190,18 @@ type hlsAttempt struct {
 	// device is the render node, for the vaapi rung.
 	device string
 	// singleRun forces one pass over the whole video regardless of what the
-	// planner wants. Only the copy rung sets it: a stream copy cannot cut on
+	// planner wants. Only a *video* copy sets it: a stream copy cannot cut on
 	// the 4 s grid (it can only cut on the source's own keyframes), so a
 	// partial range would produce segments that do not line up with the
 	// playlist. It costs nothing to ignore the plan there — a copy runs at
 	// remux speed, so the whole file is done in the time an encode needs for
 	// the first minute.
+	//
+	// Copying only the *audio* is a different thing entirely: the video is
+	// still being encoded, with keyframes forced onto the grid, so it cuts
+	// where the planner says. Setting this for an audio copy is what made a
+	// resumed video encode from the beginning — an hour of waiting to reach
+	// the point the viewer had asked to start at.
 	singleRun bool
 }
 
@@ -216,7 +222,7 @@ func hlsAttempts(src HLSSource, height int, hw HWAccel) []hlsAttempt {
 	vc, ac := hlsVideoCodec(src, height), aacCodec(src.AudioCodec)
 	var out []hlsAttempt
 	if vc == "copy" || ac == "copy" {
-		out = append(out, hlsAttempt{name: "copy", videoCodec: vc, audioCodec: ac, singleRun: true})
+		out = append(out, hlsAttempt{name: "copy", videoCodec: vc, audioCodec: ac, singleRun: vc == "copy"})
 	}
 	if hw.VAAPI {
 		out = append(out, hlsAttempt{name: "vaapi", videoCodec: "vaapi", audioCodec: "aac", vaapi: true, device: hw.Device})

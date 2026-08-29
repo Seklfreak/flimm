@@ -57,21 +57,24 @@ struct TVPlayerOverlay: View {
     private var preparing: some View {
         ZStack {
             Color.black.opacity(0.8)
-            // No spinner of our own: AVKit is already showing one over an item
-            // that has nothing to play yet, and two spinners on one screen
-            // read as two things being waited for.
-            VStack(spacing: 24) {
+            // No spinner of our own — AVKit already spins over an item with
+            // nothing to play yet. Its spinner is dead centre, so the words go
+            // below it: far enough that the title clears the spinner, not so
+            // far that they meet the transport bar. Short enough to fit that
+            // band, which is why the explanation is two lines rather than four.
+            VStack(spacing: 20) {
                 Text(VideoQuality.preparingTitle(model.compatibleProgress))
                     .font(.title2.bold())
                 Text("""
-                This Apple TV can't decode the archived file, so the server is converting it. \
-                It starts where you left off, so playback begins as soon as that part is ready.
+                This Apple TV can't decode the archived file, so the server is converting it, \
+                starting where you left off.
                 """)
                     .font(.title3)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: 900)
             }
+            .offset(y: 190)
         }
     }
 

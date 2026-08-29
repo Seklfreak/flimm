@@ -63,6 +63,12 @@ var channelSpecs = []struct {
 			// The one nothing Apple can decode directly: playing it has to go
 			// through the compatible HLS rendition.
 			{title: "Knife skills (VP9 source)", seconds: 40, kind: "videos", codec: "vp09", height: 720},
+			// Long enough to *resume* into. A video shorter than a couple of
+			// minutes is marked seen the moment playback gets anywhere near
+			// its end, so it can never carry a resume position — which is
+			// exactly what "does the transcode start where the viewer left
+			// off, or from the beginning?" needs to be answered by eye.
+			{title: "Braising, the long way (VP9 source)", seconds: 600, kind: "videos", codec: "vp09", height: 720, chapters: true},
 		},
 	},
 	{

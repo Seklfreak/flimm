@@ -322,6 +322,11 @@ func (j *HLSJob) run(ctx context.Context) error {
 		if !ok {
 			break
 		}
+		if j.log != nil {
+			j.log.Debug("hls run planned",
+				"entry", filepath.Base(j.dir), "from", j.cfg.From,
+				"requested", j.requestedSegment(), "start", plan.Start, "end", plan.End)
+		}
 		before := j.count()
 		chosen, err = j.runPlan(ctx, src, attempts, chosen, plan)
 		j.rescan()
@@ -625,6 +630,13 @@ func (j *HLSJob) count() int {
 	j.mu.Lock()
 	defer j.mu.Unlock()
 	return len(j.produced)
+}
+
+// requestedSegment is the segment a client last asked to be encoded first.
+func (j *HLSJob) requestedSegment() int {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	return j.requested
 }
 
 func (j *HLSJob) plan() (segRange, bool) {
