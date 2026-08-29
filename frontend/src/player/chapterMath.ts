@@ -79,29 +79,47 @@ export function sponsorAction(segment: SponsorSegment): SponsorActionType {
 // Only these categories are skipped/muted automatically; intro, outro,
 // music_offtopic and the rest are tinted on the scrubber but left alone.
 // Matches the Apple clients (FlimmKit's SponsorRules).
-export const AUTO_SKIP_CATEGORIES = new Set(["sponsor", "selfpromo", "interaction"]);
+// What the viewer has each category set to (`sponsor_actions` in prefs, one
+// of "skip" | "ask" | "off"). A category the map does not mention is left
+// alone: the server fills the defaults in, so a gap here means a client older
+// than the category, not a preference.
+export type SponsorActions = Record<string, string | undefined>;
 
-function acts(segment: SponsorSegment, action: SponsorActionType, time: number, margin: number): boolean {
-  return (
-    sponsorAction(segment) === action &&
-    AUTO_SKIP_CATEGORIES.has(segment.category) &&
-    segment.end > segment.start &&
-    time >= segment.start &&
-    time < segment.end - margin
+function setting(actions: SponsorActions, segment: SponsorSegment): string {
+  return actions[segment.category] ?? "off";
+}
+
+function inside(segment: SponsorSegment, time: number, margin: number): boolean {
+  return segment.end > segment.start && time >= segment.start && time < segment.end - margin;
+}
+
+// The segment playback is inside, if it is one that should be skipped without
+// asking. The small margin stops a seek landing just before the end from
+// looping.
+export function segmentToSkip(segments: SponsorSegment[], time: number, actions: SponsorActions): SponsorSegment | undefined {
+  return segments.find(
+    (s) => sponsorAction(s) === "skip" && setting(actions, s) === "skip" && inside(s, time, 0.5),
   );
 }
 
-// The segment playback is inside, if it is one that should be skipped. The
-// small margin stops a seek landing just before the end from looping.
-export function segmentToSkip(segments: SponsorSegment[], time: number): SponsorSegment | undefined {
-  return segments.find((s) => acts(s, "skip", time, 0.5));
+// The segment playback is inside, if it is one to *offer* skipping: the viewer
+// set this category to "ask", so it is a button rather than a jump. The margin
+// is larger than the skip one — a button that appears for the last half second
+// of a segment is a button nobody can press.
+export function segmentToOffer(segments: SponsorSegment[], time: number, actions: SponsorActions): SponsorSegment | undefined {
+  return segments.find(
+    (s) => sponsorAction(s) === "skip" && setting(actions, s) === "ask" && inside(s, time, 1.5),
+  );
 }
 
 // The segment playback is inside, if it is one that should be muted. The
 // contributor marked it "mute" rather than "skip" because the video still
-// matters there — only the audio does not.
-export function segmentToMute(segments: SponsorSegment[], time: number): SponsorSegment | undefined {
-  return segments.find((s) => acts(s, "mute", time, 0));
+// matters there — only the audio does not — so "ask" and "skip" both mute it
+// and only "off" leaves it alone.
+export function segmentToMute(segments: SponsorSegment[], time: number, actions: SponsorActions): SponsorSegment | undefined {
+  return segments.find(
+    (s) => sponsorAction(s) === "mute" && setting(actions, s) !== "off" && inside(s, time, 0),
+  );
 }
 
 // ---- The highlight --------------------------------------------------------

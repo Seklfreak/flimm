@@ -60,6 +60,7 @@ const prefs: Prefs = {
   subtitle_lang: SUBTITLE_OFF,
   subtitle_size: "medium",
   skip_sponsors: true,
+  sponsor_actions: { sponsor: "skip", selfpromo: "skip", interaction: "skip", intro: "ask", outro: "ask" },
   everything_sort: "newest",
   everything_hide_seen: true,
   everything_include_shorts: false,

@@ -82,6 +82,20 @@ struct TVPlayerInfoPanel: View {
 
     private var actions: some View {
         VStack(alignment: .leading, spacing: 10) {
+            // A category set to "ask" is offered here rather than as an
+            // overlay button: the overlay takes no focus (the remote's presses
+            // belong to the transport bar), and this panel is where the TV
+            // puts everything the remote's own buttons do not do.
+            if let offer = SponsorRules.segmentToOffer(
+                at: model.currentTime, in: model.video?.sponsorblock ?? [], prefs: model.prefs
+            ) {
+                Button {
+                    model.seek(to: offer.end)
+                } label: {
+                    Label("Skip \(SponsorRules.label(offer.category).lowercased())", systemImage: "forward.end.fill")
+                }
+            }
+
             // A point of interest is offered, never taken: the remote has no
             // scrubber worth hunting on, so this is where the TV gets it.
             if let highlight = SponsorRules.highlightToOffer(

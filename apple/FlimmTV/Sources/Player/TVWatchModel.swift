@@ -498,11 +498,11 @@ final class TVWatchModel {
         }
         activeCue = WebVTT.cue(at: seconds, in: cues)?.text
         let segments = video?.sponsorblock ?? []
-        if prefs.skipSponsors, let segment = SponsorRules.segmentToSkip(at: seconds, in: segments) {
+        if let segment = SponsorRules.segmentToSkip(at: seconds, in: segments, prefs: prefs) {
             player.seek(to: CMTime(seconds: segment.end, preferredTimescale: 600))
         }
         if let muted = sponsorMute.mute(
-            at: seconds, in: segments, enabled: prefs.skipSponsors, isMuted: player.isMuted
+            at: seconds, in: segments, prefs: prefs, isMuted: player.isMuted
         ) {
             player.isMuted = muted
         }

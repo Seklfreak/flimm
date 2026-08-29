@@ -317,6 +317,32 @@ struct PlayerControls: View {
 
 /// "Resumed from 12:31 · Start over" — the chip the design puts in the
 /// top-left, because resume happens automatically and should be undoable.
+/// "Skip the intro": what a category set to *ask* offers instead of jumping.
+/// The label names the category, because "skip" alone does not say what is
+/// about to be skipped — and the viewer chose to be asked precisely because
+/// they sometimes want that section.
+struct SkipSegmentButton: View {
+    let category: String
+    let skip: () -> Void
+
+    var body: some View {
+        Button(action: skip) {
+            HStack(spacing: 6) {
+                Text("Skip \(SponsorRules.label(category).lowercased())")
+                    .font(.footnote.weight(.semibold))
+                Image(systemName: "forward.end.fill")
+                    .font(.caption2)
+            }
+            .foregroundStyle(.white)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 7)
+            .background(Palette.overlay, in: Capsule())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Skip \(SponsorRules.label(category).lowercased())")
+    }
+}
+
 /// "Jump to the highlight": the one thing a SponsorBlock point of interest is
 /// for. Never automatic — a highlight is offered, never taken for the viewer —
 /// and offered whatever the skip preference says, because this is a tap, not

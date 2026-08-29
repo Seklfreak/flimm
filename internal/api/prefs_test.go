@@ -1,6 +1,16 @@
 package api
 
-import "testing"
+import (
+	"context"
+	"net/http"
+	"testing"
+
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
+
+	"github.com/Seklfreak/flimm/internal/db/sqlc"
+	"github.com/Seklfreak/flimm/internal/ta"
+)
 
 func TestPrefsDefaultSubtitleLangIsEnglish(t *testing.T) {
 	if got := defaultPrefs().SubtitleLang; got != "en" {
@@ -24,5 +34,77 @@ func TestParsePrefsSubtitleLang(t *testing.T) {
 				t.Errorf("subtitle_lang = %q, want %q", got, c.want)
 			}
 		})
+	}
+}
+
+// Every category has an answer, whatever the row was written before: a
+// category added to Flimm later must come back at its default rather than
+// missing, or a client cannot tell "leave it alone" from "not asked yet".
+func TestSponsorActionsFillInCategoriesTheRowNeverHad(t *testing.T) {
+	got := parsePrefs([]byte(`{"sponsor_actions":{"sponsor":"off"}}`))
+	if got.SponsorActions["sponsor"] != "off" {
+		t.Errorf("sponsor = %q, want the stored off", got.SponsorActions["sponsor"])
+	}
+	if got.SponsorActions["intro"] != "ask" {
+		t.Errorf("intro = %q, want the default ask", got.SponsorActions["intro"])
+	}
+	if len(got.SponsorActions) != len(defaultSponsorActions()) {
+		t.Errorf("actions = %v, want every category", got.SponsorActions)
+	}
+}
+
+// The three that interrupt a video without being part of it are skipped; the
+// rest are offered, because an intro or a recap is sometimes what a viewer
+// came for.
+func TestSponsorActionDefaults(t *testing.T) {
+	d := defaultPrefs().SponsorActions
+	for _, c := range []string{"sponsor", "selfpromo", "interaction"} {
+		if d[c] != "skip" {
+			t.Errorf("%s = %q, want skip", c, d[c])
+		}
+	}
+	for _, c := range []string{"intro", "outro", "preview", "filler", "music_offtopic", "exclusive_access"} {
+		if d[c] != "ask" {
+			t.Errorf("%s = %q, want ask", c, d[c])
+		}
+	}
+	if _, ok := d["poi_highlight"]; ok {
+		t.Error("the highlight marks an instant; it is offered, never configured")
+	}
+}
+
+// A category Flimm does not know, or an action it does not have, is refused
+// rather than stored: a client reading it back would not know what to do.
+func TestSponsorActionsRejectNonsense(t *testing.T) {
+	var stored []byte
+	q := newEventStore().querier()
+	q.GetPrefsFn = func(context.Context, uuid.UUID) ([]byte, error) {
+		if stored == nil {
+			return nil, pgx.ErrNoRows
+		}
+		return stored, nil
+	}
+	q.UpsertPrefsFn = func(_ context.Context, arg sqlc.UpsertPrefsParams) error { stored = arg.Prefs; return nil }
+	h := newTestServer(ta.NewFake(), q).Router()
+
+	if rec := do(t, h, http.MethodPatch, "/api/v1/me/prefs",
+		`{"sponsor_actions":{"sponsor":"maybe"}}`); rec.Code != http.StatusBadRequest {
+		t.Errorf("bad action: %d %s", rec.Code, rec.Body.String())
+	}
+	if rec := do(t, h, http.MethodPatch, "/api/v1/me/prefs",
+		`{"sponsor_actions":{"poi_highlight":"skip"}}`); rec.Code != http.StatusBadRequest {
+		t.Errorf("the highlight is not configurable: %d", rec.Code)
+	}
+	rec := do(t, h, http.MethodPatch, "/api/v1/me/prefs", `{"sponsor_actions":{"intro":"skip","sponsor":"off"}}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", rec.Code, rec.Body.String())
+	}
+	got := decode[Prefs](t, rec)
+	if got.SponsorActions["intro"] != "skip" || got.SponsorActions["sponsor"] != "off" {
+		t.Errorf("actions = %v", got.SponsorActions)
+	}
+	// Categories the patch left out keep their defaults rather than vanishing.
+	if got.SponsorActions["outro"] != "ask" {
+		t.Errorf("outro = %q, want the default ask", got.SponsorActions["outro"])
 	}
 }

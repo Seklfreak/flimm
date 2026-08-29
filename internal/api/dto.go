@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/Seklfreak/flimm/internal/db/sqlc"
+	"github.com/Seklfreak/flimm/internal/sponsorblock"
 	"github.com/Seklfreak/flimm/internal/ta"
 )
 
@@ -264,13 +265,22 @@ type Prefs struct {
 	PlaybackSpeed float64 `json:"playback_speed"`
 	// SubtitleLang is a language code, or "off" when the viewer turned
 	// subtitles off. Defaults to English so archived CC plays by default.
-	SubtitleLang            string `json:"subtitle_lang"`
-	SubtitleSize            string `json:"subtitle_size"`
-	SkipSponsors            bool   `json:"skip_sponsors"`
-	EverythingSort          string `json:"everything_sort"`
-	EverythingHideSeen      bool   `json:"everything_hide_seen"`
-	EverythingIncludeShorts bool   `json:"everything_include_shorts"`
-	Theme                   string `json:"theme"`
+	SubtitleLang string `json:"subtitle_lang"`
+	SubtitleSize string `json:"subtitle_size"`
+	// SkipSponsors is the master switch: false and no SponsorBlock segment
+	// acts at all, whatever SponsorActions says.
+	SkipSponsors bool `json:"skip_sponsors"`
+	// SponsorActions is what each category does while SkipSponsors is on:
+	// "skip" (seek past it), "ask" (offer the viewer a button) or "off"
+	// (tint the scrubber and nothing else). A category the map does not
+	// mention takes its default; the categories that mark an instant rather
+	// than a range — the highlight — are not in it at all, because a point of
+	// interest is only ever offered.
+	SponsorActions          map[string]string `json:"sponsor_actions"`
+	EverythingSort          string            `json:"everything_sort"`
+	EverythingHideSeen      bool              `json:"everything_hide_seen"`
+	EverythingIncludeShorts bool              `json:"everything_include_shorts"`
+	Theme                   string            `json:"theme"`
 }
 
 func defaultPrefs() Prefs {
@@ -280,11 +290,41 @@ func defaultPrefs() Prefs {
 		SubtitleLang:       defaultSubtitleLang,
 		SubtitleSize:       "medium",
 		SkipSponsors:       true,
+		SponsorActions:     defaultSponsorActions(),
 		EverythingSort:     "newest",
 		EverythingHideSeen: true,
 		Theme:              "system",
 	}
 }
+
+// What a category does when the viewer has never said.
+//
+// The three that interrupt a video without being part of it are skipped, which
+// is what Flimm has always done. The rest are offered rather than taken: an
+// intro or a recap is sometimes exactly what someone wants to watch, so the
+// viewer gets a button instead of a jump they did not ask for.
+func defaultSponsorActions() map[string]string {
+	return map[string]string{
+		sponsorblock.CategorySponsor:     sponsorSkip,
+		sponsorblock.CategorySelfPromo:   sponsorSkip,
+		sponsorblock.CategoryInteraction: sponsorSkip,
+		sponsorblock.CategoryIntro:       sponsorAsk,
+		sponsorblock.CategoryOutro:       sponsorAsk,
+		sponsorblock.CategoryPreview:     sponsorAsk,
+		sponsorblock.CategoryMusicOff:    sponsorAsk,
+		sponsorblock.CategoryFiller:      sponsorAsk,
+		sponsorblock.CategoryExclusive:   sponsorAsk,
+	}
+}
+
+// What a category can be set to.
+const (
+	sponsorSkip = "skip"
+	sponsorAsk  = "ask"
+	sponsorOff  = "off"
+)
+
+var validSponsorActions = map[string]bool{sponsorSkip: true, sponsorAsk: true, sponsorOff: true}
 
 var (
 	validSorts         = map[string]bool{"newest": true, "oldest": true, "shortest": true, "longest": true}
@@ -292,7 +332,8 @@ var (
 	validThemes        = map[string]bool{"system": true, "light": true, "dark": true}
 	prefKeys           = map[string]bool{
 		"autoplay": true, "playback_speed": true, "subtitle_lang": true, "subtitle_size": true,
-		"skip_sponsors": true, "everything_sort": true, "everything_hide_seen": true,
+		"skip_sponsors": true, "sponsor_actions": true,
+		"everything_sort": true, "everything_hide_seen": true,
 		"everything_include_shorts": true, "theme": true,
 	}
 )
@@ -323,6 +364,14 @@ func (p Prefs) validate() error {
 	if !validThemes[p.Theme] {
 		return fmt.Errorf("invalid theme")
 	}
+	for category, action := range p.SponsorActions {
+		if !validSponsorActions[action] {
+			return fmt.Errorf("invalid sponsor_actions[%q]: %q", category, action)
+		}
+		if _, ok := defaultSponsorActions()[category]; !ok {
+			return fmt.Errorf("sponsor_actions has no category %q", category)
+		}
+	}
 	return nil
 }
 
@@ -336,6 +385,17 @@ func parsePrefs(raw []byte) Prefs {
 	// treat those as "never chose" so they get the default.
 	if p.SubtitleLang == "" {
 		p.SubtitleLang = defaultSubtitleLang
+	}
+	// A stored map replaces the default one wholesale, so a category added to
+	// Flimm after the row was written would come back missing rather than at
+	// its default. Fill those in; a category the viewer *did* set is theirs.
+	if p.SponsorActions == nil {
+		p.SponsorActions = map[string]string{}
+	}
+	for category, action := range defaultSponsorActions() {
+		if _, ok := p.SponsorActions[category]; !ok {
+			p.SponsorActions[category] = action
+		}
 	}
 	if p.validate() != nil {
 		d := defaultPrefs()

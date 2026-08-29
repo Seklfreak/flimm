@@ -586,12 +586,12 @@ private extension WatchModel {
     /// acts on what is ``SponsorRules``' decision, shared with the TV.
     func applySponsorSegments(at time: Double) {
         let segments = video?.sponsorblock ?? []
-        if prefs.skipSponsors, let segment = SponsorRules.segmentToSkip(at: time, in: segments) {
+        if let segment = SponsorRules.segmentToSkip(at: time, in: segments, prefs: prefs) {
             lastSkippedSponsor = SponsorRules.label(segment.category)
             engine.seek(to: segment.end)
         }
         if let muted = sponsorMute.mute(
-            at: time, in: segments, enabled: prefs.skipSponsors, isMuted: engine.isMuted
+            at: time, in: segments, prefs: prefs, isMuted: engine.isMuted
         ) {
             engine.setMuted(muted)
         }

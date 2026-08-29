@@ -176,12 +176,16 @@ func video(channelID, channelName, id string, s spec, published time.Time) ta.Vi
 	}
 	v.Description = description(s)
 	if s.sponsors {
-		// A skip and a mute segment, and the highlight: everything a player
-		// has to tell apart. The service knows nothing about these ids, so
-		// the backend falls back to exactly this snapshot.
+		// A skip and a mute segment, the highlight, and an intro: everything a
+		// player has to tell apart. The intro is what makes the *manual* skip
+		// reachable — its category defaults to "ask", so it is offered rather
+		// than jumped, and a button nobody can trigger is a button nobody can
+		// check. The service knows nothing about these ids, so the backend
+		// falls back to exactly this snapshot.
 		v.Sponsorblock = ta.Sponsorblock{
 			IsEnabled: true,
 			Segments: []ta.SponsorSegment{
+				{Category: "intro", Segment: [2]float64{0, s.seconds * 0.08}},
 				{Category: "sponsor", Segment: [2]float64{s.seconds * 0.1, s.seconds * 0.2}},
 				{Category: "selfpromo", Segment: [2]float64{s.seconds * 0.8, s.seconds * 0.9}},
 			},

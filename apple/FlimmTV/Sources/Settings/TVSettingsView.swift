@@ -29,6 +29,25 @@ struct TVSettingsView: View {
     /// Explanatory text, held to a readable measure. A tvOS list row is nearly
     /// 1800pt wide; a paragraph that uses all of it is a 200-character line to
     /// read from a sofa.
+    /// A remote has no picker, so a row cycles: Skip → Ask → Off → Skip. The
+    /// whole map goes back, because the server replaces what it is sent.
+    private func cycleSponsor(_ category: String) {
+        let order: [SponsorSetting] = [.skip, .ask, .off]
+        let current = prefs.sponsorActions[category] ?? .off
+        let next = order[((order.firstIndex(of: current) ?? 0) + 1) % order.count]
+        var actions = prefs.sponsorActions
+        actions[category] = next
+        Task { await app.updatePrefs(PrefsPatch(sponsorActions: actions)) }
+    }
+
+    private func sponsorLabel(_ setting: SponsorSetting) -> String {
+        switch setting {
+        case .skip: "Skip"
+        case .ask: "Ask"
+        case .off: "Off"
+        }
+    }
+
     private func note(_ text: String) -> some View {
         Text(text)
             .font(.footnote)
@@ -66,12 +85,22 @@ struct TVSettingsView: View {
             TVOptionRow(title: "Playback speed", value: Fmt.speed(prefs.playbackSpeed)) {
                 Task { await app.updatePrefs(PrefsPatch(playbackSpeed: PlaybackSpeeds.next(after: prefs.playbackSpeed))) }
             }
-            Toggle("Skip sponsor segments", isOn: bind(\.skipSponsors) { PrefsPatch(skipSponsors: $0) })
+            Toggle("SponsorBlock", isOn: bind(\.skipSponsors) { PrefsPatch(skipSponsors: $0) })
             note("""
-            Sponsor, self-promotion and interaction-reminder segments are \
-            skipped automatically; other SponsorBlock categories are only \
-            marked on the transport bar.
+            The master switch. Off, and no segment is skipped, muted or \
+            offered — they are still marked on the transport bar.
             """)
+            if prefs.skipSponsors {
+                ForEach(SponsorSetting.categories, id: \.self) { category in
+                    TVOptionRow(
+                        title: SponsorRules.label(category),
+                        value: sponsorLabel(prefs.sponsorActions[category] ?? .off)
+                    ) {
+                        cycleSponsor(category)
+                    }
+                }
+                note("Skip jumps the segment, Ask offers it while it plays, Off leaves it alone.")
+            }
         } header: {
             sectionHeader("Playback")
         }

@@ -1,12 +1,20 @@
 import { useEffect } from "react";
 import type { SponsorSegment } from "@/lib/api";
-import { segmentToMute, segmentToSkip } from "./chapterMath";
+import { segmentToMute, segmentToSkip, type SponsorActions } from "./chapterMath";
 
-// Applies SponsorBlock segments while playing (prefs.skip_sponsors): a `skip`
-// segment is seeked past, a `mute` one is muted for its length and the video
-// keeps playing. Which categories act at all — and the boundary margins — are
-// decided in chapterMath, shared with the scrubber and mirrored in FlimmKit.
-export function useSponsorSkip(video: HTMLVideoElement | null, segments: SponsorSegment[], enabled: boolean, onSkip?: (s: SponsorSegment) => void) {
+// Applies SponsorBlock segments while playing (prefs.skip_sponsors is the
+// master switch): a `skip` segment in a category set to "skip" is seeked past,
+// a `mute` one is muted for its length and the video keeps playing. A category
+// set to "ask" is *not* acted on here — the player offers a button for it —
+// and one set to "off" does nothing at all. Which is which is decided in
+// chapterMath, shared with the scrubber and mirrored in FlimmKit.
+export function useSponsorSkip(
+  video: HTMLVideoElement | null,
+  segments: SponsorSegment[],
+  enabled: boolean,
+  actions: SponsorActions,
+  onSkip?: (s: SponsorSegment) => void,
+) {
   useEffect(() => {
     if (!video || !enabled || segments.length === 0) return;
     // Whether *we* muted, and what the viewer had it on before we did, so
@@ -22,14 +30,14 @@ export function useSponsorSkip(video: HTMLVideoElement | null, segments: Sponsor
     };
     const onTime = () => {
       const t = video.currentTime;
-      const skip = segmentToSkip(segments, t);
+      const skip = segmentToSkip(segments, t, actions);
       if (skip) {
         restore();
         video.currentTime = skip.end;
         onSkip?.(skip);
         return;
       }
-      if (segmentToMute(segments, t)) {
+      if (segmentToMute(segments, t, actions)) {
         if (!muting) {
           wasMuted = video.muted;
           video.muted = true;
@@ -44,5 +52,5 @@ export function useSponsorSkip(video: HTMLVideoElement | null, segments: Sponsor
       video.removeEventListener("timeupdate", onTime);
       restore();
     };
-  }, [video, segments, enabled, onSkip]);
+  }, [video, segments, enabled, actions, onSkip]);
 }

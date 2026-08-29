@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import SettingsPage from "./SettingsPage";
 import { mockFetch, renderWithProviders } from "@/test/helpers";
 import type { Prefs } from "@/lib/api";
@@ -10,6 +10,7 @@ const prefs: Prefs = {
   subtitle_lang: "en",
   subtitle_size: "medium",
   skip_sponsors: true,
+  sponsor_actions: { sponsor: "skip", selfpromo: "skip", interaction: "skip", intro: "ask", outro: "ask" },
   everything_sort: "newest",
   everything_hide_seen: true,
   everything_include_shorts: false,
@@ -28,7 +29,7 @@ describe("SettingsPage", () => {
     await waitFor(() => expect(screen.getByText("Autoplay next video")).toBeTruthy());
     for (const label of [
       "Playback speed",
-      "Skip sponsor segments",
+      "SponsorBlock",
       "Language",
       "Size",
       "Sort",
@@ -47,13 +48,35 @@ describe("SettingsPage", () => {
     });
     renderWithProviders(<SettingsPage />);
 
-    await waitFor(() => expect(screen.getByLabelText("Skip sponsor segments")).toBeTruthy());
-    fireEvent.click(screen.getByLabelText("Skip sponsor segments"));
+    await waitFor(() => expect(screen.getByLabelText("SponsorBlock")).toBeTruthy());
+    fireEvent.click(screen.getByLabelText("SponsorBlock"));
 
     await waitFor(() => {
       const patch = calls.find((c) => (c.init?.method ?? "GET").toUpperCase() === "PATCH");
       expect(patch).toBeTruthy();
       expect(JSON.parse(String(patch?.init?.body))).toEqual({ skip_sponsors: false });
+    });
+  });
+
+  it("writes one category's setting without disturbing the others", async () => {
+    const { calls } = mockFetch({
+      "GET /api/v1/me": me,
+      "PATCH /api/v1/me/prefs": { ...prefs, sponsor_actions: { ...prefs.sponsor_actions, intro: "skip" } },
+    });
+    renderWithProviders(<SettingsPage />);
+
+    await waitFor(() => expect(screen.getByText("Intro")).toBeTruthy());
+    // The category rows each carry Skip / Ask / Off; "Intro" is the fourth.
+    const introRow = screen.getByText("Intro").closest("div")?.parentElement;
+    fireEvent.click(within(introRow as HTMLElement).getByText("Skip"));
+
+    await waitFor(() => {
+      const patch = calls.find((c) => (c.init?.method ?? "GET").toUpperCase() === "PATCH");
+      const body = JSON.parse(String(patch?.init?.body));
+      expect(body.sponsor_actions.intro).toBe("skip");
+      // The rest of the map rides along, or the server would reset them.
+      expect(body.sponsor_actions.sponsor).toBe("skip");
+      expect(body.sponsor_actions.outro).toBe("ask");
     });
   });
 

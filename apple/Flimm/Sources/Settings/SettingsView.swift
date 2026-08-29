@@ -18,6 +18,7 @@ struct SettingsView: View {
         Form {
             serverSection
             playbackSection
+            sponsorSection
             qualitySection
             subtitleSection
             everythingSection
@@ -78,16 +79,54 @@ struct SettingsView: View {
                     Text(Fmt.speed(speed)).tag(speed)
                 }
             }
-            Toggle("Skip sponsor segments", isOn: bind(\.skipSponsors) { PrefsPatch(skipSponsors: $0) })
+            Toggle("SponsorBlock", isOn: bind(\.skipSponsors) { PrefsPatch(skipSponsors: $0) })
         } header: {
             Text("Playback")
         } footer: {
             Text("""
-            Sponsor, self-promotion and interaction-reminder segments are \
-            skipped automatically; other SponsorBlock categories are only \
-            tinted on the scrubber.
+            The master switch. Off, and no segment is skipped, muted or \
+            offered — they are still tinted on the scrubber.
             """)
         }
+    }
+
+    /// What each SponsorBlock category does. Shown only while the master
+    /// switch is on: nine rows explaining themselves under a setting that
+    /// turns all of them off would be nine rows of noise.
+    @ViewBuilder
+    private var sponsorSection: some View {
+        if prefs.skipSponsors {
+            Section {
+                ForEach(SponsorSetting.categories, id: \.self) { category in
+                    Picker(SponsorRules.label(category), selection: sponsorBinding(category)) {
+                        Text("Skip").tag(SponsorSetting.skip)
+                        Text("Ask").tag(SponsorSetting.ask)
+                        Text("Off").tag(SponsorSetting.off)
+                    }
+                }
+            } header: {
+                Text("SponsorBlock categories")
+            } footer: {
+                Text("""
+                Skip jumps the segment, Ask offers a button in the player, \
+                Off leaves it alone.
+                """)
+            }
+        }
+    }
+
+    /// A category's setting, written back as the whole map: the server
+    /// replaces what it is sent, so a patch carrying one category would drop
+    /// the rest to their defaults.
+    private func sponsorBinding(_ category: String) -> Binding<SponsorSetting> {
+        Binding(
+            get: { prefs.sponsorActions[category] ?? .off },
+            set: { value in
+                var next = prefs.sponsorActions
+                next[category] = value
+                Task { await app.updatePrefs(PrefsPatch(sponsorActions: next)) }
+            }
+        )
     }
 
     /// The one playback setting that does not follow the account: quality is

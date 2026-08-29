@@ -48,6 +48,22 @@ const (
 // CategoryChapter carries a crowd-sourced chapter name in Segment.Description.
 const CategoryChapter = "chapter"
 
+// The categories that mark a *range* of a video, which is to say the ones a
+// viewer can have an opinion about: skip it, be offered it, or leave it alone.
+// `poi_highlight` is deliberately absent — it marks an instant, and is only
+// ever offered — as is `chapter`, which is a name rather than an action.
+const (
+	CategorySponsor     = "sponsor"
+	CategorySelfPromo   = "selfpromo"
+	CategoryInteraction = "interaction"
+	CategoryIntro       = "intro"
+	CategoryOutro       = "outro"
+	CategoryPreview     = "preview"
+	CategoryMusicOff    = "music_offtopic"
+	CategoryFiller      = "filler"
+	CategoryExclusive   = "exclusive_access"
+)
+
 // DefaultCategories is everything the service offers. Flimm asks for all of
 // it and lets each client decide what to do with a category: the alternative
 // is a server-side allowlist that clients cannot see past.

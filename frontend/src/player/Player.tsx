@@ -10,7 +10,7 @@ import { useSponsorSkip } from "./useSponsorSkip";
 import { useProgressHeartbeat } from "./useProgressHeartbeat";
 import { useRendition } from "./useRendition";
 import { Scrubber } from "./Scrubber";
-import { currentChapterIndex, highlightToOffer, nextChapterStart, prevChapterStart } from "./chapterMath";
+import { currentChapterIndex, highlightToOffer, nextChapterStart, prevChapterStart, segmentToOffer, sponsorCategoryLabel } from "./chapterMath";
 import { HLS_CONFIG, loadHls } from "./hls";
 import {
   archivePlays,
@@ -299,7 +299,11 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(function Player(
   // cues sit a couple of lines above the bottom edge rather than on it.
   useCueSize(el, prefs.subtitle_size);
   useCueLift(el);
-  useSponsorSkip(el, video.sponsorblock, prefs.skip_sponsors);
+  const sponsorActions = prefs.sponsor_actions ?? {};
+  useSponsorSkip(el, video.sponsorblock, prefs.skip_sponsors, sponsorActions);
+  // A category the viewer set to "ask" is a button, not a jump: offered while
+  // playback is inside the segment, gone the moment it is past.
+  const offer = prefs.skip_sponsors ? segmentToOffer(video.sponsorblock, time, sponsorActions) : undefined;
   const highlight = highlightToOffer(video.sponsorblock, time);
   useProgressHeartbeat(el, video.id, onWatched, playlistId);
 
@@ -593,6 +597,21 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(function Player(
           </svg>
           <span>Jump to the highlight</span>
           <span className="font-semibold text-white/60">{fmtDuration(highlight.start)}</span>
+        </button>
+      )}
+
+      {/* "Skip the intro": the other half of a per-category setting. The
+          viewer asked to be offered this one rather than have it taken, so it
+          sits where the highlight does and disappears with the segment. */}
+      {offer && (
+        <button
+          className="absolute bottom-16 right-3.5 flex items-center gap-1.5 rounded-full bg-[rgba(23,24,26,0.85)] py-1.5 pl-3 pr-3 text-[12px] font-bold"
+          onClick={() => seekTo(offer.end)}
+        >
+          <span>Skip {sponsorCategoryLabel(offer.category).toLowerCase()}</span>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden="true">
+            <path d="M5 5l7 7-7 7M13 5l7 7-7 7" />
+          </svg>
         </button>
       )}
 

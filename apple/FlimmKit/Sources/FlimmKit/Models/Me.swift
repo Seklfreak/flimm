@@ -23,7 +23,12 @@ public struct Prefs: Codable, Sendable, Hashable {
     public var playbackSpeed: Double
     public var subtitleLang: String
     public var subtitleSize: SubtitleSize
+    /// The master switch: off and no SponsorBlock segment acts at all.
     public var skipSponsors: Bool
+    /// What each category does while ``skipSponsors`` is on. The server sends
+    /// every category it knows, so a missing one is a category this build
+    /// predates — treated as ``SponsorSetting/off``, never guessed at.
+    public var sponsorActions: [String: SponsorSetting]
     /// "Everything" is read-only as a feed, so its three options live here.
     public var everythingSort: FeedSort
     public var everythingHideSeen: Bool
@@ -36,6 +41,7 @@ public struct Prefs: Codable, Sendable, Hashable {
         subtitleLang: String = "en",
         subtitleSize: SubtitleSize = .medium,
         skipSponsors: Bool = true,
+        sponsorActions: [String: SponsorSetting] = SponsorSetting.defaults,
         everythingSort: FeedSort = .newest,
         everythingHideSeen: Bool = true,
         everythingIncludeShorts: Bool = false,
@@ -46,6 +52,7 @@ public struct Prefs: Codable, Sendable, Hashable {
         self.subtitleLang = subtitleLang
         self.subtitleSize = subtitleSize
         self.skipSponsors = skipSponsors
+        self.sponsorActions = sponsorActions
         self.everythingSort = everythingSort
         self.everythingHideSeen = everythingHideSeen
         self.everythingIncludeShorts = everythingIncludeShorts
@@ -60,6 +67,12 @@ public struct Prefs: Codable, Sendable, Hashable {
         subtitleLang = try c.decode(.subtitleLang, or: d.subtitleLang)
         subtitleSize = try c.decode(.subtitleSize, or: d.subtitleSize)
         skipSponsors = try c.decode(.skipSponsors, or: d.skipSponsors)
+        // An unknown value decodes as `off` rather than failing the whole
+        // response: a category Flimm adds later must not stop the app reading
+        // its own preferences.
+        sponsorActions = (try? c.decodeIfPresent([String: String].self, forKey: .sponsorActions))
+            .map { raw in raw?.mapValues { SponsorSetting(rawValue: $0) ?? .off } ?? d.sponsorActions }
+            ?? d.sponsorActions
         everythingSort = try c.decode(.everythingSort, or: d.everythingSort)
         everythingHideSeen = try c.decode(.everythingHideSeen, or: d.everythingHideSeen)
         everythingIncludeShorts = try c.decode(.everythingIncludeShorts, or: d.everythingIncludeShorts)
@@ -75,6 +88,7 @@ public struct PrefsPatch: Codable, Sendable, Hashable {
     public var subtitleLang: String?
     public var subtitleSize: SubtitleSize?
     public var skipSponsors: Bool?
+    public var sponsorActions: [String: SponsorSetting]?
     public var everythingSort: FeedSort?
     public var everythingHideSeen: Bool?
     public var everythingIncludeShorts: Bool?
@@ -86,6 +100,7 @@ public struct PrefsPatch: Codable, Sendable, Hashable {
         subtitleLang: String? = nil,
         subtitleSize: SubtitleSize? = nil,
         skipSponsors: Bool? = nil,
+        sponsorActions: [String: SponsorSetting]? = nil,
         everythingSort: FeedSort? = nil,
         everythingHideSeen: Bool? = nil,
         everythingIncludeShorts: Bool? = nil,
@@ -96,11 +111,39 @@ public struct PrefsPatch: Codable, Sendable, Hashable {
         self.subtitleLang = subtitleLang
         self.subtitleSize = subtitleSize
         self.skipSponsors = skipSponsors
+        self.sponsorActions = sponsorActions
         self.everythingSort = everythingSort
         self.everythingHideSeen = everythingHideSeen
         self.everythingIncludeShorts = everythingIncludeShorts
         self.theme = theme
     }
+}
+
+/// What a viewer has a SponsorBlock category set to.
+///
+/// `ask` is the middle ground the categories that are *sometimes* the point —
+/// an intro, a recap — default to: the player offers a button instead of
+/// jumping, because sometimes that section is what someone came for.
+public enum SponsorSetting: String, Codable, Sendable, Hashable, CaseIterable {
+    case skip
+    case ask
+    case off
+
+    /// Mirrors the server's `defaultSponsorActions`, for a client that has to
+    /// show something before `/me` answers.
+    public static let defaults: [String: SponsorSetting] = [
+        "sponsor": .skip, "selfpromo": .skip, "interaction": .skip,
+        "intro": .ask, "outro": .ask, "preview": .ask,
+        "music_offtopic": .ask, "filler": .ask, "exclusive_access": .ask,
+    ]
+
+    /// The categories a viewer can set, in the order the settings screens show
+    /// them: the three that interrupt a video first, then the ones that are
+    /// sometimes what they came for.
+    public static let categories = [
+        "sponsor", "selfpromo", "interaction",
+        "intro", "outro", "preview", "filler", "music_offtopic", "exclusive_access",
+    ]
 }
 
 /// `GET /me`.

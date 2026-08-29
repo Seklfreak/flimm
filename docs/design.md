@@ -68,14 +68,18 @@ feeds without leaving the page.
   dark plate — tried without one, and the plate is what makes them readable
   over a bright scene — and they sit clear of the bottom edge and of whatever
   transport controls are up, on every client. SponsorBlock segments
-  can be skipped automatically (a preference) — and a segment its contributor
+  are skipped, offered as a *Skip the intro* button, or left alone, per
+  category (a preference) — and a segment its contributor
   marked *mute* rather than *skip* is muted for its length instead, because
   the picture still matters there. Segments come from the SponsorBlock service
   through the backend, not from TubeArchivist's download-time snapshot, so
   they stay current; the same lookup supplies chapter names for videos whose
-  file carries none. Which categories act is one rule shared by every client:
-  sponsor, self-promo and interaction reminders act, everything else is only
-  tinted on the timeline.
+  file carries none. What each category does is the viewer's: sponsor,
+  self-promo and interaction reminders are skipped by default, and the ones
+  that are sometimes the point — intro, outro, recap, filler — are *offered*
+  by default, because an intro is occasionally exactly what someone came for.
+  Every client reads the same setting, so a category changed on the phone
+  behaves that way on the TV tonight.
 - **The highlight** — where a contributor marked "this is where the video
   actually starts" — is a marker on the timeline and a *Jump to the highlight*
   control while playback is still before it. It is never taken automatically,

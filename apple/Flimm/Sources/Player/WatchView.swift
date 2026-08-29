@@ -178,6 +178,18 @@ struct WatchView: View {
                 .padding(8)
             }
             if !blocked {
+                // A category the viewer set to "ask", offered for as long as
+                // playback is inside it — and *not* inside `PlayerControls`,
+                // which hides itself after a few seconds: a skip button you
+                // have to tap the screen to see is one tap worse than useless.
+                if let offer = SponsorRules.segmentToOffer(
+                    at: model.engine.currentTime, in: model.video?.sponsorblock ?? [], prefs: model.prefs
+                ) {
+                    SkipSegmentButton(category: offer.category) { model.seek(to: offer.end) }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+                        .padding(.trailing, 14)
+                        .padding(.bottom, controlsVisible ? 108 : 56)
+                }
                 SubtitleOverlay(text: model.activeCue, size: model.prefs.subtitleSize)
                     .frame(maxHeight: .infinity, alignment: .bottom)
                     .padding(.bottom, controlsVisible ? 68 : 16)

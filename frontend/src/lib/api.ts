@@ -266,7 +266,12 @@ export interface Prefs {
   /** Language code, or "off" when the viewer turned subtitles off. Defaults to "en". */
   subtitle_lang: string;
   subtitle_size: "small" | "medium" | "large";
+  /** The master switch: off and no SponsorBlock segment acts at all. */
   skip_sponsors: boolean;
+  /** What each category does while `skip_sponsors` is on: "skip", "ask" (a
+   *  button in the player) or "off". The server sends every category it
+   *  knows, so a missing one means a category this client predates. */
+  sponsor_actions: Record<string, string>;
   everything_sort: FeedSort;
   everything_hide_seen: boolean;
   everything_include_shorts: boolean;

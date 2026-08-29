@@ -65,10 +65,6 @@ public struct SponsorRange: Sendable, Hashable {
 /// it. Every player — iPhone, iPad and Apple TV — decides through this type,
 /// and the web client mirrors it in `chapterMath.ts`.
 public enum SponsorRules {
-    /// Only these categories act automatically; intro/outro/music_offtopic and
-    /// the rest are tinted on the scrubber but left alone. Matches the web
-    /// client.
-    public static let autoSkip: Set<String> = ["sponsor", "selfpromo", "interaction"]
 
     private static let labels: [String: String] = [
         "sponsor": "Sponsor",
@@ -87,31 +83,58 @@ public enum SponsorRules {
         labels[category] ?? category.replacingOccurrences(of: "_", with: " ")
     }
 
-    /// The segment playback is inside, if it is one to seek past. The small
-    /// margin stops a seek landing just before a boundary from looping.
-    public static func segmentToSkip(at time: Double, in segments: [SponsorSegment]) -> SponsorSegment? {
-        acting(.skip, at: time, in: segments, margin: 0.5)
+    /// The segment playback is inside, if it is one to seek past without
+    /// asking. The small margin stops a seek landing just before a boundary
+    /// from looping.
+    public static func segmentToSkip(at time: Double, in segments: [SponsorSegment], prefs: Prefs) -> SponsorSegment? {
+        acting(skipRule, at: time, in: segments, prefs: prefs)
+    }
+
+    /// The segment playback is inside, if it is one to *offer* skipping: the
+    /// viewer set this category to ``SponsorSetting/ask``, so it is a button
+    /// rather than a jump. The margin is larger than the skip one, because a
+    /// button that appears for the last second of a segment is a button nobody
+    /// can press.
+    public static func segmentToOffer(at time: Double, in segments: [SponsorSegment], prefs: Prefs) -> SponsorSegment? {
+        acting(offerRule, at: time, in: segments, prefs: prefs)
     }
 
     /// The segment playback is inside, if it is one to mute. The contributor
     /// marked it "mute" rather than "skip" because the video still matters
-    /// there — only the audio does not — so it runs to its very end.
-    public static func segmentToMute(at time: Double, in segments: [SponsorSegment]) -> SponsorSegment? {
-        acting(.mute, at: time, in: segments, margin: 0)
+    /// there — only the audio does not — so it runs to its very end, and only
+    /// ``SponsorSetting/off`` leaves it alone.
+    public static func segmentToMute(at time: Double, in segments: [SponsorSegment], prefs: Prefs) -> SponsorSegment? {
+        acting(muteRule, at: time, in: segments, prefs: prefs)
     }
 
-    private static func acting(
-        _ action: SponsorAction,
-        at time: Double,
-        in segments: [SponsorSegment],
-        margin: Double
-    ) -> SponsorSegment? {
-        segments.first { segment in
-            segment.actionType == action
-                && autoSkip.contains(segment.category)
+    /// The one place the master switch is read: `skipSponsors` off means no
+    /// segment acts, whatever a category is set to, and a caller cannot forget
+    /// to check it.
+    /// One kind of thing to do with a segment: which action type it applies
+    /// to, how far before the end it stops, and which settings ask for it.
+    private struct Rule: Sendable {
+        let action: SponsorAction
+        /// How far before a segment's end this stops firing. A skip needs one
+        /// so a seek landing just inside the boundary cannot loop; an offer
+        /// needs a longer one, because a button that appears for the last
+        /// second of a segment is a button nobody can press; a mute needs none
+        /// at all, because it runs to the very end.
+        let margin: Double
+        let allows: @Sendable (SponsorSetting) -> Bool
+    }
+
+    private static let skipRule = Rule(action: .skip, margin: 0.5) { $0 == .skip }
+    private static let offerRule = Rule(action: .skip, margin: 1.5) { $0 == .ask }
+    private static let muteRule = Rule(action: .mute, margin: 0) { $0 != .off }
+
+    private static func acting(_ rule: Rule, at time: Double, in segments: [SponsorSegment], prefs: Prefs) -> SponsorSegment? {
+        guard prefs.skipSponsors else { return nil }
+        return segments.first { segment in
+            segment.actionType == rule.action
+                && rule.allows(prefs.sponsorActions[segment.category] ?? .off)
                 && segment.end > segment.start
                 && time >= segment.start
-                && time < segment.end - margin
+                && time < segment.end - rule.margin
         }
     }
 
@@ -182,10 +205,10 @@ public struct SponsorMuteTracker: Sendable {
     public mutating func mute(
         at time: Double,
         in segments: [SponsorSegment],
-        enabled: Bool,
+        prefs: Prefs,
         isMuted: Bool
     ) -> Bool? {
-        let inSegment = enabled && SponsorRules.segmentToMute(at: time, in: segments) != nil
+        let inSegment = SponsorRules.segmentToMute(at: time, in: segments, prefs: prefs) != nil
         if inSegment {
             guard !muting else { return nil }
             viewerMuted = isMuted

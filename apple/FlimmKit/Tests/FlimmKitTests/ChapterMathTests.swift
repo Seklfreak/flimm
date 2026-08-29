@@ -56,25 +56,26 @@ final class ChapterMathTests: XCTestCase {
 
 final class SponsorMuteTrackerTests: XCTestCase {
     private let segments = [SponsorSegment(category: "sponsor", actionType: .mute, start: 10, end: 20)]
+    private let prefs = Prefs()
 
     func testMutesForTheSegmentAndRestoresAfterIt() {
         var tracker = SponsorMuteTracker()
-        XCTAssertNil(tracker.mute(at: 5, in: segments, enabled: true, isMuted: false))
-        XCTAssertEqual(tracker.mute(at: 12, in: segments, enabled: true, isMuted: false), true)
+        XCTAssertNil(tracker.mute(at: 5, in: segments, prefs: prefs, isMuted: false))
+        XCTAssertEqual(tracker.mute(at: 12, in: segments, prefs: prefs, isMuted: false), true)
         // Already ours: nothing to change while it runs.
-        XCTAssertNil(tracker.mute(at: 15, in: segments, enabled: true, isMuted: true))
-        XCTAssertEqual(tracker.mute(at: 25, in: segments, enabled: true, isMuted: true), false)
+        XCTAssertNil(tracker.mute(at: 15, in: segments, prefs: prefs, isMuted: true))
+        XCTAssertEqual(tracker.mute(at: 25, in: segments, prefs: prefs, isMuted: true), false)
     }
 
     func testAViewerWhoWasAlreadyMutedStaysMuted() {
         var tracker = SponsorMuteTracker()
-        XCTAssertEqual(tracker.mute(at: 12, in: segments, enabled: true, isMuted: true), true)
-        XCTAssertEqual(tracker.mute(at: 25, in: segments, enabled: true, isMuted: true), true)
+        XCTAssertEqual(tracker.mute(at: 12, in: segments, prefs: prefs, isMuted: true), true)
+        XCTAssertEqual(tracker.mute(at: 25, in: segments, prefs: prefs, isMuted: true), true)
     }
 
     func testTheSegmentIsIgnoredWhenTheSkipPreferenceIsOff() {
         var tracker = SponsorMuteTracker()
-        XCTAssertNil(tracker.mute(at: 12, in: segments, enabled: false, isMuted: false))
+        XCTAssertNil(tracker.mute(at: 12, in: segments, prefs: Prefs(skipSponsors: false), isMuted: false))
     }
 }
 
@@ -85,23 +86,31 @@ final class SponsorRulesTests: XCTestCase {
         SponsorSegment(category: "selfpromo", start: 100, end: 110)
     ]
 
-    func testOnlySkippableCategoriesAreSkipped() {
-        XCTAssertEqual(SponsorRules.segmentToSkip(at: 15, in: segments)?.category, "sponsor")
-        XCTAssertEqual(SponsorRules.segmentToSkip(at: 105, in: segments)?.category, "selfpromo")
-        // An intro is tinted on the scrubber but never skipped for you.
-        XCTAssertNil(SponsorRules.segmentToSkip(at: 45, in: segments))
-        XCTAssertNil(SponsorRules.segmentToSkip(at: 5, in: segments))
+    /// This suite's viewer, with the usual defaults.
+    private let prefs = Prefs()
+
+    /// A viewer who set these categories to something of their own.
+    private func viewer(_ actions: [String: SponsorSetting]) -> Prefs {
+        Prefs(sponsorActions: actions)
+    }
+
+    func testOnlyCategoriesSetToSkipAreSkipped() {
+        XCTAssertEqual(SponsorRules.segmentToSkip(at: 15, in: segments, prefs: prefs)?.category, "sponsor")
+        XCTAssertEqual(SponsorRules.segmentToSkip(at: 105, in: segments, prefs: prefs)?.category, "selfpromo")
+        // An intro defaults to "ask": offered on the way past, never taken.
+        XCTAssertNil(SponsorRules.segmentToSkip(at: 45, in: segments, prefs: prefs))
+        XCTAssertNil(SponsorRules.segmentToSkip(at: 5, in: segments, prefs: prefs))
     }
 
     /// A margin at the end stops a skip landing just inside the boundary and
     /// re-triggering forever.
     func testTheEndMarginPreventsASkipLoop() {
-        XCTAssertNil(SponsorRules.segmentToSkip(at: 29.8, in: segments))
+        XCTAssertNil(SponsorRules.segmentToSkip(at: 29.8, in: segments, prefs: prefs))
     }
 
     func testZeroLengthSegmentsAreIgnored() {
         let degenerate = [SponsorSegment(category: "sponsor", start: 10, end: 10)]
-        XCTAssertNil(SponsorRules.segmentToSkip(at: 10, in: degenerate))
+        XCTAssertNil(SponsorRules.segmentToSkip(at: 10, in: degenerate, prefs: prefs))
         XCTAssertTrue(SponsorRules.ranges(degenerate, duration: 100).isEmpty)
     }
 
@@ -132,17 +141,46 @@ final class SponsorRulesTests: XCTestCase {
         ]
         // A mute segment keeps playing, and an action this build does not
         // understand is inert rather than guessed at.
-        XCTAssertNil(SponsorRules.segmentToSkip(at: 15, in: mixed))
-        XCTAssertNil(SponsorRules.segmentToSkip(at: 45, in: mixed))
+        XCTAssertNil(SponsorRules.segmentToSkip(at: 15, in: mixed, prefs: prefs))
+        XCTAssertNil(SponsorRules.segmentToSkip(at: 45, in: mixed, prefs: prefs))
+    }
+
+    /// A category is skipped because the viewer said so, not because it is a
+    /// sponsor: the same segment is jumped, offered or ignored depending on
+    /// what they set.
+    func testACategoryActsAsTheViewerSetIt() {
+        let intro = [SponsorSegment(category: "intro", actionType: .skip, start: 0, end: 30)]
+        XCTAssertNil(SponsorRules.segmentToSkip(at: 5, in: intro, prefs: prefs))
+        XCTAssertEqual(SponsorRules.segmentToOffer(at: 5, in: intro, prefs: prefs)?.category, "intro")
+
+        XCTAssertEqual(SponsorRules.segmentToSkip(at: 5, in: intro, prefs: viewer(["intro": .skip]))?.category, "intro")
+        XCTAssertNil(SponsorRules.segmentToOffer(at: 5, in: intro, prefs: viewer(["intro": .skip])))
+
+        XCTAssertNil(SponsorRules.segmentToSkip(at: 5, in: intro, prefs: viewer(["intro": .off])))
+        XCTAssertNil(SponsorRules.segmentToOffer(at: 5, in: intro, prefs: viewer(["intro": .off])))
+        // A category this build has never heard of does nothing at all.
+        XCTAssertNil(SponsorRules.segmentToSkip(at: 5, in: intro, prefs: viewer([:])))
+    }
+
+    /// A button that appears for the last second of a segment is a button
+    /// nobody can press, so the offer stops before the skip would.
+    func testAnOfferStopsBeforeTheSegmentEnds() {
+        let intro = [SponsorSegment(category: "intro", actionType: .skip, start: 0, end: 30)]
+        XCTAssertNotNil(SponsorRules.segmentToOffer(at: 28.4, in: intro, prefs: prefs))
+        XCTAssertNil(SponsorRules.segmentToOffer(at: 28.6, in: intro, prefs: prefs))
     }
 
     func testMuteSegmentsRunToTheirVeryEnd() {
         let mute = [SponsorSegment(category: "sponsor", actionType: .mute, start: 10, end: 30)]
-        XCTAssertEqual(SponsorRules.segmentToMute(at: 10, in: mute)?.category, "sponsor")
-        XCTAssertNotNil(SponsorRules.segmentToMute(at: 29.9, in: mute))
-        XCTAssertNil(SponsorRules.segmentToMute(at: 30, in: mute))
+        XCTAssertEqual(SponsorRules.segmentToMute(at: 10, in: mute, prefs: prefs)?.category, "sponsor")
+        XCTAssertNotNil(SponsorRules.segmentToMute(at: 29.9, in: mute, prefs: prefs))
+        XCTAssertNil(SponsorRules.segmentToMute(at: 30, in: mute, prefs: prefs))
         // A skip segment is not muted on the way past.
-        XCTAssertNil(SponsorRules.segmentToMute(at: 15, in: segments))
+        XCTAssertNil(SponsorRules.segmentToMute(at: 15, in: segments, prefs: prefs))
+        // "Ask" still mutes: the viewer asked to be offered the skip, not to
+        // hear the sponsor read while they decide. Only "off" leaves it.
+        XCTAssertNotNil(SponsorRules.segmentToMute(at: 15, in: mute, prefs: viewer(["sponsor": .ask])))
+        XCTAssertNil(SponsorRules.segmentToMute(at: 15, in: mute, prefs: viewer(["sponsor": .off])))
     }
 
     func testPointsOfInterestAndWholeVideoLabelsAreNotTinted() {

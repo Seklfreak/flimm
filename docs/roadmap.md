@@ -2,6 +2,30 @@
 
 ## Done
 
+- **SponsorBlock, per category** (2026-08-29) — one "skip sponsors" switch
+  decided everything, with a hardcoded set of categories that acted and the
+  rest tinted and ignored. Each category is now the viewer's own: **Skip**
+  jumps it, **Ask** offers a *Skip the intro* button in the player for as long
+  as playback is inside it, **Off** leaves it alone. The three that interrupt
+  a video without being part of it keep skipping by default; intro, outro,
+  recap, filler and the rest now default to Ask, because those are sometimes
+  what someone came for. `skip_sponsors` stays as the master switch, the
+  settings live in `sponsor_actions` on `/me/prefs`, and the decision is made
+  in one place per platform — `chapterMath.ts` and FlimmKit's `SponsorRules`,
+  which now take the prefs rather than a category list, so the master switch
+  cannot be forgotten at a call site. Settings and the button are on all four
+  clients; on the TV the offer is a row in the info panel, beside *Jump to the
+  highlight*, because its overlay takes no focus.
+
+- **A cached list that never loaded is no longer served as empty** (2026-08-29)
+  — the other half of the cancelled-request fix. A pager whose first load was
+  cancelled holds no items and nothing retries it, because every later pass
+  finds it in the cache and hands it straight back; before the cancellation
+  fix that showed "Something went wrong: cancelled", after it a feed reading
+  "All caught up" over four unwatched videos. `PagerStore` now only returns a
+  pager that actually loaded — one that loaded and *failed* is still returned,
+  because it carries an error the screen offers a retry for.
+
 - **Unseen opens with what you were watching** (2026-08-29) — the videos a
   viewer is part-way through now head the unseen view of every feed, most
   recently played first, and the "In progress" / "Continue" filter is gone
@@ -413,8 +437,6 @@
 
 ## Ideas
 
-- **SponsorBlock UI** — per-category skip settings and a manual skip button.
-  Segments already render on the timeline, and the highlight is already a jump.
 - **DeArrow** — crowd-sourced de-clickbaited titles and thumbnails, from the
   same project and the same hash-prefix API (`/api/branding/{prefix}`). The
   thumbnail half fits Flimm better than it fits a browser extension: DeArrow

@@ -169,14 +169,18 @@ server that predates the field, which is the same thing. `chapter` segments
 never appear here — they come back from
 [`/videos/{id}/chapters`](#chapters) instead.
 
-Which *categories* act automatically is a client decision, identical in every
-client: `sponsor`, `selfpromo` and `interaction` are skipped or muted, and
-every other category (`intro`, `outro`, `preview`, `music_offtopic`, `filler`,
-`exclusive_access`…) is tinted on the timeline and left alone. A `poi` or
-`full` segment is never tinted: neither marks a stretch of the timeline. The
-`poi` gets a marker on the timeline and a *Jump to the highlight* control
-instead, offered only while playback is still before it and regardless of the
-`skip_sponsors` preference — jumping is a click, not a skip.
+What each *category* does is the viewer's, in `sponsor_actions` (below), and
+every client obeys it identically: `skip` seeks past the segment, `ask` offers
+a button in the player for as long as playback is inside it, and `off` leaves
+it alone — still tinted on the timeline, since the tint says what a stretch of
+video is, not what will happen to it. A `mute` segment is muted for anything
+but `off`: the viewer asked to be offered the skip, not to hear the sponsor
+read while they decide. `skip_sponsors` is the master switch above all of it.
+
+A `poi` or `full` segment is never tinted: neither marks a stretch of the
+timeline. The `poi` gets a marker and a *Jump to the highlight* control
+instead, offered only while playback is still before it and regardless of any
+preference — jumping is a click, not a skip.
 
 `hls_url` is **always present**, whether or not the rendition exists yet;
 `hls_state` says which:
@@ -332,11 +336,22 @@ Prefs:
   "playback_speed": 1.0,
   "subtitle_lang": "en",               // language code, or "off"; defaults to "en"
   "subtitle_size": "small|medium|large",
-  "skip_sponsors": true,
+  "skip_sponsors": true,               // the master switch for everything below
+  "sponsor_actions": {                 // per category: "skip" | "ask" | "off"
+    "sponsor": "skip", "selfpromo": "skip", "interaction": "skip",
+    "intro": "ask", "outro": "ask", "preview": "ask",
+    "filler": "ask", "music_offtopic": "ask", "exclusive_access": "ask"
+  },
   "everything_sort": "newest", "everything_hide_seen": true, "everything_include_shorts": false,
   "theme": "system|light|dark"
 }
 ```
+
+`sponsor_actions` always comes back with **every** category the server knows,
+so a client can tell "left alone" from "this build predates the category". A
+`PATCH` replaces the map it is sent, filling any category the patch omits with
+its default — send the whole map back, which is what the settings screens do.
+`poi_highlight` is not in it: a point of interest is offered, never configured.
 
 ### Feeds
 | Method | Path | Notes |

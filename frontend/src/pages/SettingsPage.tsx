@@ -4,6 +4,7 @@ import { useConfig } from "@/lib/config";
 import { PageHeader } from "@/components/Layout";
 import { Segmented, Spinner, Toggle } from "@/components/ui";
 import { langName } from "@/player/Player";
+import { sponsorCategoryLabel } from "@/player/chapterMath";
 import { Link } from "react-router";
 import { SUBTITLE_OFF } from "@/player/Player";
 
@@ -13,6 +14,35 @@ import { SUBTITLE_OFF } from "@/player/Player";
 // (`PATCH /me/prefs`) except where a row says otherwise — quality is per device
 // and lives in the player, which is the only place that knows what this browser
 // can decode.
+// The categories a viewer can have an opinion about, in the order they matter:
+// the three that interrupt a video without being part of it, then the ones
+// that are sometimes exactly what someone came for. The highlight is not here
+// — a point of interest is offered by the player and configures nothing.
+const SPONSOR_CATEGORIES = [
+  "sponsor",
+  "selfpromo",
+  "interaction",
+  "intro",
+  "outro",
+  "preview",
+  "filler",
+  "music_offtopic",
+  "exclusive_access",
+];
+
+// "Skip" jumps it, "Ask" offers a button in the player, "Off" leaves it alone.
+const SPONSOR_HINTS: Record<string, string> = {
+  sponsor: "A paid promotion inside the video.",
+  selfpromo: "The creator's own merch, Patreon or channel plug.",
+  interaction: "\"Like and subscribe\".",
+  intro: "Titles and animation before the video starts.",
+  outro: "End cards and credits.",
+  preview: "A recap or a preview of what is coming.",
+  filler: "A tangent that is not part of the point.",
+  music_offtopic: "The non-music parts of a music video.",
+  exclusive_access: "A video the creator was given access or a product for.",
+};
+
 export default function SettingsPage() {
   const me = useMe();
   const config = useConfig();
@@ -41,12 +71,30 @@ export default function SettingsPage() {
                 />
               </Row>
               <Row
-                label="Skip sponsor segments"
-                hint="Sponsor, self-promotion and interaction reminders are skipped automatically; other SponsorBlock categories are only tinted on the timeline."
+                label="SponsorBlock"
+                hint="The master switch. Off, and no segment is skipped, muted or offered — they are still tinted on the timeline."
               >
-                <Toggle on={prefs.skip_sponsors} onChange={(v) => set({ skip_sponsors: v })} label="Skip sponsor segments" />
+                <Toggle on={prefs.skip_sponsors} onChange={(v) => set({ skip_sponsors: v })} label="SponsorBlock" />
               </Row>
             </Section>
+
+            {prefs.skip_sponsors && (
+              <Section title="SponsorBlock categories">
+                {SPONSOR_CATEGORIES.map((category) => (
+                  <Row key={category} label={sponsorCategoryLabel(category)} hint={SPONSOR_HINTS[category]}>
+                    <Segmented
+                      value={prefs.sponsor_actions?.[category] ?? "off"}
+                      onChange={(v) => set({ sponsor_actions: { ...prefs.sponsor_actions, [category]: v } })}
+                      options={[
+                        { value: "skip", label: "Skip" },
+                        { value: "ask", label: "Ask" },
+                        { value: "off", label: "Off" },
+                      ]}
+                    />
+                  </Row>
+                ))}
+              </Section>
+            )}
 
             <Section title="Subtitles">
               <Row label="Language" hint="The track picked by default when a video has one.">

@@ -7,6 +7,7 @@ import {
   highlightSegment,
   highlightToOffer,
   segmentToMute,
+  segmentToOffer,
   segmentToSkip,
   sponsorPointPercents,
   sponsorAction,
@@ -104,18 +105,33 @@ describe("sponsor actions", () => {
     expect(sponsorAction(segs[1])).toBe("mute");
   });
 
-  it("skips only skip segments in an auto-skip category", () => {
-    expect(segmentToSkip(segs, 25)?.category).toBe("sponsor");
-    expect(segmentToSkip(segs, 70)).toBeUndefined(); // a mute segment is not skipped
-    expect(segmentToSkip(segs, 130)).toBeUndefined(); // outro is tinted, never skipped
-    expect(segmentToSkip(segs, 39.9)).toBeUndefined(); // inside the end margin
+  // What the viewer set each category to; the server sends one of these for
+  // every category it knows.
+  const actions = { sponsor: "skip", selfpromo: "skip", outro: "ask" };
+
+  it("skips only skip segments in a category set to skip", () => {
+    expect(segmentToSkip(segs, 25, actions)?.category).toBe("sponsor");
+    expect(segmentToSkip(segs, 70, actions)).toBeUndefined(); // a mute segment is not skipped
+    expect(segmentToSkip(segs, 130, actions)).toBeUndefined(); // outro is "ask": offered, not taken
+    expect(segmentToSkip(segs, 39.9, actions)).toBeUndefined(); // inside the end margin
+    expect(segmentToSkip(segs, 25, { sponsor: "off" })).toBeUndefined();
+    expect(segmentToSkip(segs, 25, {})).toBeUndefined(); // a category nobody set does nothing
   });
 
-  it("mutes only mute segments, to their very end", () => {
-    expect(segmentToMute(segs, 60)?.category).toBe("selfpromo");
-    expect(segmentToMute(segs, 79.9)?.category).toBe("selfpromo");
-    expect(segmentToMute(segs, 80)).toBeUndefined();
-    expect(segmentToMute(segs, 25)).toBeUndefined(); // a skip segment is not muted
+  it("offers a category set to ask, rather than taking it", () => {
+    expect(segmentToOffer(segs, 130, actions)?.category).toBe("outro");
+    expect(segmentToOffer(segs, 25, actions)).toBeUndefined(); // sponsor is skipped outright
+    expect(segmentToOffer(segs, 139, actions)).toBeUndefined(); // too late to be worth a button
+    expect(segmentToOffer(segs, 130, { outro: "off" })).toBeUndefined();
+  });
+
+  it("mutes only mute segments, to their very end, unless the category is off", () => {
+    expect(segmentToMute(segs, 60, actions)?.category).toBe("selfpromo");
+    expect(segmentToMute(segs, 79.9, actions)?.category).toBe("selfpromo");
+    expect(segmentToMute(segs, 80, actions)).toBeUndefined();
+    expect(segmentToMute(segs, 25, actions)).toBeUndefined(); // a skip segment is not muted
+    expect(segmentToMute(segs, 60, { selfpromo: "ask" })?.category).toBe("selfpromo");
+    expect(segmentToMute(segs, 60, { selfpromo: "off" })).toBeUndefined();
   });
 
   it("does not tint points of interest or whole-video labels", () => {
