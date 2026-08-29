@@ -28,6 +28,9 @@ struct TVPlayerViewController: UIViewControllerRepresentable {
         // from the viewer, which is the one thing the transport bar is for.
         controller.skippingBehavior = .default
         controller.customInfoViewControllers = [context.coordinator.infoPanel]
+        // The captions sit just above the bottom edge and step up when the
+        // transport bar appears; the delegate is the only notice AVKit gives.
+        controller.delegate = context.coordinator
 
         let overlay = context.coordinator.overlay
         if let host = controller.contentOverlayView {
@@ -53,7 +56,7 @@ struct TVPlayerViewController: UIViewControllerRepresentable {
     }
 
     @MainActor
-    final class Coordinator: NSObject {
+    final class Coordinator: NSObject, AVPlayerViewControllerDelegate {
         let overlay: UIHostingController<TVPlayerOverlay>
         let infoPanel: UIHostingController<TVPlayerInfoPanel>
 
@@ -66,6 +69,16 @@ struct TVPlayerViewController: UIViewControllerRepresentable {
         private var appliedNav: NavAvailability?
         /// Whether the Info tab has been pinned to the panel's width (once).
         private var pinnedInfoPanel = false
+
+        nonisolated func playerViewController(
+            _ playerViewController: AVPlayerViewController,
+            willTransitionToVisibilityOfTransportBar visible: Bool,
+            with coordinator: any AVPlayerViewControllerAnimationCoordinator
+        ) {
+            MainActor.assumeIsolated {
+                overlay.rootView = TVPlayerOverlay(model: model, transportBarVisible: visible)
+            }
+        }
 
         init(model: TVWatchModel) {
             self.model = model

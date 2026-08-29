@@ -17,6 +17,10 @@ import SwiftUI
 /// going to the transport bar underneath.
 struct TVPlayerOverlay: View {
     @Bindable var model: TVWatchModel
+    /// AVKit's transport bar is up, so the captions have to get out of its
+    /// way. Set from the player controller's delegate; see
+    /// ``TVPlayerViewController``.
+    var transportBarVisible = false
 
     var body: some View {
         ZStack {
@@ -29,12 +33,17 @@ struct TVPlayerOverlay: View {
                         .font(.system(size: subtitleSize, weight: .semibold))
                         .foregroundStyle(.white)
                         .multilineTextAlignment(.center)
+                        // No plate behind the words: a black slab over the
+                        // picture is the ugliest thing on screen, and two
+                        // shadows carry the same contrast over anything the
+                        // video puts underneath.
+                        .shadow(color: .black.opacity(0.85), radius: 8, y: 3)
+                        .shadow(color: .black.opacity(0.55), radius: 2)
                         .padding(.horizontal, 26)
-                        .padding(.vertical, 14)
-                        .background(Palette.overlay, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                        .padding(.bottom, 120)
+                        .padding(.bottom, transportBarVisible ? 240 : 60)
                         .frame(maxWidth: 1400)
                 }
+                .animation(.easeOut(duration: 0.25), value: transportBarVisible)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)

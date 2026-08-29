@@ -153,9 +153,12 @@ struct SubtitleOverlay: View {
                 .font(.system(size: fontSize, weight: .semibold))
                 .foregroundStyle(.white)
                 .multilineTextAlignment(.center)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 5)
-                .background(Color.black.opacity(0.6), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                // Shadows rather than a plate: the black box behind a cue is
+                // the ugliest thing over a picture, and this holds up over
+                // anything the video puts underneath. Matched on the TV and
+                // in the web player's ::cue rule.
+                .shadow(color: .black.opacity(0.85), radius: 5, y: 2)
+                .shadow(color: .black.opacity(0.55), radius: 1.5)
                 .padding(.horizontal, 16)
                 .transition(.opacity)
         }

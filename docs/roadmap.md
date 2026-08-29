@@ -2,6 +2,15 @@
 
 ## Done
 
+- **Subtitles that sit right and stop shouting** (2026-08-28) — the Apple TV
+  drew its cues 120pt off the bottom whether or not anything was there, which
+  read as floating in the middle of the picture; they now sit 60pt up and step
+  to 240 only while AVKit's transport bar is showing (its delegate is the only
+  notice AVKit gives). The black plate behind the words is gone on all three
+  players — web `::cue`, the phone/iPad overlay and the TV's — replaced by two
+  shadows, which hold the same contrast over a bright scene without putting a
+  slab over the picture.
+
 - **Sessions that survive time away** (2026-08-28) — the Apple apps asked for
   a sign-in now and then, usually noticed right after an update because an
   update is what forces the cold launch that asks. Only `invalid_grant` ever
