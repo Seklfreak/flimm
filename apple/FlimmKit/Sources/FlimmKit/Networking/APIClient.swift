@@ -217,6 +217,10 @@ public actor APIClient {
             return (data, http)
         } catch let error as APIError {
             throw error
+        } catch let error as URLError where error.code == .cancelled {
+            throw APIError.cancelled
+        } catch is CancellationError {
+            throw APIError.cancelled
         } catch {
             throw APIError.transport(error.localizedDescription)
         }

@@ -56,6 +56,11 @@ final class Pager<Item: Codable & Sendable & Hashable & Identifiable> {
             error = nil
         } catch is CancellationError {
             return
+        } catch APIError.cancelled {
+            // The screen asked for a different list before this one answered.
+            // Reporting it would leave "cancelled" where a list should be —
+            // and a cached pager holding that error never retries.
+            return
         } catch {
             self.error = AppModel.message(for: error)
         }

@@ -25,11 +25,17 @@ public enum APIError: Error, Sendable, Equatable {
     /// URLSession failed: offline, TLS, DNS, timeout. Never a reason to sign
     /// a user out — the server may simply be off the public internet.
     case transport(String)
+    /// The request was cancelled — the screen that asked went away, or the
+    /// query it was for changed underneath it. Nobody is waiting for this
+    /// answer, so it is not a failure to report: `URLSession` reports a
+    /// cancelled task as `URLError.cancelled` rather than `CancellationError`,
+    /// which is how "cancelled" ended up on screen where a list should be.
+    case cancelled
 
     /// Transport failures are transient; everything else is an answer.
     public var isTransient: Bool {
         switch self {
-        case .transport, .upstreamUnavailable: true
+        case .transport, .upstreamUnavailable, .cancelled: true
         case .http(let status, _): status >= 500
         default: false
         }
@@ -44,6 +50,7 @@ public enum APIError: Error, Sendable, Equatable {
         case .http(let status, let m): m.isEmpty ? "HTTP \(status)" : m
         case .decoding(let m): "Unexpected response: \(m)"
         case .transport(let m): m
+        case .cancelled: "Cancelled."
         }
     }
 

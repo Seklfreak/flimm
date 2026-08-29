@@ -454,3 +454,37 @@ extension APIClientTests {
         XCTAssertEqual(APIClient.assetHTTPHeaderFieldsKey, "AVURLAssetHTTPHeaderFieldsKey")
     }
 }
+
+extension APIClientTests {
+    /// `URLSession` reports a cancelled task as `URLError.cancelled`, not as
+    /// `CancellationError` — so a screen that asked for a different list is
+    /// not a failure to put on screen. See ``Pager``.
+    func testACancelledRequestIsReportedAsCancelled() async {
+        let session = StubURLProtocol.session { _, _ in throw URLError(.cancelled) }
+        let client = APIClient(baseURL: baseURL, tokens: nil, session: session)
+        do {
+            _ = try await client.config()
+            XCTFail("expected the cancellation to propagate")
+        } catch let error as APIError {
+            XCTAssertEqual(error, .cancelled)
+        } catch {
+            XCTFail("error = \(error), want APIError.cancelled")
+        }
+    }
+
+    /// A real network failure still reads as one.
+    func testAnOfflineRequestIsStillATransportError() async {
+        let session = StubURLProtocol.session { _, _ in throw URLError(.notConnectedToInternet) }
+        let client = APIClient(baseURL: baseURL, tokens: nil, session: session)
+        do {
+            _ = try await client.config()
+            XCTFail("expected the failure to propagate")
+        } catch let error as APIError {
+            guard case .transport = error else {
+                return XCTFail("error = \(error), want a transport error")
+            }
+        } catch {
+            XCTFail("error = \(error)")
+        }
+    }
+}
