@@ -47,8 +47,10 @@ feeds without leaving the page.
   still show it, marked, which is where a viewer puts one back. Every client
   offers an undo without navigating away, because the action is one tap from a
   card and easy to hit by accident.
-- **Resume is automatic.** A chip in the top-left says where playback resumed
-  from, with *Start over*. It is an offer rather than a status, so it retires
+- **Resume is automatic**, and starts 15 seconds before where playback
+  stopped, because landing in the middle of a sentence costs more than the
+  seconds do. A chip in the top-left says where playback resumed from, with
+  *Start over*. It is an offer rather than a status, so it retires
   itself after a minute of playback past the resume point — measured in
   playback, so pausing to decide does not spend the minute. Position is
   reported by heartbeat while playing.
@@ -58,10 +60,10 @@ feeds without leaving the page.
 - Seen state and resume position are written back to TubeArchivist, so the
   stock TA UI stays consistent.
 - The subtitle picker is the CC button in the controls: Off, archived tracks,
-  and auto-generated tracks marked *auto*, plus size. Cues are white text
-  carrying their own shadow rather than a black plate — the plate is the
-  ugliest thing over a picture — and they sit clear of the bottom edge and of
-  whatever transport controls are up, on every client. SponsorBlock segments
+  and auto-generated tracks marked *auto*, plus size. Cues are white on a
+  dark plate — tried without one, and the plate is what makes them readable
+  over a bright scene — and they sit clear of the bottom edge and of whatever
+  transport controls are up, on every client. SponsorBlock segments
   can be skipped automatically (a preference) — and a segment its contributor
   marked *mute* rather than *skip* is muted for its length instead, because
   the picture still matters there. Segments come from the SponsorBlock service

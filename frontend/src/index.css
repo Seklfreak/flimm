@@ -227,17 +227,10 @@ a:hover {
    changed what em resolves against inside ::cue, at which point every setting
    collapsed to ~11px whatever the player size. See that file. */
 video::cue {
-  /* No plate behind the words: a black slab over the picture is the ugliest
-     thing on screen, and two shadows carry the same contrast over anything
-     the video puts underneath. The Apple clients draw their own overlay the
-     same way. */
-  background: transparent;
+  background: rgba(0, 0, 0, 0.72);
   color: #fff;
   font-family: var(--font-sans);
   font-weight: 700;
-  text-shadow:
-    0 2px 6px rgba(0, 0, 0, 0.95),
-    0 0 3px rgba(0, 0, 0, 0.9);
 }
 
 @utility no-scrollbar {
