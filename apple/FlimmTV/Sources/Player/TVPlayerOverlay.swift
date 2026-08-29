@@ -27,6 +27,13 @@ struct TVPlayerOverlay: View {
             if model.audioOnly { artwork }
             if model.isPreparingCompatible { preparing }
             if let cue = model.activeCue, !cue.isEmpty {
+                // Measured from the screen's edge, not from the safe area:
+                // tvOS hands a hosting controller 60pt of overscan inset at
+                // top and bottom, so a padding of 60 here landed the cue 120pt
+                // up — a fifth of the way into the picture, which is what
+                // "the subtitles are too high" was. The number below is what
+                // reaches the panel, and it stays clear of overscan on its
+                // own.
                 VStack {
                     Spacer()
                     Text(cue)
@@ -40,9 +47,10 @@ struct TVPlayerOverlay: View {
                         .shadow(color: .black.opacity(0.85), radius: 8, y: 3)
                         .shadow(color: .black.opacity(0.55), radius: 2)
                         .padding(.horizontal, 26)
-                        .padding(.bottom, transportBarVisible ? 240 : 60)
+                        .padding(.bottom, transportBarVisible ? 300 : 84)
                         .frame(maxWidth: 1400)
                 }
+                .ignoresSafeArea()
                 .animation(.easeOut(duration: 0.25), value: transportBarVisible)
             }
         }

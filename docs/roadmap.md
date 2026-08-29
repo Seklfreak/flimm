@@ -10,7 +10,11 @@
   switched off. Both are far below what artwork or a video needs to sit on
   top of.
 
-- **Subtitles that sit right and stop shouting** (2026-08-28) — the Apple TV
+- **Subtitles that sit right and stop shouting** (2026-08-28, placement
+  corrected 2026-08-29 — tvOS hands a hosting controller 60pt of overscan
+  inset, so padding measured from the safe area lands 60pt higher than it
+  reads; the TV's cues now ignore the safe area and are measured from the
+  panel edge, 84pt up, 300 while the transport bar is showing) — the Apple TV
   drew its cues 120pt off the bottom whether or not anything was there, which
   read as floating in the middle of the picture; they now sit 60pt up and step
   to 240 only while AVKit's transport bar is showing (its delegate is the only
