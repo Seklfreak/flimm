@@ -2,12 +2,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, EVERYTHING_ID } from "@/lib/api";
-import { invalidateWatchState, keys, useChapters, useFeeds, usePrefs, useSetWatched, useUpdatePrefs, useUpNext, useVideo } from "@/lib/queries";
+import { invalidateWatchState, keys, useChapters, useComments, useFeeds, usePrefs, useSetWatched, useUpdatePrefs, useUpNext, useVideo } from "@/lib/queries";
 import { fmtDuration, plural, relativeDay } from "@/lib/format";
 import { Avatar, CheckIcon, ErrorState, Spinner } from "@/components/ui";
 import { watchHref } from "@/components/VideoCard";
 import { Player, SUBTITLE_OFF, langName, pickTrack, type PlayerHandle } from "@/player/Player";
 import { Chapters } from "@/player/Chapters";
+import { Comments } from "@/player/Comments";
 import { AddToPlaylist } from "@/player/AddToPlaylist";
 import { UpNextPanel } from "@/player/UpNextPanel";
 
@@ -60,6 +61,11 @@ export default function WatchPage() {
     staleTime: 60_000,
   });
   const chapters = useChapters(id).data?.chapters ?? [];
+  // The comments load when the section is opened and not before: they are the
+  // longest thing on the page and the least often wanted.
+  const [commentsOpen, setCommentsOpen] = useState(false);
+  const comments = useComments(id, commentsOpen);
+  const commentPages = comments.data?.pages.flatMap((p) => p.items) ?? [];
   const [activeChapter, setActiveChapter] = useState(-1);
   const playerRef = useRef<PlayerHandle>(null);
   useEffect(() => {
@@ -171,6 +177,16 @@ export default function WatchPage() {
             </div>
           )}
           <Chapters chapters={chapters} activeIndex={activeChapter} onSeek={onSeekChapter} />
+          <Comments
+            comments={commentPages}
+            total={comments.data?.pages[0]?.total ?? 0}
+            isLoading={comments.isLoading}
+            hasMore={!!comments.hasNextPage}
+            isFetchingMore={comments.isFetchingNextPage}
+            fetchMore={() => void comments.fetchNextPage()}
+            open={commentsOpen}
+            onToggle={setCommentsOpen}
+          />
         </div>
       </div>
       <UpNextPanel

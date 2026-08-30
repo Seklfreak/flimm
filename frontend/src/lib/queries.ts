@@ -5,7 +5,7 @@ import {
   useQueryClient,
   type QueryClient,
 } from "@tanstack/react-query";
-import { api, type Feed, type FeedInput, type Page, type PageAt, type Prefs, type VideoSummary, EVERYTHING_ID } from "./api";
+import { api, type Comment, type Feed, type FeedInput, type Page, type PageAt, type Prefs, type VideoSummary, EVERYTHING_ID } from "./api";
 
 export const keys = {
   me: ["me"] as const,
@@ -20,6 +20,7 @@ export const keys = {
   upNext: (id: string, ctx: Record<string, string | undefined>) => ["videos", id, "up-next", ctx] as const,
   nav: (id: string, ctx: Record<string, string | undefined>) => ["videos", id, "nav", ctx] as const,
   chapters: (id: string) => ["videos", id, "chapters"] as const,
+  comments: (id: string) => ["videos", id, "comments"] as const,
   playlists: (kind: string | undefined) => ["playlists", kind ?? "all"] as const,
   playlist: (id: string) => ["playlists", id] as const,
   pinnedPlaylists: ["playlists", "pinned"] as const,
@@ -121,6 +122,24 @@ export function useUpNext(id: string, ctx: Record<string, string | undefined>) {
     queryFn: ({ pageParam }) => api.upNext(id, ctx, pageParam),
     staleTime: 60_000,
     ...pageParams<VideoSummary>(),
+  });
+}
+
+/**
+ * A video's archived comments, paged.
+ *
+ * `enabled` is the section's open state: the first page is fetched when
+ * someone actually opens the comments, so a video watched and closed costs
+ * nothing. They never change — the archive is a snapshot — so once fetched
+ * they are never refetched.
+ */
+export function useComments(id: string, enabled: boolean) {
+  return useInfiniteQuery({
+    queryKey: keys.comments(id),
+    queryFn: ({ pageParam }) => api.comments(id, pageParam),
+    enabled,
+    staleTime: Infinity,
+    ...pageParams<Comment>(),
   });
 }
 

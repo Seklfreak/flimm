@@ -97,6 +97,27 @@ export interface ChaptersResponse {
   chapters: Chapter[];
 }
 
+/** One archived comment. Normalised by the server, so no client parses
+ *  TubeArchivist's own key names.
+ *
+ *  There is deliberately no author avatar: the archive holds a Google CDN URL
+ *  for it, and loading that would announce every video its viewer opens to a
+ *  third party — the one thing archived comments otherwise avoid. */
+export interface Comment {
+  id: string;
+  author: string;
+  author_id: string;
+  text: string;
+  likes: number;
+  /** RFC 3339, or null on an archive that kept only `time_text`. */
+  published: string | null;
+  /** Upstream's own wording ("2 days ago"); the fallback for `published`. */
+  time_text: string;
+  hearted: boolean;
+  from_uploader: boolean;
+  replies: Comment[];
+}
+
 /** `GET /videos/{id}/loudness` — how loud a video was measured to be, and the
  *  gain a player applies to it. `gain_db` is never positive: no client can
  *  amplify uniformly, so normalisation only ever turns a video down. Only
@@ -445,6 +466,8 @@ export const api = {
   // Asking is what starts the analysis pass; the answer turns up on a later
   // call, exactly like a rendition's state.
   loudness: (id: string) => req<Loudness>(`/videos/${id}/loudness`),
+  comments: (id: string, page: number) =>
+    req<Page<Comment>>(`/videos/${id}/comments${qs({ page, page_size: PAGE_SIZE })}`),
   // Starts (or re-aims) a compatible rendition without waiting. `height` picks
   // the rung; `from` is the resume position, so the encoder produces the part
   // that is about to be watched first. Idempotent — it is also the progress

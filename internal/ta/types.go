@@ -4,7 +4,6 @@
 package ta
 
 import (
-	"encoding/json"
 	"strings"
 	"time"
 )
@@ -154,8 +153,29 @@ type SubtitleHit struct {
 	Channel       string  `json:"subtitle_channel"`
 }
 
-// Comments is the TA comment tree, passed through untouched.
-type Comments = json.RawMessage
+// Comment is one archived comment, as TubeArchivist indexed it from yt-dlp.
+//
+// Every field is optional in the source and several are absent on a comment
+// that came from an older download, so nothing here is required to be present
+// — a comment with no author and no text is dropped rather than shown, and
+// that is the only validation.
+type Comment struct {
+	ID        string  `json:"comment_id"`
+	Text      string  `json:"comment_text"`
+	Author    string  `json:"comment_author"`
+	AuthorID  string  `json:"comment_author_id"`
+	Likes     int     `json:"comment_likecount"`
+	TimeText  string  `json:"comment_time_text"`
+	Timestamp float64 `json:"comment_timestamp"`
+	// Hearted by the uploader. TubeArchivist carries yt-dlp's spelling.
+	Favorited bool `json:"comment_is_favorited"`
+	// Written by the channel the video belongs to.
+	FromUploader bool      `json:"comment_is_uploader"`
+	Replies      []Comment `json:"comment_replies"`
+}
+
+// Comments is a video's comment tree.
+type Comments []Comment
 
 // PublishedTime parses the TA published date (day precision).
 func (v Video) PublishedTime() time.Time {

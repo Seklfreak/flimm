@@ -2,6 +2,26 @@
 
 ## Done
 
+- **Comments** (2026-08-29) — the comments TubeArchivist downloaded with a
+  video, on all four clients. The endpoint was a passthrough of upstream's own
+  JSON; it is a contract now (`Comment`, paged by thread, replies riding with
+  their parent), because four clients reading `comment_likecount` is exactly
+  the drift the rest of the API exists to prevent. A record with neither text
+  nor author is dropped — a half-indexed row is not a comment.
+
+  **No author avatars**, and that is the interesting decision: the archive
+  holds a Google CDN URL for each one, and loading it would have every viewer's
+  client announce every video they open to a third party — the one thing
+  showing *archived* comments otherwise avoids entirely. An initial in a circle
+  does the same job.
+
+  Every client keeps them folded until asked, and asking is what loads the
+  first page. The **Apple TV** was the shape problem: selecting a video there
+  plays it, so there is no detail screen to put comments on, and the Info panel
+  AVKit gives a custom tab is a wide, short band. So the TV gets a second Info
+  tab that is a *horizontal* row of cards — the shape that band actually has,
+  and what a remote is good at moving through.
+
 - **Apple TV top shelf** (2026-08-29) — the Home screen row above the icons now
   shows the pinned feed: what is waiting, with artwork, and a resume bar on
   anything part-watched. Selecting one opens Flimm straight into playback.
@@ -539,7 +559,6 @@ are picked up.
   tint the scrubber beside the SponsorBlock segments. It needs a live YouTube
   request per video, though, so the honest place to capture it is at download
   time on the TubeArchivist side, not a per-view fetch from Flimm.
-- **Comments** — render TubeArchivist's archived comments under the video.
 - **Download queue management** — view and manage TubeArchivist's download
   queue and subscriptions from Flimm (add URLs, retry, ignore).
 - **Multi-instance** — one Flimm backend fronting several TubeArchivist

@@ -37,6 +37,8 @@ type Fake struct {
 	PageSizeCap int
 	// SearchFn overrides Search.
 	SearchFn func(query string) (*SearchResult, error)
+	// CommentsFn overrides Comments.
+	CommentsFn func(id string) (Comments, error)
 	// SimilarFn overrides SimilarVideos.
 	SimilarFn func(id string) ([]Video, error)
 	// Media holds raw file bytes keyed by the path FetchRange is called with
@@ -208,11 +210,14 @@ func (f *Fake) SimilarVideos(_ context.Context, id string) ([]Video, error) {
 	return []Video{}, nil
 }
 
-func (f *Fake) Comments(_ context.Context, _ string) (Comments, error) {
+func (f *Fake) Comments(_ context.Context, id string) (Comments, error) {
 	if f.Err != nil {
 		return nil, f.Err
 	}
-	return Comments(`[]`), nil
+	if f.CommentsFn != nil {
+		return f.CommentsFn(id)
+	}
+	return Comments{}, nil
 }
 
 func (f *Fake) SetProgress(_ context.Context, id string, position float64) error {

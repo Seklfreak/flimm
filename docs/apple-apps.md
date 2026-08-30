@@ -156,6 +156,14 @@ What is there:
     `contentOverlayView` — the tracks are authenticated sidecars an
     `AVPlayerItem` cannot fetch itself. Audio-only plays `audio_aac_url` with
     artwork in the overlay and `MPNowPlayingInfoCenter`.
+  - **Comments are a second Info-panel tab on the TV, and a section under the
+    video on the phone and iPad.** Selecting a video on tvOS plays it, so
+    there is no detail screen to hang comments on, and the panel AVKit gives a
+    custom tab is a wide, short band — a vertical list there shows two
+    comments and clips the third. So the TV tab is a *horizontal* row of
+    cards, which is the shape that band has and what a remote moves through
+    well; the phone gets the ordinary collapsed section. Both load on being
+    opened, and both drive one ``CommentsStore`` in `Shared/`.
   - **The Home screen's top shelf shows the pinned feed.** When Flimm is
     focused in the Home screen's top row, tvOS draws a row of what is waiting
     in the feed the app opens on — titles, artwork, and the resume bar on

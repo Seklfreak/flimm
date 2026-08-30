@@ -318,13 +318,19 @@ func (c *HTTP) Comments(ctx context.Context, id string) (Comments, error) {
 	var raw json.RawMessage
 	if err := c.do(ctx, http.MethodGet, "/api/video/"+url.PathEscape(id)+"/comment/", nil, nil, &raw); err != nil {
 		if errors.Is(err, ErrNotFound) {
-			return Comments("[]"), nil
+			// A video nobody archived comments for is not an error; it is a
+			// video with no comments.
+			return Comments{}, nil
 		}
 		return nil, err
 	}
-	var out json.RawMessage
-	if err := decodeDoc(raw, &out); err != nil || len(out) == 0 {
-		return raw, nil //nolint:nilerr // raw passthrough when the wrapper isn't there
+	var out Comments
+	if err := decodeDoc(raw, &out); err != nil {
+		// Some deployments answer with the bare list rather than the
+		// {"data": …} envelope every other endpoint uses.
+		if err := json.Unmarshal(raw, &out); err != nil {
+			return Comments{}, nil //nolint:nilerr // unreadable comments are no comments, not a failed request
+		}
 	}
 	return out, nil
 }

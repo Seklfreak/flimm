@@ -474,16 +474,6 @@ func (s *Server) similarVideos(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, items)
 }
 
-func (s *Server) videoComments(w http.ResponseWriter, r *http.Request) {
-	c, err := s.ta.Comments(r.Context(), chi.URLParam(r, "id"))
-	if err != nil {
-		s.writeTAError(w, "video comments", err)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	_, _ = w.Write(c) //nolint:gosec // JSON passthrough served as application/json, not HTML
-}
-
 // upNext returns what plays after the video in the given context (feed,
 // playlist or channel), falling back to TA's similar videos.
 // contextList resolves the ordered list the player is playing through — the

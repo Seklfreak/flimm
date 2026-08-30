@@ -35,9 +35,17 @@ extension APIClient {
         try await get("/videos/\(esc(id))/similar")
     }
 
-    /// TubeArchivist passthrough; the shape is not pinned down by the contract.
-    public func comments(_ id: String) async throws -> [VideoComment] {
-        try await get("/videos/\(esc(id))/comments")
+    /// A video's archived comments, paged by thread — a comment's replies
+    /// travel with it. Normalised by the server; nothing here is
+    /// TubeArchivist's own shape.
+    public func comments(
+        _ id: String,
+        page: Int = 0,
+        pageSize: Int = Page<VideoComment>.defaultSize
+    ) async throws -> Page<VideoComment> {
+        var query = QueryBuilder()
+        query.page(page, size: pageSize)
+        return try await get("/videos/\(esc(id))/comments", query: query.items)
     }
 
     /// Scrubber markers and the chapter list. An empty list means "no chapter

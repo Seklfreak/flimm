@@ -253,7 +253,15 @@ func TestSimilarAndComments(t *testing.T) {
 	}
 	comments, err := client.Comments(ctx, id)
 	if err != nil || len(comments) == 0 {
-		t.Errorf("comments = %s, err = %v", comments, err)
+		t.Fatalf("comments = %+v, err = %v", comments, err)
+	}
+	// The tree is what makes the fixture worth having: a thread with replies,
+	// one of them from the uploader.
+	if len(comments[0].Replies) == 0 {
+		t.Error("the first comment should carry its replies")
+	}
+	if !comments[0].Favorited {
+		t.Error("the first comment should be hearted, so a client can show that")
 	}
 }
 

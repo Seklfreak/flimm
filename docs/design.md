@@ -63,6 +63,14 @@ feeds without leaving the page.
   position.
 - Seen state and resume position are written back to TubeArchivist, so the
   stock TA UI stays consistent.
+- **The archived comments are there if you want them, and cost nothing if you
+  don't.** They come from the copy TubeArchivist downloaded — nothing is
+  fetched from YouTube, and no avatar is loaded from Google's CDN, because a
+  picture of a stranger is not worth telling a third party what you watch;
+  clients draw an initial. Every client keeps them folded away until asked,
+  and asking is what loads them: they are the longest thing attached to a
+  video and the least often wanted. Replies fold separately, under their
+  count.
 - **The Apple TV's Home screen offers the pinned feed.** Focusing Flimm in the
   top row shows what is waiting in it, with a resume bar on anything
   part-watched, and selecting one plays it — the same list the app opens on,

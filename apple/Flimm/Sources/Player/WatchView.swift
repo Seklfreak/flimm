@@ -111,6 +111,7 @@ struct WatchView: View {
                     .aspectRatio(16 / 9, contentMode: .fit)
                 header(model)
                 ChapterListView(chapters: model.chapters, activeIndex: model.activeChapter) { model.seek(to: $0) }
+                CommentsSection(videoID: model.videoId)
                 UpNextList(model: model, columnWidth: nil)
             }
             .padding(.horizontal, 16)
@@ -142,6 +143,7 @@ struct WatchView: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 20) {
                         ChapterListView(chapters: model.chapters, activeIndex: model.activeChapter) { model.seek(to: $0) }
+                        CommentsSection(videoID: model.videoId)
                         UpNextList(model: model, columnWidth: columnWidth)
                     }
                     .padding(.bottom, 24)

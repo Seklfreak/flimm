@@ -406,7 +406,7 @@ its default — send the whole map back, which is what the settings screens do.
 | GET | `/videos/{id}/up-next` | query `feed=<id>` or `playlist=<id>` or `channel=<id>`; **paged** VideoSummary of everything following the video in that context, falling back to `similar` when nothing follows. Paged so a long playlist scrolls rather than being truncated |
 | GET | `/videos/{id}/nav` | same context query; `{ "index", "total", "previous", "next" }` for stepping through the list in both directions |
 | GET | `/videos/{id}/similar` | VideoSummary[] (TA similar) |
-| GET | `/videos/{id}/comments` | TA comments passthrough |
+| GET | `/videos/{id}/comments` | the archived comments, **paged by thread** — `Page<Comment>`, a comment's replies riding along with it. Normalised from what TubeArchivist indexed; see [Comments](#comments) |
 | GET | `/videos/{id}/chapters` | chapter markers for the scrubber (see below); cached per video |
 | GET | `/videos/{id}/loudness` | how loud the video is and the gain to play it at — `{ "state": "pending\|running\|done\|failed", "gain_db": -3.9, "target_lufs": -18, "measured_lufs": -14.1, "peak_dbtp": -3.8, "range_lu": 6.1 }`. The first call **starts the measurement** and answers `running` with a gain of 0; the numbers arrive on a later call. See [Loudness normalisation](#loudness-normalisation) |
 | POST | `/videos/{id}/progress` | `{ "position": 561 }` — heartbeat. Upserts watch_event; writes TA `/video/{id}/progress/`; at ≥90% (or ≤30 s remaining) marks watched. Returns `{ "position", "watched" }`. **Nothing is recorded below `MIN_PLAY_SECONDS`** unless the video completes or an event already exists — see below | Pass `?playlist=<id>` so the server can skip recording for music playlists.
@@ -635,6 +635,43 @@ and the scrub-preview stills under [Scrub previews](#scrub-previews).
 Clients choose the stream. `audio_only` on a playlist is the persisted
 intent; clients carry `audio=1` in the player URL so the choice survives
 next/previous, autoplay and a reload, exactly as the shuffle seed does.
+
+#### Comments
+
+`GET /videos/{id}/comments` returns the comments TubeArchivist downloaded with
+the video. It used to hand upstream's own JSON straight through —
+`comment_likecount`, `comment_time_text` and all — which made every client a
+second parser of somebody else's shape; it is a contract now, like everything
+else here.
+
+```json
+{
+  "id": "c1",
+  "author": "@someone",
+  "author_id": "UC-someone",
+  "text": "Worth the wait.",
+  "likes": 128,
+  "published": "2026-08-20T09:00:00Z",  // null on an archive that kept only time_text
+  "time_text": "1 week ago",            // upstream's own wording, the fallback
+  "hearted": true,                      // by the uploader
+  "from_uploader": false,               // written by the video's own channel
+  "replies": [ …Comment… ]
+}
+```
+
+**Threads page; replies do not.** A reply on its own says nothing, and there
+are few enough per comment that paging them would cost more requests than it
+saves bytes — so `page`/`page_size` walk the top-level comments and each one
+carries its replies whole. `total` is exact here, unlike the lazily composed
+lists: the whole tree is in hand before the window is cut.
+
+A record with neither text nor author is **dropped**, because a half-indexed
+row is not a comment and a blank line in a list is worse than a missing one.
+
+**There is no author avatar, deliberately.** The archive holds a Google CDN URL
+for it, and a client loading that would announce every video its viewer opens
+to a third party — which is the one thing showing *archived* comments otherwise
+avoids entirely. Clients draw the author's initial instead.
 
 #### Loudness normalisation
 

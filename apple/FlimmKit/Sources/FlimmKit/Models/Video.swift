@@ -454,18 +454,92 @@ public struct DismissResult: Codable, Sendable, Hashable {
     }
 }
 
-/// `GET /videos/{id}/comments` is a TubeArchivist passthrough and is not
-/// pinned down by the contract, so every field is optional and the raw
-/// TubeArchivist key names are kept.
+/// One archived comment, from `GET /videos/{id}/comments`.
+///
+/// Normalised by the server, so nothing here is TubeArchivist's spelling and
+/// no client parses upstream's keys. There is deliberately **no author
+/// avatar**: the archive holds a Google CDN URL for it, and loading that would
+/// tell a third party which videos are being watched — the one thing showing
+/// archived comments otherwise avoids entirely.
 public struct VideoComment: Codable, Sendable, Hashable, Identifiable {
-    public let commentId: String?
-    public let commentText: String?
-    public let commentAuthor: String?
-    public let commentAuthorId: String?
-    public let commentLikecount: Int?
-    public let commentTimeText: String?
-    public let commentTimestamp: Double?
-    public let commentReplies: [VideoComment]?
+    public let id: String
+    public let author: String
+    public let authorID: String
+    public let text: String
+    public let likes: Int
+    /// When it was written, when the archive recorded that. Nil on an older
+    /// download that kept only ``timeText``.
+    public let published: Date?
+    /// Upstream's own relative wording ("2 days ago"), the fallback for
+    /// ``published``.
+    public let timeText: String
+    /// Hearted by the uploader.
+    public let hearted: Bool
+    /// Written by the channel that published the video.
+    public let fromUploader: Bool
+    /// Replies, in the order the archive holds them. A thread travels with its
+    /// parent rather than being paged on its own.
+    public let replies: [VideoComment]
 
-    public var id: String { commentId ?? UUID().uuidString }
+    public init(
+        id: String,
+        author: String,
+        authorID: String = "",
+        text: String,
+        likes: Int = 0,
+        published: Date? = nil,
+        timeText: String = "",
+        hearted: Bool = false,
+        fromUploader: Bool = false,
+        replies: [VideoComment] = []
+    ) {
+        self.id = id
+        self.author = author
+        self.authorID = authorID
+        self.text = text
+        self.likes = likes
+        self.published = published
+        self.timeText = timeText
+        self.hearted = hearted
+        self.fromUploader = fromUploader
+        self.replies = replies
+    }
+
+    /// `.convertFromSnakeCase` makes `author_id` into `authorId`, which does
+    /// not match a property spelled `authorID` — the same trap the video
+    /// detail's URL keys carry.
+    private enum CodingKeys: String, CodingKey {
+        case authorID = "authorId"
+        case id, author, text, likes, published, timeText, hearted, fromUploader, replies
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(.id, or: "")
+        author = try c.decode(.author, or: "")
+        authorID = try c.decode(.authorID, or: "")
+        text = try c.decode(.text, or: "")
+        likes = try c.decode(.likes, or: 0)
+        published = try c.decodeIfPresent(Date.self, forKey: .published)
+        timeText = try c.decode(.timeText, or: "")
+        hearted = try c.decode(.hearted, or: false)
+        fromUploader = try c.decode(.fromUploader, or: false)
+        replies = try c.decode(.replies, or: [])
+    }
+
+    /// What to show under the author's name: the archived date where there is
+    /// one, else upstream's own wording, else nothing. The *choice* lives here
+    /// so the phone and the TV cannot make it differently; only the date
+    /// formatting is the caller's, because that is the app's house style.
+    public func when(_ format: (Date) -> String) -> String {
+        if let published { return format(published) }
+        return timeText
+    }
+
+    /// The letter drawn in place of an avatar. Author names arrive as
+    /// "@someone", and the @ is not an initial.
+    public var initial: String {
+        let name = author.drop { $0 == "@" }.trimmingCharacters(in: .whitespaces)
+        return name.isEmpty ? "?" : String(name.prefix(1)).uppercased()
+    }
 }

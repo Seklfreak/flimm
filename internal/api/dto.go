@@ -263,6 +263,33 @@ type HistoryEntry struct {
 	State    string       `json:"state"`
 }
 
+// Comment is one archived comment, as `GET /videos/{id}/comments` returns it.
+//
+// Normalised from what TubeArchivist indexed, so no client parses upstream's
+// key names. There is deliberately **no author avatar**: the archive holds a
+// Google CDN URL for it, and a client loading that would announce every video
+// its viewer opens to a third party — which is the one thing showing archived
+// comments otherwise avoids entirely.
+type Comment struct {
+	ID       string `json:"id"`
+	Author   string `json:"author"`
+	AuthorID string `json:"author_id"`
+	Text     string `json:"text"`
+	Likes    int    `json:"likes"`
+	// Published is when it was written, when the archive recorded that.
+	Published *time.Time `json:"published"`
+	// TimeText is upstream's own relative wording ("2 days ago"), kept for
+	// archives that carry it and no timestamp. Clients prefer Published.
+	TimeText string `json:"time_text"`
+	// Hearted by the uploader.
+	Hearted bool `json:"hearted"`
+	// FromUploader marks a comment by the channel that published the video.
+	FromUploader bool `json:"from_uploader"`
+	// Replies to this comment, in the order the archive holds them. A thread
+	// travels with its parent rather than being paged on its own.
+	Replies []Comment `json:"replies"`
+}
+
 // LoudnessInfo is `GET /videos/{id}/loudness`: how loud a video was measured
 // to be, and the gain a player should apply to it.
 type LoudnessInfo struct {

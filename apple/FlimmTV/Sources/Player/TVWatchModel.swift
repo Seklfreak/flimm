@@ -62,7 +62,10 @@ final class TVWatchModel {
     private(set) var itemGeneration = 0
 
     @ObservationIgnored private let app: AppModel
-    @ObservationIgnored private let client: APIClient
+    /// Not private: the comments tab in the Info panel is built beside this
+    /// model rather than inside the SwiftUI environment, so it takes the
+    /// session's client from here.
+    @ObservationIgnored let client: APIClient
     /// Per-device, unlike ``prefs``: a TV on ethernet wants a different answer
     /// from a phone on cellular, so quality never goes to `PATCH /me/prefs`.
     @ObservationIgnored private let playback: PlaybackSettings

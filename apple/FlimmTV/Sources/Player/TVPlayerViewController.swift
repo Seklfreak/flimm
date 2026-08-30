@@ -27,7 +27,7 @@ struct TVPlayerViewController: UIViewControllerRepresentable {
         // gestures (`skippingBehavior = .skipItem`) took the scrubber away
         // from the viewer, which is the one thing the transport bar is for.
         controller.skippingBehavior = .default
-        controller.customInfoViewControllers = [context.coordinator.infoPanel]
+        controller.customInfoViewControllers = [context.coordinator.infoPanel, context.coordinator.commentsPanel]
         // The captions sit just above the bottom edge and step up when the
         // transport bar appears; the delegate is the only notice AVKit gives.
         controller.delegate = context.coordinator
@@ -59,6 +59,8 @@ struct TVPlayerViewController: UIViewControllerRepresentable {
     final class Coordinator: NSObject, AVPlayerViewControllerDelegate {
         let overlay: UIHostingController<TVPlayerOverlay>
         let infoPanel: UIHostingController<TVPlayerInfoPanel>
+        /// The second tab: the video's archived comments.
+        let commentsPanel: UIHostingController<TVCommentsPanel>
 
         private let model: TVWatchModel
         /// The item state is expensive to rebuild, so it is re-applied only
@@ -67,10 +69,12 @@ struct TVPlayerViewController: UIViewControllerRepresentable {
         /// What the transport-bar buttons were last built for. They depend on
         /// the list around the video, which arrives after the item does.
         private var appliedNav: NavAvailability?
-        /// Whether the Info tab has been pinned to the panel's width (once).
-        private var pinnedInfoPanel = false
-        /// The panel's ground; see ``dressInfoPanel(_:)``.
+        /// Which tabs have been pinned to the panel's width (once each).
+        private var pinnedPanels = Set<ObjectIdentifier>()
+        /// A ground per tab; see ``dress(_:ground:)``. One cannot be shared:
+        /// each is a subview of its own tab's parent.
         private let infoPanelGround = UIVisualEffectView(effect: UIBlurEffect(style: .dark))
+        private let commentsPanelGround = UIVisualEffectView(effect: UIBlurEffect(style: .dark))
 
         nonisolated func playerViewController(
             _ playerViewController: AVPlayerViewController,
@@ -86,13 +90,16 @@ struct TVPlayerViewController: UIViewControllerRepresentable {
             self.model = model
             self.overlay = UIHostingController(rootView: TVPlayerOverlay(model: model))
             self.infoPanel = UIHostingController(rootView: TVPlayerInfoPanel(model: model))
+            self.commentsPanel = UIHostingController(rootView: TVCommentsPanel(model: model))
             super.init()
             infoPanel.title = "Flimm"
+            commentsPanel.title = "Comments"
+            commentsPanel.view.backgroundColor = .clear
             // The panel sits over playing video and AVKit gives a custom tab
             // no ground of its own, so it gets one here — a blur rather than
             // a black fill, which is both what the rest of tvOS does over
             // video and what keeps the picture visible behind the settings
-            // you are changing. See `dressInfoPanel()`.
+            // you are changing. See `dress(_:ground:)`.
             infoPanel.view.backgroundColor = .clear
         }
 
@@ -100,10 +107,13 @@ struct TVPlayerViewController: UIViewControllerRepresentable {
         /// have to be re-applied every time the model swaps one in — which is
         /// what `itemGeneration` marks.
         func apply(to controller: AVPlayerViewController) {
-            pinInfoPanelWidth()
-            // Re-checked rather than done once: AVKit builds the panel's
-            // hierarchy when the tab is first opened, and can rebuild it.
-            dressInfoPanel()
+            // Re-checked rather than done once: AVKit builds a tab's hierarchy
+            // when that tab is first opened, and can rebuild it — and the
+            // comments tab is not built until someone moves to it.
+            pinWidth(of: infoPanel)
+            pinWidth(of: commentsPanel)
+            dress(infoPanel, ground: infoPanelGround)
+            dress(commentsPanel, ground: commentsPanelGround)
             let nav = NavAvailability(previous: model.canGoPrevious, next: model.canGoNext)
             if nav != appliedNav {
                 appliedNav = nav
@@ -128,9 +138,12 @@ struct TVPlayerViewController: UIViewControllerRepresentable {
         /// ground cover the panel. Width only: the height is AVKit's business,
         /// and constraining it too would be a fight with the panel's own
         /// layout rather than a fix.
-        private func pinInfoPanelWidth() {
-            guard !pinnedInfoPanel, let host = infoPanel.viewIfLoaded, let parent = host.superview else { return }
-            pinnedInfoPanel = true
+        private func pinWidth(of panel: UIViewController) {
+            guard let host = panel.viewIfLoaded, let parent = host.superview,
+                  !pinnedPanels.contains(ObjectIdentifier(panel)) else {
+                return
+            }
+            pinnedPanels.insert(ObjectIdentifier(panel))
             host.translatesAutoresizingMaskIntoConstraints = false
             NSLayoutConstraint.activate([
                 host.leadingAnchor.constraint(equalTo: parent.leadingAnchor),
@@ -150,11 +163,10 @@ struct TVPlayerViewController: UIViewControllerRepresentable {
         /// than inside it: a `UIHostingController` draws its SwiftUI content
         /// into its own view's layer, so a subview added to that view — even
         /// at index 0 — lands on top of the rows and hides every one of them.
-        private func dressInfoPanel() {
-            guard let host = infoPanel.viewIfLoaded, let parent = host.superview else { return }
-            guard infoPanelGround.superview !== parent else { return }
+        private func dress(_ panel: UIViewController, ground: UIVisualEffectView) {
+            guard let host = panel.viewIfLoaded, let parent = host.superview else { return }
+            guard ground.superview !== parent else { return }
 
-            let ground = infoPanelGround
             ground.removeFromSuperview()
             ground.translatesAutoresizingMaskIntoConstraints = false
             ground.layer.cornerRadius = TVPlayerInfoPanel.groundRadius

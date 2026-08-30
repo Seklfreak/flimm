@@ -13,6 +13,7 @@ import (
 	"sync"
 
 	"github.com/Seklfreak/flimm/internal/ta"
+	"time"
 )
 
 // PageSize is what TubeArchivist paginates video lists at by default, and
@@ -171,25 +172,66 @@ func (s *Server) similar(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"data": out})
 }
 
+// comments serves a small but *shaped* tree: replies, a hearted comment, one
+// from the uploader, a timestamp and a comment that only has `time_text`. A
+// flat list of two strings would have every client look right and none of them
+// exercised.
 func (s *Server) comments(w http.ResponseWriter, r *http.Request) {
 	if _, ok := s.video(r.PathValue("id")); !ok {
 		notFound(w)
 		return
 	}
+	// Fixed timestamps, so a screenshot taken today and one taken next month
+	// show the same thing.
+	base := time.Date(2026, 8, 20, 9, 0, 0, 0, time.UTC).Unix()
 	writeJSON(w, http.StatusOK, map[string]any{"data": []map[string]any{
 		{
-			"comment_id":        "c1",
-			"comment_text":      "First. Also: this archive is not real.",
-			"comment_author":    "@someone",
-			"comment_likecount": 12,
-			"comment_time_text": "2 days ago",
+			"comment_id":           "c1",
+			"comment_text":         "The jig at 0:30 is the part I came for. Worth the wait.",
+			"comment_author":       "@someone",
+			"comment_author_id":    "UC-fake-someone",
+			"comment_likecount":    128,
+			"comment_time_text":    "1 week ago",
+			"comment_timestamp":    base,
+			"comment_is_favorited": true,
+			"comment_replies": []map[string]any{
+				{
+					"comment_id":        "c1r1",
+					"comment_text":      "Agreed — and the finish holds up.",
+					"comment_author":    "@another-person",
+					"comment_likecount": 4,
+					"comment_timestamp": base + 3600,
+				},
+				{
+					"comment_id":          "c1r2",
+					"comment_text":        "Thanks! The full cut is on the channel.",
+					"comment_author":      "@the-workshop",
+					"comment_likecount":   9,
+					"comment_timestamp":   base + 7200,
+					"comment_is_uploader": true,
+				},
+			},
 		},
 		{
 			"comment_id":        "c2",
 			"comment_text":      "The timer in the picture is the actual position, which is handy for checking a seek.",
 			"comment_author":    "@someone-else",
-			"comment_likecount": 3,
-			"comment_time_text": "1 day ago",
+			"comment_likecount": 12,
+			"comment_timestamp": base + 86_400,
+		},
+		{
+			// No timestamp at all: an older download that only kept the
+			// relative wording. Clients have to fall back to it.
+			"comment_id":        "c3",
+			"comment_text":      "First. Also: this archive is not real.",
+			"comment_author":    "@early-bird",
+			"comment_likecount": 0,
+			"comment_time_text": "2 days ago",
+		},
+		{
+			// Nothing to say and no one to say it: dropped by the server, and
+			// the reason the client never sees a blank row.
+			"comment_id": "c4",
 		},
 	}})
 }
