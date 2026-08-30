@@ -611,13 +611,26 @@ the default MIME map for that location, so `.mp4` would otherwise arrive as
 
 `stats` on a video carries `views` and `likes` from TubeArchivist, which
 indexes what YouTube publishes. Since 2021 that no longer includes the dislike
-count, so `dislikes` comes from [Return YouTube Dislike](https://returnyoutubedislike.com)
-when the deployment sets `RYD_URL`, and is **absent otherwise**.
+count, so `dislikes` has two possible sources:
 
-Absent, not zero. A video nobody has counted and a video with no dislikes are
-different facts, and a client that cannot tell them apart draws "0 dislikes"
-over the first one. So the key is omitted whenever the answer is unknown: no
-`RYD_URL`, a service outage, or a video that service has never seen.
+1. **The archive itself.** TubeArchivist asks
+   [Return YouTube Dislike](https://returnyoutubedislike.com) at index time when
+   its own `integrate_ryd` setting is on, and stores the answer on the video. No
+   deployment configuration is needed to show it, nothing is asked of anyone at
+   view time, and it refreshes whenever TubeArchivist reindexes the video —
+   along with the views, likes and comments beside it.
+2. **A live lookup**, when `RYD_URL` is set. Newer than the archived number, at
+   the cost described below, and it wins where both exist.
+
+A zero from the archive is dropped rather than reported: TubeArchivist stores 0
+both for a video with no dislikes and for one indexed while `integrate_ryd` was
+off, and those are not the same claim. A live lookup can still supply a true
+zero, because it says separately whether it knows the video at all.
+
+Absent, not zero, is the rule throughout. A video nobody has counted and a video
+with no dislikes are different facts, and a client that cannot tell them apart
+draws "0 dislikes" over the first one. So the key is omitted whenever the answer
+is unknown.
 
 **When it answers, both vote counts come from it.** Its numbers are estimates
 of the same kind measured against each other; pairing its dislike count with

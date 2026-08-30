@@ -25,6 +25,18 @@ import (
 // able to tell them apart.
 func (s *Server) videoStats(ctx context.Context, v *ta.Video) VideoStats {
 	stats := VideoStats{Views: v.Stats.ViewCount, Likes: v.Stats.LikeCount}
+	// The archive's own dislike count, when it has one. TubeArchivist asks the
+	// same service at index time if `integrate_ryd` is on, so most deployments
+	// already hold this number and never need Flimm to ask anyone — and it
+	// refreshes with the rest of the metadata whenever TA reindexes the video.
+	//
+	// A zero is dropped rather than reported: TA stores 0 both for a video with
+	// no dislikes and for one indexed while that setting was off, and those are
+	// not the same claim. The service below can still supply a true zero.
+	if v.Stats.DislikeCount > 0 {
+		archived := v.Stats.DislikeCount
+		stats.Dislikes = &archived
+	}
 	if s.ryd == nil {
 		return stats
 	}

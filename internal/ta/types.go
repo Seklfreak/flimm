@@ -56,6 +56,12 @@ type SponsorSegment struct {
 type Stats struct {
 	ViewCount int64 `json:"view_count"`
 	LikeCount int64 `json:"like_count"`
+	// DislikeCount is present when TubeArchivist was indexing with its own
+	// Return YouTube Dislike integration on (`integrate_ryd`), which is where
+	// an archive's dislike count comes from without Flimm asking anyone. It is
+	// 0 both for a video with none and for one indexed with that setting off,
+	// which the two cannot be told apart — see the API layer.
+	DislikeCount int64 `json:"dislike_count"`
 }
 
 type Stream struct {

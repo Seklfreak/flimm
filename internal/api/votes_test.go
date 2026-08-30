@@ -109,6 +109,45 @@ func TestAnEmptyLikeCountDoesNotOverwriteTheArchives(t *testing.T) {
 	}
 }
 
+// Most archives already hold a dislike count: TubeArchivist asks the same
+// service at index time. Flimm shows it without asking anyone.
+func TestTheArchivesOwnDislikeCountIsUsed(t *testing.T) {
+	client := ta.NewFake()
+	v := video("v1", "A", "2026-08-01", 1000, false)
+	v.Stats = ta.Stats{ViewCount: 900, LikeCount: 40, DislikeCount: 6}
+	client.AddVideo(v)
+	h := newTestServer(client, newEventStore().querier()).Router()
+
+	stats := detailStats(t, h)
+	if stats.Dislikes == nil || *stats.Dislikes != 6 {
+		t.Errorf("dislikes = %v, want the archive's 6 with no service configured", stats.Dislikes)
+	}
+}
+
+// A live answer is newer than the one indexed at download time, so it wins.
+func TestTheServiceOverridesTheArchivedDislikeCount(t *testing.T) {
+	client := ta.NewFake()
+	v := video("v1", "A", "2026-08-01", 1000, false)
+	v.Stats = ta.Stats{ViewCount: 900, LikeCount: 40, DislikeCount: 6}
+	client.AddVideo(v)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"id":"v1","likes":45120,"dislikes":1183,"viewCount":1200000}`))
+	}))
+	t.Cleanup(srv.Close)
+	h := NewServer(Options{
+		Querier:     newEventStore().querier(),
+		TA:          client,
+		Log:         slog.New(slog.NewTextHandler(io.Discard, nil)),
+		AppName:     "Flimm",
+		MediaSecret: testSecret,
+		RYD:         ryd.New(ryd.Options{BaseURL: srv.URL}),
+	}).Router()
+
+	if got := detailStats(t, h).Dislikes; got == nil || *got != 1183 {
+		t.Errorf("dislikes = %v, want the service's 1183", got)
+	}
+}
+
 // Nothing is asked of anyone when RYD_URL is unset, which is the default.
 func TestWithoutTheServiceNothingIsAskedAndNothingIsSent(t *testing.T) {
 	client := ta.NewFake()
@@ -127,7 +166,9 @@ func TestWithoutTheServiceNothingIsAskedAndNothingIsSent(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &raw); err != nil {
 		t.Fatal(err)
 	}
+	// This video's archive record has no dislike count either, so there is
+	// nothing to report and the key stays off.
 	if _, ok := raw.Stats["dislikes"]; ok {
-		t.Error("stats carries a dislikes key with no service configured")
+		t.Error("stats carries a dislikes key when nothing knows one")
 	}
 }
