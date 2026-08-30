@@ -2,6 +2,32 @@
 
 ## Done
 
+- **Resume, fixed twice** (2026-08-30) — two bugs, one symptom: a video on the
+  Apple TV that never started.
+
+  The first was the wait. A resume transcodes from the resume point and leaves
+  the part before it for a later run; `AVPlayer` asks for segments around where
+  it was told to start, including a little *before* it, and cancels anything
+  that has not answered in four seconds. The job counted "behind the encoder"
+  as "the encoder is heading there", so those requests waited for the rest of
+  the video to encode and the run to wrap around — nine minutes on the video it
+  was found on — while the player retried every four seconds and showed
+  nothing. A request for an unproduced segment behind the run now re-aims it:
+  0.6 s instead of never. Found by reading the live server's log, where the
+  player had been asking for `seg00580` of a run that started at `seg00590`.
+
+  The second was that completion was permanent. `UpsertProgress` never cleared
+  `completed_at`, so a video finished once could never hold a resume position
+  again: every client reads `watched` and starts from zero. Watching a seen
+  video again now un-seens it — in Flimm and in TubeArchivist — once past the
+  same `MIN_PLAY_SECONDS` that decides whether a watch counts at all, so
+  glancing at one does not undo having seen it.
+
+  Also from the same investigation: both Apple players were asking for the
+  loudness measurement as playback *started*, putting a full-file audio decode
+  in the way of the transcode the viewer was waiting for. It goes on a playback
+  tick now, as the web client already did.
+
 - **Comments** (2026-08-29) — the comments TubeArchivist downloaded with a
   video, on all four clients. The endpoint was a passthrough of upstream's own
   JSON; it is a contract now (`Comment`, paged by thread, replies riding with

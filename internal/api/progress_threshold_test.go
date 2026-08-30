@@ -3,6 +3,7 @@ package api
 import (
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
 
@@ -128,5 +129,94 @@ func TestAWatchedVideoKeepsItsPosition(t *testing.T) {
 	got := decode[VideoDetail](t, do(t, h, http.MethodGet, "/api/v1/videos/v1", ""))
 	if !got.Watched || got.Position != 590 {
 		t.Errorf("watched = %v, position = %v", got.Watched, got.Position)
+	}
+}
+
+// Watching a seen video again has to give it back a resume position.
+//
+// Completion used to be permanent — the upsert never cleared `completed_at` —
+// so a video finished once could never be resumed again: every client reads
+// `watched` and starts from zero, and the position quietly recorded underneath
+// was never used. Watch half of it a second time, come back, start from the
+// beginning, forever.
+func TestRewatchingASeenVideoClearsCompletion(t *testing.T) {
+	client := ta.NewFake()
+	client.AddVideo(video("v1", "A", "2026-08-01", 600, false))
+	client.Videos["v1"].Player.Watched = true
+	store := newEventStore()
+	store.events["v1"] = sqlc.WatchEvent{
+		VideoID:     "v1",
+		Position:    595,
+		Duration:    600,
+		CompletedAt: pgtype.Timestamptz{Time: time.Now().Add(-time.Hour), Valid: true},
+	}
+	h := newTestServer(client, store.querier()).Router()
+
+	// Starting it again, and getting somewhere.
+	rec := do(t, h, http.MethodPost, "/api/v1/videos/v1/progress", `{"position":120}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", rec.Code, rec.Body.String())
+	}
+	if store.events["v1"].CompletedAt.Valid {
+		t.Error("the video is being watched again, so it is not completed")
+	}
+	// And the point of all of it: the detail now offers a resume position
+	// rather than starting over.
+	got := decode[VideoDetail](t, do(t, h, http.MethodGet, "/api/v1/videos/v1", ""))
+	if got.Watched {
+		t.Error("detail still says watched")
+	}
+	if got.Position != 105 { // 120, less the 15 s rewind
+		t.Errorf("position = %v, want 105", got.Position)
+	}
+	// TubeArchivist holds the same flag and its own UI reads it.
+	if client.Videos["v1"].Player.Watched {
+		t.Error("TubeArchivist was not told the video is being watched again")
+	}
+}
+
+// Opening a seen video by accident must not undo having seen it: the same
+// minimum play time that gates recording a watch at all gates this.
+func TestGlancingAtASeenVideoKeepsItSeen(t *testing.T) {
+	client := ta.NewFake()
+	client.AddVideo(video("v1", "A", "2026-08-01", 600, false))
+	store := newEventStore()
+	store.events["v1"] = sqlc.WatchEvent{
+		VideoID:     "v1",
+		Position:    595,
+		Duration:    600,
+		CompletedAt: pgtype.Timestamptz{Time: time.Now().Add(-time.Hour), Valid: true},
+	}
+	h := newTestServer(client, store.querier()).Router()
+
+	if rec := do(t, h, http.MethodPost, "/api/v1/videos/v1/progress", `{"position":4}`); rec.Code != http.StatusOK {
+		t.Fatal(rec.Body.String())
+	}
+	if !store.events["v1"].CompletedAt.Valid {
+		t.Error("four seconds of a seen video un-seened it")
+	}
+}
+
+// Finishing it again keeps the first completion's timestamp, so history does
+// not claim it was first finished today.
+func TestFinishingAgainKeepsTheOriginalCompletion(t *testing.T) {
+	client := ta.NewFake()
+	client.AddVideo(video("v1", "A", "2026-08-01", 600, false))
+	store := newEventStore()
+	first := time.Now().Add(-72 * time.Hour)
+	store.events["v1"] = sqlc.WatchEvent{
+		VideoID:     "v1",
+		Position:    595,
+		Duration:    600,
+		CompletedAt: pgtype.Timestamptz{Time: first, Valid: true},
+	}
+	h := newTestServer(client, store.querier()).Router()
+
+	if rec := do(t, h, http.MethodPost, "/api/v1/videos/v1/progress", `{"position":598}`); rec.Code != http.StatusOK {
+		t.Fatal(rec.Body.String())
+	}
+	got := store.events["v1"]
+	if !got.CompletedAt.Valid || !got.CompletedAt.Time.Equal(first) {
+		t.Errorf("completed_at = %v, want the original %v", got.CompletedAt.Time, first)
 	}
 }

@@ -63,8 +63,14 @@ type Querier interface {
 	UpdateFeed(ctx context.Context, arg UpdateFeedParams) (Feed, error)
 	UpsertPrefs(ctx context.Context, arg UpsertPrefsParams) error
 	// Heartbeat: creates the event on first play, then moves the position and
-	// last_played_at. A completed event stays completed unless the caller passes
-	// completed = true again; completion is only cleared by SetWatched(false).
+	// last_played_at.
+	//
+	// Completion follows the *current* watch. `completed` sets it (keeping the
+	// first completion's timestamp); `restart` clears it, which is what a video
+	// being watched again from the start looks like — without that, a video seen
+	// once could never hold a resume position again, and every client started it
+	// from zero forever. The caller decides what counts as a restart, so a video
+	// opened by accident does not undo having seen it; see postProgress.
 	// A hidden (deleted-from-history) entry resurfaces on the next play.
 	UpsertProgress(ctx context.Context, arg UpsertProgressParams) (WatchEvent, error)
 	// Called on every authenticated request from the JWT's sub/email/name. The sub

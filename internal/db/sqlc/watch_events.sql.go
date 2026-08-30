@@ -317,7 +317,11 @@ SET position = EXCLUDED.position,
     channel_name = EXCLUDED.channel_name,
     title = EXCLUDED.title,
     last_played_at = now(),
-    completed_at = CASE WHEN $8::bool THEN COALESCE(watch_events.completed_at, now()) ELSE watch_events.completed_at END,
+    completed_at = CASE
+        WHEN $8::bool THEN COALESCE(watch_events.completed_at, now())
+        WHEN $9::bool THEN NULL
+        ELSE watch_events.completed_at
+    END,
     hidden = false
 RETURNING id, user_id, video_id, channel_id, channel_name, title, first_played_at, last_played_at, position, duration, completed_at, hidden
 `
@@ -331,11 +335,18 @@ type UpsertProgressParams struct {
 	Position    float64   `json:"position"`
 	Duration    int32     `json:"duration"`
 	Completed   bool      `json:"completed"`
+	Restart     bool      `json:"restart"`
 }
 
 // Heartbeat: creates the event on first play, then moves the position and
-// last_played_at. A completed event stays completed unless the caller passes
-// completed = true again; completion is only cleared by SetWatched(false).
+// last_played_at.
+//
+// Completion follows the *current* watch. `completed` sets it (keeping the
+// first completion's timestamp); `restart` clears it, which is what a video
+// being watched again from the start looks like — without that, a video seen
+// once could never hold a resume position again, and every client started it
+// from zero forever. The caller decides what counts as a restart, so a video
+// opened by accident does not undo having seen it; see postProgress.
 // A hidden (deleted-from-history) entry resurfaces on the next play.
 func (q *Queries) UpsertProgress(ctx context.Context, arg UpsertProgressParams) (WatchEvent, error) {
 	row := q.db.QueryRow(ctx, upsertProgress,
@@ -347,6 +358,7 @@ func (q *Queries) UpsertProgress(ctx context.Context, arg UpsertProgressParams) 
 		arg.Position,
 		arg.Duration,
 		arg.Completed,
+		arg.Restart,
 	)
 	var i WatchEvent
 	err := row.Scan(

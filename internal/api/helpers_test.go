@@ -82,8 +82,15 @@ func (es *eventStore) querier() *sqlctest.FakeQuerier {
 			}
 			ev.Position, ev.Duration, ev.Title, ev.ChannelID, ev.ChannelName = arg.Position, arg.Duration, arg.Title, arg.ChannelID, arg.ChannelName
 			ev.LastPlayedAt, ev.Hidden = now, false
-			if arg.Completed && !ev.CompletedAt.Valid {
-				ev.CompletedAt = now
+			// Mirrors the CASE in UpsertProgress: completion follows the
+			// current watch, and a restart clears it.
+			switch {
+			case arg.Completed:
+				if !ev.CompletedAt.Valid {
+					ev.CompletedAt = now
+				}
+			case arg.Restart:
+				ev.CompletedAt = pgtype.Timestamptz{}
 			}
 			es.events[arg.VideoID] = ev
 			return ev, nil

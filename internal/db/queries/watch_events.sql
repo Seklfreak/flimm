@@ -6,8 +6,14 @@ SELECT * FROM watch_events WHERE user_id = $1 AND video_id = ANY(sqlc.arg(video_
 
 -- name: UpsertProgress :one
 -- Heartbeat: creates the event on first play, then moves the position and
--- last_played_at. A completed event stays completed unless the caller passes
--- completed = true again; completion is only cleared by SetWatched(false).
+-- last_played_at.
+--
+-- Completion follows the *current* watch. `completed` sets it (keeping the
+-- first completion's timestamp); `restart` clears it, which is what a video
+-- being watched again from the start looks like — without that, a video seen
+-- once could never hold a resume position again, and every client started it
+-- from zero forever. The caller decides what counts as a restart, so a video
+-- opened by accident does not undo having seen it; see postProgress.
 -- A hidden (deleted-from-history) entry resurfaces on the next play.
 INSERT INTO watch_events (user_id, video_id, channel_id, channel_name, title, position, duration, completed_at, hidden)
 VALUES ($1, $2, $3, $4, $5, $6, $7, CASE WHEN sqlc.arg(completed)::bool THEN now() END, false)
@@ -18,7 +24,11 @@ SET position = EXCLUDED.position,
     channel_name = EXCLUDED.channel_name,
     title = EXCLUDED.title,
     last_played_at = now(),
-    completed_at = CASE WHEN sqlc.arg(completed)::bool THEN COALESCE(watch_events.completed_at, now()) ELSE watch_events.completed_at END,
+    completed_at = CASE
+        WHEN sqlc.arg(completed)::bool THEN COALESCE(watch_events.completed_at, now())
+        WHEN sqlc.arg(restart)::bool THEN NULL
+        ELSE watch_events.completed_at
+    END,
     hidden = false
 RETURNING *;
 

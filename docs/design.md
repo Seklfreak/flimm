@@ -61,6 +61,11 @@ feeds without leaving the page.
 - A video flips to **seen** automatically at about 90 % (or with 30 s left).
   *Mark seen* is the primary action under the video; *Mark unseen* clears the
   position.
+- **Watching something again makes it unseen again**, once you are far enough
+  in to mean it. Seen is a statement about where you are in a video, not a
+  medal it keeps: a video you cannot resume because you finished it once is a
+  video that starts at 0:00 every time you come back to it. Glancing at one for
+  a few seconds leaves it seen.
 - Seen state and resume position are written back to TubeArchivist, so the
   stock TA UI stays consistent.
 - **The archived comments are there if you want them, and cost nothing if you

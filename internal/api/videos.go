@@ -683,6 +683,12 @@ func (s *Server) postProgress(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	watched := isComplete(req.Position, duration)
+	// Watching a seen video again un-seens it, so this play can hold a resume
+	// position — without that, a video seen once could never be resumed again
+	// and every client started it from zero forever. The same minimum play
+	// time that decides whether a watch counts at all decides this: opening
+	// something by accident must not undo having seen it.
+	restart := !watched && req.Position >= s.minPlaySeconds
 	// Below the minimum play time nothing is recorded, so a video opened by
 	// accident leaves no history entry and no resume position. An event that
 	// already exists keeps updating, and completion always records.
@@ -706,6 +712,7 @@ func (s *Server) postProgress(w http.ResponseWriter, r *http.Request) {
 		Position:    req.Position,
 		Duration:    int32(duration), //nolint:gosec // seconds; fits
 		Completed:   watched,
+		Restart:     restart,
 	})
 	if err != nil {
 		s.writeDBError(w, "save progress", err)
@@ -715,8 +722,10 @@ func (s *Server) postProgress(w http.ResponseWriter, r *http.Request) {
 		s.writeTAError(w, "write progress", err)
 		return
 	}
-	if watched && !v.Player.Watched {
-		if err := s.ta.SetWatched(r.Context(), id, true); err != nil {
+	// TubeArchivist holds the same flag, and the stock TA UI reads it: a video
+	// that is being watched again is not "watched" there either.
+	if watched != v.Player.Watched && (watched || restart) {
+		if err := s.ta.SetWatched(r.Context(), id, watched); err != nil {
 			s.writeTAError(w, "mark watched", err)
 			return
 		}

@@ -409,7 +409,7 @@ its default — send the whole map back, which is what the settings screens do.
 | GET | `/videos/{id}/comments` | the archived comments, **paged by thread** — `Page<Comment>`, a comment's replies riding along with it. Normalised from what TubeArchivist indexed; see [Comments](#comments) |
 | GET | `/videos/{id}/chapters` | chapter markers for the scrubber (see below); cached per video |
 | GET | `/videos/{id}/loudness` | how loud the video is and the gain to play it at — `{ "state": "pending\|running\|done\|failed", "gain_db": -3.9, "target_lufs": -18, "measured_lufs": -14.1, "peak_dbtp": -3.8, "range_lu": 6.1 }`. The first call **starts the measurement** and answers `running` with a gain of 0; the numbers arrive on a later call. See [Loudness normalisation](#loudness-normalisation) |
-| POST | `/videos/{id}/progress` | `{ "position": 561 }` — heartbeat. Upserts watch_event; writes TA `/video/{id}/progress/`; at ≥90% (or ≤30 s remaining) marks watched. Returns `{ "position", "watched" }`. **Nothing is recorded below `MIN_PLAY_SECONDS`** unless the video completes or an event already exists — see below | Pass `?playlist=<id>` so the server can skip recording for music playlists.
+| POST | `/videos/{id}/progress` | `{ "position": 561 }` — heartbeat. Upserts watch_event; writes TA `/video/{id}/progress/`; at ≥90% (or ≤30 s remaining) marks watched, and **un-marks it** when a seen video is being watched again (see below). Returns `{ "position", "watched" }`. **Nothing is recorded below `MIN_PLAY_SECONDS`** unless the video completes or an event already exists — see below | Pass `?playlist=<id>` so the server can skip recording for music playlists.
 | POST | `/videos/{id}/watched` | `{ "watched": true\|false }` — writes TA `/watched/`; true completes the watch_event, false clears position and TA progress |
 | DELETE | `/videos/{id}/progress` | "Start over": position → 0, TA progress deleted, 204 |
 | POST | `/videos/{id}/dismiss` | take the video out of every feed without watching it; returns `{ "dismissed": true }`. Verified against TA first, so an unknown id is **404**. Idempotent, and the original dismissal time is kept |
@@ -533,6 +533,16 @@ Two exceptions keep the rule from losing real views:
   still reach history.
 - **An existing event keeps updating**, so scrubbing back to the start of a
   video you have already watched moves the position instead of orphaning it.
+
+**Watching a seen video again un-seens it.** A heartbeat that is not itself a
+completion, past the same `MIN_PLAY_SECONDS`, clears the completion — in the
+database and in TubeArchivist, whose own UI reads that flag. Without it a video
+finished once could never hold a resume position again: every client reads
+`watched` and starts from zero, so the position recorded underneath was never
+used, and half an hour into a second viewing it still began at 0:00. The
+threshold is what keeps opening something by accident from undoing having seen
+it. Finishing it a second time keeps the *first* completion's timestamp, so
+history does not claim it was first finished today.
 
 `GET /history` additionally filters out never-completed entries below the
 threshold, so entries written before the threshold existed disappear from the
