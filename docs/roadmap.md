@@ -2,6 +2,24 @@
 
 ## Done
 
+- **Stall tracking** (2026-08-30) — "why does it buffer occasionally?" was a
+  question nothing in the system could answer. The client is the only side that
+  knows the picture stopped — no request fails, nothing errors, the viewer just
+  watches a spinner — and the server is the only side that knows why it might
+  have. So every client now posts `POST /videos/{id}/stall` (what it was
+  playing, how long it stopped, which rendition), and the server attributes it
+  from what it knows about that job at that position: `encoder_behind` when the
+  segment did not exist yet, `delivery` when it did, `source` when the archived
+  file was playing directly. Each one is a log line; the last 50 are on
+  `/healthz` for an admin. Only `encoder_behind` is the server's to fix, which
+  is the point — it separates "we are making it too slowly" from "we are
+  sending it too slowly".
+
+  Shipped to all four clients, which meant first pulling the three things a
+  player does every tick — loudness, stalls, SponsorBlock — into one
+  `PlaybackServices` in FlimmKit, so the phone and the TV cannot drift on any
+  of them.
+
 - **Resume, fixed twice** (2026-08-30) — two bugs, one symptom: a video on the
   Apple TV that never started.
 

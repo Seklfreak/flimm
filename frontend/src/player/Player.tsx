@@ -10,6 +10,7 @@ import { CheckIcon, HeadphonesIcon, MediaImg, Popover, Spinner } from "@/compone
 import { useChapters } from "@/lib/queries";
 import { useSponsorSkip } from "./useSponsorSkip";
 import { useProgressHeartbeat } from "./useProgressHeartbeat";
+import { useStallReport } from "./useStallReport";
 import { useRendition } from "./useRendition";
 import { Scrubber } from "./Scrubber";
 import { currentChapterIndex, highlightToOffer, nextChapterStart, prevChapterStart, segmentToOffer, sponsorCategoryLabel } from "./chapterMath";
@@ -316,6 +317,9 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(function Player(
   const offer = prefs.skip_sponsors ? segmentToOffer(video.sponsorblock, time, sponsorActions) : undefined;
   const highlight = highlightToOffer(video.sponsorblock, time);
   useProgressHeartbeat(el, video.id, onWatched, playlistId);
+  // Why the picture stopped is a question only the server can answer; see
+  // useStallReport. 0 says the archived file is playing directly.
+  useStallReport(el, video.id, isHls ? (variant?.height ?? 0) : 0);
 
   // Chapters degrade silently: an empty list or a failed request just means
   // no marks/title/list, never an error or a blocking spinner. Memoized so a

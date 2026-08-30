@@ -340,7 +340,7 @@ Note that TA paginates at a size it chooses (12 by default) and ignores the
 | Method | Path | Notes |
 |---|---|---|
 | GET | `/config` | unauthenticated; app name, OIDC issuer/client id, version |
-| GET | `/healthz` | unauthenticated **readiness**: 200 when the DB answers, 503 when it does not. `ta` reports TubeArchivist as `ok`/`slow`/`unreachable` beside that verdict without deciding it — the check is time-boxed and cached, so a slow archive cannot make the probe late |
+| GET | `/healthz` | unauthenticated **readiness**: 200 when the DB answers, 503 when it does not. `ta` reports TubeArchivist as `ok`/`slow`/`unreachable` beside that verdict without deciding it — the check is time-boxed and cached, so a slow archive cannot make the probe late. An admin (`ADMIN_EMAILS`) also gets `stalls`: the recent [playback stalls](#playback-stalls) with the server's attribution |
 | GET | `/livez` | unauthenticated **liveness**: 200 whenever the process is answering. Touches neither the DB nor TA — restarting fixes neither |
 | GET | `/me` | `{ "id", "name", "email", "is_admin", "prefs": Prefs }` |
 | PATCH | `/me/prefs` | partial update of Prefs, returns Prefs |
@@ -426,6 +426,7 @@ its default — send the whole map back, which is what the settings screens do.
 | GET | `/videos/{id}/chapters` | chapter markers for the scrubber (see below); cached per video |
 | GET | `/videos/{id}/loudness` | how loud the video is and the gain to play it at — `{ "state": "pending\|running\|done\|failed", "gain_db": -3.9, "target_lufs": -18, "measured_lufs": -14.1, "peak_dbtp": -3.8, "range_lu": 6.1 }`. The first call **starts the measurement** and answers `running` with a gain of 0; the numbers arrive on a later call. See [Loudness normalisation](#loudness-normalisation) |
 | POST | `/videos/{id}/progress` | `{ "position": 561 }` — heartbeat. Upserts watch_event; writes TA `/video/{id}/progress/`; at ≥90% (or ≤30 s remaining) marks watched, and **un-marks it** when a seen video is being watched again (see below). Returns `{ "position", "watched" }`. **Nothing is recorded below `MIN_PLAY_SECONDS`** unless the video completes or an event already exists — see below | Pass `?playlist=<id>` so the server can skip recording for music playlists.
+| POST | `/videos/{id}/stall` | `{ "position": 2472.5, "seconds": 3.1, "height": 1080, "client": "tvos" }` — the picture stopped mid-playback. 204, always: the report is fire-and-forget and never worth telling a viewer about. Anything under 0.4 s is dropped as the ordinary gap between segments. The **server** attributes it — see [Playback stalls](#playback-stalls) |
 | POST | `/videos/{id}/watched` | `{ "watched": true\|false }` — writes TA `/watched/`; true completes the watch_event, false clears position and TA progress |
 | DELETE | `/videos/{id}/progress` | "Start over": position → 0, TA progress deleted, 204 |
 | POST | `/videos/{id}/dismiss` | take the video out of every feed without watching it; returns `{ "dismissed": true }`. Verified against TA first, so an unknown id is **404**. Idempotent, and the original dismissal time is kept |
@@ -605,6 +606,40 @@ nginx declares a `types { text/vtt vtt; }` block on `/media/`, which replaces
 the default MIME map for that location, so `.mp4` would otherwise arrive as
 `application/octet-stream` and `<video>` refuses to decode it.
 
+
+### Playback stalls
+
+`POST /videos/{id}/stall` is how "why does it keep buffering?" becomes a
+question with an answer.
+
+Neither side can answer it alone. A client is the only one that knows the
+picture stopped: no request fails, nothing errors, the viewer simply watches a
+spinner. The server is the only one that knows *why* it might have, because it
+knows where the encoder had got to and whether the segment being waited for
+existed yet. So the client says what it was playing and for how long it stopped,
+and the server attributes it — the same division as everywhere else here, with
+the decision on the side that has the facts.
+
+The attribution is deliberately a claim about **the segment**, not a guess about
+the network: either the bytes existed when the viewer wanted them or they did
+not, and that single fact says which half of the system to go and look at.
+
+| `reason` | What it means |
+| --- | --- |
+| `encoder_behind` | the segment did not exist yet — the transcode is behind the viewer. The one cause the server can fix (`MEDIA_SEEK_AHEAD_SEGMENTS`, `MEDIA_TRANSCODE_JOBS`, a slower rung) |
+| `delivery` | the segment existed — either the run had produced it, or, for a rendition finished before this playback began, the file is on disk. Whatever took the time was between the disk and the screen: the network, the client's buffer, the decoder |
+| `source` | `height` was 0, so the archived file is being played directly and no rendition is involved — TubeArchivist or the network served it |
+| `unknown` | nothing left to ask — no run, and no segment on disk either, usually because the rendition was evicted since |
+
+Each stall is logged as `playback stalled` with its reason, position, segment,
+encoder position and client, and the last 50 are shown to an admin on
+`/healthz` under `stalls` — enough to see a pattern in an evening's watching.
+Nothing is written to the database: this is an operational signal, not history.
+
+**Clients.** Web (`useStallReport`), iPhone/iPad and Apple TV (FlimmKit's
+`StallReporter`, via `PlaybackServices`). All four use the same 0.4 s floor,
+and all four abandon rather than report a stall that was still running when
+playback stopped — its length is unknown, and the viewer may simply have left.
 ### Derived media
 
 TubeArchivist stores one file per video, muxed. Anything else a client needs —

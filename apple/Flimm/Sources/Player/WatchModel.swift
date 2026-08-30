@@ -67,11 +67,9 @@ final class WatchModel {
     @ObservationIgnored private let nowPlaying = NowPlayingController()
     @ObservationIgnored private var startAtOverride: Double?
     @ObservationIgnored private var artwork: UIImage?
-    @ObservationIgnored private var lastNowPlayingUpdate: Double = -10
     /// Mutes and unmutes for SponsorBlock `mute` segments, keeping the
     /// viewer's own mute setting intact.
-    @ObservationIgnored private let sponsors = SponsorRunner()
-    @ObservationIgnored private let loudness = LoudnessNormalizer()
+    @ObservationIgnored private lazy var services = PlaybackServices(client: client, platform: "ios")
     /// When the current run of attempts at the compatible rendition began. It
     /// rolls forward while the rendition actually plays, so a mid-playback
     /// stumble gets its own window rather than inheriting a spent one.
@@ -160,7 +158,7 @@ final class WatchModel {
     /// last is a real transcode of someone's CPU, which is why ``CodecGate``
     /// is the only thing allowed to choose it.
     private func startPlayback(_ detail: Video) async {
-        sponsors.reset()
+        services.startingVideo()
         compatibleRetry?.cancel()
         compatibleRetry = nil
         steering.cancel()
@@ -476,7 +474,7 @@ final class WatchModel {
     func tearDown() async {
         compatibleRetry?.cancel()
         compatibleRetry = nil
-        loudness.cancel()
+        services.stop()
         steering.cancel()
         await reporter.stop()
         nowPlaying.unregister()
@@ -525,17 +523,23 @@ final class WatchModel {
         if usingCompatibleRendition, engine.isReady { compatibleSince = Date() }
         // The "Resumed from …" offer retires itself once it has been on
         // screen for a minute of playback; see ``ResumeNotice``.
-        if let resumed = resumedFrom, !ResumeNotice.isVisible(resumedFrom: resumed, currentTime: time) {
-            resumedFrom = nil
-        }
+        resumedFrom = ResumeNotice.retained(resumedFrom, currentTime: time)
         activeCue = WebVTT.cue(at: time, in: cues)?.text
         activeChapter = ChapterMath.index(of: time, in: chapters)
-        // On a tick rather than on load, and idempotent; see LoudnessNormalizer.
-        loudness.apply(videoID: videoId, enabled: prefs.normalizeLoudness, client: client) { [weak self] gain in
-            self?.engine.setGain(dB: gain)
-        }
-        // SponsorBlock decides in FlimmKit, so the TV does exactly this too.
-        let sponsor = sponsors.tick(at: time, segments: video?.sponsorblock ?? [], prefs: prefs, isMuted: engine.isMuted)
+        // Loudness, stall reporting and SponsorBlock: three rules the TV has to
+        // follow identically, so all three live in PlaybackServices.
+        let sponsor = services.tick(
+            .init(
+                videoID: videoId,
+                time: time,
+                isStalled: engine.isBuffering && engine.isPlaying,
+                height: activeVariant?.height ?? 0,
+                segments: video?.sponsorblock ?? [],
+                prefs: prefs,
+                isMuted: engine.isMuted
+            ),
+            setGain: { [weak self] gain in self?.engine.setGain(dB: gain) }
+        )
         if let to = sponsor.skipTo { engine.seek(to: to) }
         if let muted = sponsor.muted { engine.setMuted(muted) }
         if let label = sponsor.skippedLabel { lastSkippedSponsor = label }
@@ -543,10 +547,8 @@ final class WatchModel {
     }
 
     private func pushNowPlaying(force: Bool) {
-        let now = engine.currentTime
-        guard force || abs(now - lastNowPlayingUpdate) >= 2 else { return }
-        lastNowPlayingUpdate = now
         guard let video else { return }
+        let now = engine.currentTime
         nowPlaying.update(NowPlayingState(
             title: video.title,
             artist: video.channel.name,
@@ -554,7 +556,7 @@ final class WatchModel {
             position: now,
             rate: engine.isPlaying ? prefs.playbackSpeed : 0,
             artwork: artwork
-        ))
+        ), force: force)
     }
 }
 

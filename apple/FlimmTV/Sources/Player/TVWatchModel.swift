@@ -73,11 +73,9 @@ final class TVWatchModel {
     @ObservationIgnored private var startAtOverride: Double?
     @ObservationIgnored private var timeObserver: Any?
     @ObservationIgnored private var endObserver: (any NSObjectProtocol)?
-    @ObservationIgnored private var lastNowPlayingUpdate: Double = -10
     /// Mutes and unmutes for SponsorBlock `mute` segments, keeping the
     /// viewer's own mute setting intact.
-    @ObservationIgnored private let sponsors = SponsorRunner()
-    @ObservationIgnored private let loudness = LoudnessNormalizer()
+    @ObservationIgnored private lazy var services = PlaybackServices(client: client, platform: "tvos")
     /// Where to start, until the item reports `readyToPlay` and the seek can
     /// actually be issued. One seek, once — the compatible rendition is a
     /// complete VOD playlist from its first request, so seeking anywhere in it
@@ -176,7 +174,7 @@ final class TVWatchModel {
     /// choose it. `AVPlayerViewController` plays HLS natively, so nothing else
     /// about the screen changes.
     private func startPlayback(_ detail: Video) async {
-        sponsors.reset()
+        services.startingVideo()
         compatibleRetry?.cancel()
         compatibleRetry = nil
         steering.cancel()
@@ -448,7 +446,7 @@ final class TVWatchModel {
     func tearDown() async {
         compatibleRetry?.cancel()
         compatibleRetry = nil
-        loudness.cancel()
+        services.stop()
         steering.cancel()
         await reporter.stop()
         if let timeObserver { player.removeTimeObserver(timeObserver) }
@@ -499,16 +497,21 @@ final class TVWatchModel {
         if usingCompatibleRendition, isReady { compatibleSince = Date() }
         // The "Resumed from …" offer retires itself once it has been on
         // screen for a minute of playback; see ``ResumeNotice``.
-        if let resumed = resumedFrom, !ResumeNotice.isVisible(resumedFrom: resumed, currentTime: seconds) {
-            resumedFrom = nil
-        }
+        resumedFrom = ResumeNotice.retained(resumedFrom, currentTime: seconds)
         activeCue = WebVTT.cue(at: seconds, in: cues)?.text
-        // On a tick rather than on load, and idempotent; see LoudnessNormalizer.
-        loudness.apply(videoID: videoId, enabled: prefs.normalizeLoudness, client: client) { [weak self] gain in
-            self?.player.volume = LoudnessGain.volume(forGainDB: gain)
-        }
-        // The same decision the phone applies, from the same place.
-        let sponsor = sponsors.tick(at: seconds, segments: video?.sponsorblock ?? [], prefs: prefs, isMuted: player.isMuted)
+        // The same three rules the phone follows, from the same place.
+        let sponsor = services.tick(
+            .init(
+                videoID: videoId,
+                time: seconds,
+                isStalled: player.timeControlStatus == .waitingToPlayAtSpecifiedRate,
+                height: activeVariant?.height ?? 0,
+                segments: video?.sponsorblock ?? [],
+                prefs: prefs,
+                isMuted: player.isMuted
+            ),
+            setGain: { [weak self] gain in self?.player.volume = LoudnessGain.volume(forGainDB: gain) }
+        )
         if let to = sponsor.skipTo { player.seek(to: CMTime(seconds: to, preferredTimescale: 600)) }
         if let muted = sponsor.muted { player.isMuted = muted }
         pushNowPlaying(force: false)
@@ -568,27 +571,24 @@ final class TVWatchModel {
         await goNext()
     }
 
+}
+
+private extension TVWatchModel {
     /// Only meaningful for audio-only playback; with a video on screen
     /// `AVPlayerViewController` publishes its own metadata.
-    private func pushNowPlaying(force: Bool) {
-        guard audioOnly else { return }
-        let now = currentTime
-        guard force || abs(now - lastNowPlayingUpdate) >= 2 else { return }
-        lastNowPlayingUpdate = now
-        guard let video else { return }
+    func pushNowPlaying(force: Bool) {
+        guard audioOnly, let video else { return }
         let itemDuration = player.currentItem?.duration.seconds ?? 0
         TVNowPlaying.update(TVNowPlayingState(
             title: video.title,
             artist: video.channel.name,
             duration: itemDuration.isFinite && itemDuration > 0 ? itemDuration : video.duration,
-            position: now,
+            position: currentTime,
             rate: player.rate == 0 ? 0 : prefs.playbackSpeed,
             artwork: artwork
-        ))
+        ), force: force)
     }
-}
 
-private extension TVWatchModel {
     /// The other way a video becomes seen: playback reaches the end and the
     /// heartbeat comes back `watched`. The lists behind the player are then as
     /// stale as after an explicit "Mark seen", and need the same invalidation.

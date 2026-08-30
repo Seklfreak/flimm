@@ -484,6 +484,10 @@ export const api = {
       `/videos/${id}/progress${qs({ playlist: playlistId })}`,
       json("POST", { position }),
     ),
+  // A mid-playback stall the viewer saw. The client knows it happened; the
+  // server knows why (see useStallReport and docs/api.md). Fire and forget.
+  reportStall: (id: string, body: { position: number; seconds: number; height: number; client: string }) =>
+    req<void>(`/videos/${id}/stall`, json("POST", body)),
   setWatched: (id: string, watched: boolean) =>
     req<void>(`/videos/${id}/watched`, json("POST", { watched })),
   startOver: (id: string) => req<void>(`/videos/${id}/progress`, { method: "DELETE" }),

@@ -224,6 +224,21 @@ func (j *HLSJob) Has(i int) bool {
 	return j.produced[i]
 }
 
+// RunPosition is the segment the encoder is on, or -1 when nothing is
+// running. It is what tells "the viewer stalled waiting for the encoder" apart
+// from "the segment was there and something else was slow".
+func (j *HLSJob) RunPosition() int {
+	if j == nil {
+		return -1
+	}
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	if j.runCancel == nil {
+		return -1
+	}
+	return j.runPos
+}
+
 // RequestSeconds is Request for a playback position rather than a segment
 // index — what a client's `from=` means.
 func (j *HLSJob) RequestSeconds(seconds float64) {

@@ -547,6 +547,21 @@ exercise.
   `SponsorMuteTracker` in FlimmKit — the phone drives its mute through
   `PlayerEngine`, the TV sets `AVPlayer.isMuted` directly, and neither decides
   anything of its own.
+- **Every tick goes through `PlaybackServices`** (FlimmKit). Three of the
+  things a player does per tick are rules rather than platform details — the
+  loudness measurement it asks for once, the stall it notices, the SponsorBlock
+  decision it applies — and each had been written twice before. Both models now
+  hand it what the player knows (time, whether it is stalled, the rendition
+  height, the segments, the prefs) and get back what SponsorBlock wants done;
+  the gain arrives through a closure, because only the caller knows what a
+  player is. Nothing per-tick may be added to `WatchModel` or `TVWatchModel`
+  that the other one would also need.
+- **A stall is reported, not diagnosed.** `StallReporter` notices the picture
+  stopping mid-playback and posts `POST /videos/{id}/stall`; the *server*
+  attributes it, because it is the only side that knows whether the segment
+  existed yet (see [api.md](api.md#playback-stalls)). Both Apple targets and
+  the web client apply the same 0.4 s floor and abandon a stall that was still
+  running when playback stopped.
 - **Audio-only** for music playlists and the codec-gate fallback: use
   `audio_aac_url` instead of `media_url` — `audio_url` is Opus in WebM and
   will not play here, and is never a substitute even when `audio_aac_url` is

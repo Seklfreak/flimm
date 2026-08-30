@@ -22,4 +22,14 @@ public enum ResumeNotice {
     public static func isVisible(resumedFrom: Double, currentTime: Double) -> Bool {
         currentTime - resumedFrom < window
     }
+
+    /// The `resumedFrom` a player should still be holding at `currentTime`:
+    /// the same rule as ``isVisible(resumedFrom:currentTime:)``, in the form
+    /// every player actually uses it — retiring the offer is clearing the
+    /// value, and doing that in one place keeps the two Apple players and the
+    /// web client from drifting on when it happens.
+    public static func retained(_ resumedFrom: Double?, currentTime: Double) -> Double? {
+        guard let resumedFrom, isVisible(resumedFrom: resumedFrom, currentTime: currentTime) else { return nil }
+        return resumedFrom
+    }
 }

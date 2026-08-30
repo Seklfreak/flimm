@@ -28,6 +28,8 @@ final class NowPlayingController {
     var isPlaying: (() -> Bool)?
 
     private var isRegistered = false
+    /// The playback position last published, so a tick can be skipped.
+    private var lastPublished: Double = -10
 
     /// `.playback` also overrides the ringer switch, which a video player wants
     /// regardless of whether it will run in the background.
@@ -92,7 +94,13 @@ final class NowPlayingController {
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
     }
 
-    func update(_ state: NowPlayingState) {
+    /// Publishes what is playing. A routine tick is ignored until playback has
+    /// moved two seconds — the lock screen cannot show more than that anyway,
+    /// and rebuilding the artwork every 200ms is real work. `force` is for the
+    /// moments that have to be exact: play, pause, a seek, a new video.
+    func update(_ state: NowPlayingState, force: Bool) {
+        guard force || abs(state.position - lastPublished) >= 2 else { return }
+        lastPublished = state.position
         var info: [String: Any] = [
             MPMediaItemPropertyTitle: state.title,
             MPMediaItemPropertyArtist: state.artist,

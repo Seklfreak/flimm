@@ -18,4 +18,12 @@ final class ResumeNoticeTests: XCTestCase {
     func testSeekingBackKeepsItVisible() {
         XCTAssertTrue(ResumeNotice.isVisible(resumedFrom: 100, currentTime: 40))
     }
+
+    /// The form every player uses: retiring the offer *is* clearing the value,
+    /// so the rule and the clearing live together.
+    func testRetainedClearsTheOfferOnceTheWindowIsPast() {
+        XCTAssertEqual(ResumeNotice.retained(2847, currentTime: 2847 + 59), 2847)
+        XCTAssertNil(ResumeNotice.retained(2847, currentTime: 2847 + 60))
+        XCTAssertNil(ResumeNotice.retained(nil, currentTime: 12))
+    }
 }

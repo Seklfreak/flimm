@@ -21,6 +21,9 @@ struct TVNowPlayingState {
 /// what is playing.
 @MainActor
 enum TVNowPlaying {
+    /// The playback position last published, so a tick can be skipped.
+    private static var lastPublished: Double = -10
+
     /// `.playback` is what keeps audio running once the display sleeps.
     static func configureAudioSession() {
         let session = AVAudioSession.sharedInstance()
@@ -32,7 +35,11 @@ enum TVNowPlaying {
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
     }
 
-    static func update(_ state: TVNowPlayingState) {
+    /// Publishes what is playing; see the phone's `NowPlayingController` for
+    /// why a routine tick is throttled and what `force` is for.
+    static func update(_ state: TVNowPlayingState, force: Bool) {
+        guard force || abs(state.position - lastPublished) >= 2 else { return }
+        lastPublished = state.position
         var info: [String: Any] = [
             MPMediaItemPropertyTitle: state.title,
             MPMediaItemPropertyArtist: state.artist,

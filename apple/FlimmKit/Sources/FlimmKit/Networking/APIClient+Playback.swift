@@ -54,6 +54,29 @@ extension APIClient {
         try await get("/videos/\(esc(id))/chapters")
     }
 
+    /// Tells the server the picture stopped, so it can say why: it knows where
+    /// the encoder had got to and whether the segment existed. See
+    /// ``StallReporter``.
+    public func reportStall(
+        _ id: String,
+        position: Double,
+        seconds: Double,
+        height: Int,
+        client: String
+    ) async throws {
+        struct Body: Encodable {
+            let position: Double
+            let seconds: Double
+            let height: Int
+            let client: String
+        }
+        try await discard(
+            .post,
+            "/videos/\(esc(id))/stall",
+            body: Body(position: position, seconds: seconds, height: height, client: client)
+        )
+    }
+
     /// How loud a video is, and the gain to play it at. Asking is what starts
     /// the measurement server-side; see ``LoudnessGain``.
     public func loudness(_ id: String) async throws -> LoudnessInfo {

@@ -109,6 +109,8 @@ type Server struct {
 	frontend      fs.FS
 	// chapters caches derived chapter lists per video id.
 	chapters *chaptersCache
+	// stalls keeps the recently reported playback stalls for /healthz.
+	stalls *stallLog
 	// taHealth is the cached, time-boxed answer to "is TubeArchivist
 	// reachable" that /healthz reports; see taStatus.
 	taHealth taHealth
@@ -158,6 +160,7 @@ func NewServer(o Options) *Server {
 		corsOrigins:    o.CORSOrigins,
 		frontend:       o.Frontend,
 		chapters:       newChaptersCache(),
+		stalls:         &stallLog{},
 		sponsorblock:   o.Sponsorblock,
 		dearrow:        o.DeArrow,
 		minPlaySeconds: cmp.Or(o.MinPlaySeconds, defaultMinPlaySeconds),
@@ -262,6 +265,7 @@ func (s *Server) Router() http.Handler {
 			r.Post("/videos/{id}/dismiss", s.dismissVideo)
 			r.Delete("/videos/{id}/dismiss", s.undismissVideo)
 			r.Post("/videos/{id}/hls", s.postVideoHLS)
+			r.Post("/videos/{id}/stall", s.postStall)
 
 			r.Get("/playlists", s.listPlaylists)
 			r.Get("/playlists/pinned", s.listPinnedPlaylists)
@@ -364,8 +368,16 @@ func (s *Server) healthz(w http.ResponseWriter, r *http.Request) {
 	}
 	state, taErr := s.taStatus(ctx)
 	out["ta"] = state
-	if taErr != nil && (s.verifier == nil || s.isAdminEmail(currentEmailFromBearer(s, r))) {
-		out["ta_error"] = taErr.Error()
+	// Details an admin gets and a probe does not: the upstream error, and the
+	// stalls clients have reported. A stall is invisible from here otherwise —
+	// no request fails when a viewer watches a spinner.
+	if s.verifier == nil || s.isAdminEmail(currentEmailFromBearer(s, r)) {
+		if taErr != nil {
+			out["ta_error"] = taErr.Error()
+		}
+		if recent := s.stalls.list(); len(recent) > 0 {
+			out["stalls"] = recent
+		}
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(w, status, out)
