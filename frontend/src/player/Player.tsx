@@ -1,9 +1,9 @@
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { HLSState, Prefs, SubtitleTrack, Video } from "@/lib/api";
 import { fmtDuration } from "@/lib/format";
 import { refreshMediaSession, retryMediaUrl } from "@/lib/media";
 import { trackPlay } from "@/lib/analytics";
-import { useCueLift, useCueSize } from "./cueSize";
+import { CUE_LINE, cueFontSize, cueLineOverChrome, useCueLift, useCueSize } from "./cueSize";
 import { usePreviewTiles } from "./preview";
 import { useLoudnessGain } from "./loudness";
 import { CheckIcon, HeadphonesIcon, MediaImg, Popover, Spinner } from "@/components/ui";
@@ -86,6 +86,11 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(function Player(
   ref,
 ) {
   const [el, setEl] = useState<HTMLVideoElement | null>(null);
+  // The control bar and the player box, both measured, because where a caption
+  // sits depends on the size of each (see the useCueLift call below).
+  const [controlBar, setControlBar] = useState<HTMLDivElement | null>(null);
+  const [controlBarHeight, setControlBarHeight] = useState(0);
+  const [playerHeight, setPlayerHeight] = useState(0);
   const wrapRef = useRef<HTMLDivElement>(null);
   const [playing, setPlaying] = useState(false);
   const [time, setTime] = useState(0);
@@ -300,8 +305,34 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(function Player(
 
   // Cue size follows the player box, not the browser's idea of an em, and
   // cues sit a couple of lines above the bottom edge rather than on it.
+  // Chrome is up when the player is idle-less, paused or waiting — so a paused
+  // player always has it, which is exactly when someone is reading a caption.
+  const showControls = !idle || !playing || waiting;
+  // Both boxes, measured: a caption's position depends on the size of each.
+  //
+  // Measured on layout *and* on resize. The observer alone is not enough: it
+  // reports the first size a frame late, and a browser throttles it outright in
+  // a background tab — either of which leaves the first cue placed as though
+  // there were no controls at all.
+  useLayoutEffect(() => {
+    if (controlBar) setControlBarHeight(controlBar.getBoundingClientRect().height);
+    if (el) setPlayerHeight(el.getBoundingClientRect().height);
+  }, [controlBar, el, showControls, audioOnly]);
+  useEffect(() => {
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => {
+      if (controlBar) setControlBarHeight(controlBar.getBoundingClientRect().height);
+      if (el) setPlayerHeight(el.getBoundingClientRect().height);
+    });
+    if (controlBar) observer.observe(controlBar);
+    if (el) observer.observe(el);
+    return () => observer.disconnect();
+  }, [controlBar, el]);
   useCueSize(el, prefs.subtitle_size);
-  useCueLift(el);
+  // Captions clear the control bar while it is up — which, whenever playback is
+  // paused, is always. The bar is measured rather than assumed: it is one
+  // height in a window and another in fullscreen. See cueLineOverChrome.
+  useCueLift(el, showControls ? cueLineOverChrome(controlBarHeight, cueFontSize(playerHeight, prefs.subtitle_size)) : CUE_LINE);
   // Scrub previews, once the player is actually playing: asking for the track
   // is what starts a full decode of the file server-side, and a video someone
   // opened and closed again does not need one.
@@ -492,7 +523,6 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(function Player(
   // Controls stay up while nothing is actually on screen. Hiding them 2.5s
   // after play() leaves a black rectangle with no visible affordance, which
   // reads as a broken player rather than a loading one.
-  const showControls = !idle || !playing || waiting;
 
   return (
     <div
@@ -658,6 +688,7 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(function Player(
       )}
 
       <div
+        ref={setControlBar}
         className={`absolute inset-x-0 bottom-0 flex flex-col gap-2.5 bg-gradient-to-t from-black/75 to-transparent px-4 pb-3 pt-6 transition-opacity ${showControls ? "opacity-100" : "opacity-0"}`}
       >
         <Scrubber

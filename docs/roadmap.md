@@ -2,6 +2,17 @@
 
 ## Done
 
+- **Captions that clear the controls** (2026-08-30) — pausing to read a line
+  put it behind the scrubber, and on an iPad the line sat on the bottom edge of
+  the picture even while playing. Both were one mistake: a fixed inset, asked to
+  serve a phone's player and an iPad's, and a control bar whose height was
+  guessed rather than measured. The idle lift is now a proportion of the
+  picture and the paused one is the bar's own measured height, in the Apple
+  clients (`SubtitleLift`) and in the web client (`cueLineOverChrome`, the same
+  rule in WebVTT line boxes). A phone in portrait is still too short for a
+  caption and the centre transport buttons to both fit above the bar; landscape
+  and full screen are not.
+
 - **Views and vote counts** (2026-08-30) — the dislike count YouTube stopped publishing
   in 2021, from Return YouTube Dislike, beside the like count nothing had ever
   displayed. Both halves come from that service when it answers, because its

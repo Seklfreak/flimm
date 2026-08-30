@@ -547,6 +547,18 @@ exercise.
   `SponsorMuteTracker` in FlimmKit — the phone drives its mute through
   `PlayerEngine`, the TV sets `AVPlayer.isMuted` directly, and neither decides
   anything of its own.
+- **Where a caption sits is measured, not assumed** (`SubtitleLift` in
+  FlimmKit). Two numbers: with nothing over the video a cue sits a *tenth of
+  the picture* above the bottom edge, because a fixed inset that reads as a
+  margin on a phone reads as "stuck to the edge" on an iPad; with the controls
+  up — which, while paused, is always — it clears the bar by that bar's own
+  measured height, because the bar is taller on an iPad, taller again with a
+  highlight pill up, and a guessed constant can only be right for one of them.
+  The web client applies the same two rules in `cueLineOverChrome`, converted
+  into WebVTT line boxes. **On a phone in portrait the picture is too short for
+  both**: with the controls up a cue clears the scrubber but shares space with
+  the centre transport buttons, which is the geometry, not a bug — landscape
+  and full screen have the room and do not.
 - **Every tick goes through `PlaybackServices`** (FlimmKit). Three of the
   things a player does per tick are rules rather than platform details — the
   loudness measurement it asks for once, the stall it notices, the SponsorBlock

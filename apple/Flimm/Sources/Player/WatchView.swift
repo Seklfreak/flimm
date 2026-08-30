@@ -17,6 +17,12 @@ struct WatchView: View {
     @Environment(AppModel.self) private var app
 
     @State private var controlsVisible = true
+    /// The picture's height, and where the bottom chrome starts within it.
+    /// Both measured: a cue's lift is a proportion of the first and has to
+    /// clear the second, and neither is a number this file can assume. See
+    /// ``SubtitleLift``.
+    @State private var stageHeight: CGFloat = 0
+    @State private var chromeTop: CGFloat = 0
     @State private var scrubPreview = ScrubPreviewState()
     @State private var hideTask: Task<Void, Never>?
     @FocusState private var keyboardFocused: Bool
@@ -169,6 +175,13 @@ struct WatchView: View {
         // transport chrome drawn over it.
         let blocked = model.codecIssue != nil || model.audioUnavailable || model.isPreparingCompatible
         return ZStack {
+            // The picture's own height, which is what the cue's lift is a
+            // proportion of; and the space the chrome measures itself against.
+            GeometryReader { geo in
+                Color.clear
+                    .onAppear { stageHeight = geo.size.height }
+                    .onChange(of: geo.size.height) { _, height in stageHeight = height }
+            }
             Color.black
             if model.codecIssue != nil {
                 CodecGateView(model: model)
@@ -210,11 +223,12 @@ struct WatchView: View {
                     SkipSegmentButton(category: offer.category) { model.seek(to: offer.end) }
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
                         .padding(.trailing, 14)
-                        .padding(.bottom, controlsVisible ? 108 : 56)
+                        // Above the cue, wherever the cue has ended up.
+                        .padding(.bottom, cueLift + 40)
                 }
                 SubtitleOverlay(text: model.activeCue, size: model.prefs.subtitleSize)
                     .frame(maxHeight: .infinity, alignment: .bottom)
-                    .padding(.bottom, controlsVisible ? 68 : 16)
+                    .padding(.bottom, cueLift)
                     .allowsHitTesting(false)
                 PlayerControls(
                     model: model,
@@ -232,9 +246,21 @@ struct WatchView: View {
                 }
             }
         }
+        .coordinateSpace(name: PlayerStage.space)
+        .onPreferenceChange(PlayerChromeTopKey.self) { top in chromeTop = top }
         .contentShape(Rectangle())
         .onTapGesture { toggleControls() }
         .onAppear { scheduleHide() }
+    }
+
+    /// How far the cue sits above the bottom of the picture: a share of the
+    /// picture with nothing in the way, and enough to clear the controls when
+    /// they are up — which, while paused, is always (see ``scheduleHide()``).
+    private var cueLift: CGFloat {
+        let picture = Double(stageHeight)
+        guard controlsVisible else { return CGFloat(SubtitleLift.idle(pictureHeight: picture)) }
+        let bar = chromeTop > 0 ? Double(stageHeight - chromeTop) : 0
+        return CGFloat(SubtitleLift.overChrome(barHeight: bar, pictureHeight: picture))
     }
 
     private func artwork(_ model: WatchModel) -> some View {

@@ -13,6 +13,26 @@ import SwiftUI
 /// carries on while the viewer stabs at it — so every control gets a real
 /// target whatever its icon, and the iPad gets more of both: a bigger surface
 /// held further away, usually one-handed at the edge of reach.
+/// Where the chrome along the bottom edge begins, in the player stage's
+/// coordinate space, so subtitles can clear whatever is actually drawn there.
+///
+/// It is measured rather than assumed because the bar is not one height: it is
+/// taller on an iPad than on a phone, and taller again while a "jump to the
+/// highlight" pill is up. A constant can only be right for one of those, and
+/// the others are a caption sitting on the scrubber. 0 means nothing is drawn.
+struct PlayerChromeTopKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}
+
+/// The coordinate space of the video itself, which is what a cue's position is
+/// measured against.
+enum PlayerStage {
+    static let space = "flimm.player.stage"
+}
+
 enum PlayerMetrics {
     static func hitTarget(regular: Bool) -> CGFloat { regular ? 52 : 44 }
     static func barIcon(regular: Bool) -> CGFloat { regular ? 21 : 17 }
@@ -62,6 +82,14 @@ struct PlayerControls: View {
                     centreControls
                     Spacer(minLength: 0)
                     bottomBar
+                        .background(
+                            GeometryReader { geo in
+                                Color.clear.preference(
+                                    key: PlayerChromeTopKey.self,
+                                    value: geo.frame(in: .named(PlayerStage.space)).minY
+                                )
+                            }
+                        )
                 }
                 .padding(.horizontal, 12)
                 .padding(.vertical, 10)
