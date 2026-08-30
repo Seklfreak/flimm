@@ -65,7 +65,16 @@ func BuildHLSMaster(codecs string, bandwidth, width, height int, from float64) [
 	b.WriteString("#EXTM3U\n")
 	b.WriteString("#EXT-X-VERSION:7\n")
 	b.WriteString("#EXT-X-INDEPENDENT-SEGMENTS\n")
-	fmt.Fprintf(&b, "#EXT-X-STREAM-INF:BANDWIDTH=%d,CODECS=%q", bandwidth, codecs)
+	// CLOSED-CAPTIONS=NONE is not decoration: a stream that says nothing about
+	// captions is one a player must assume *might* carry CEA-608/708 inside the
+	// video, and AVPlayer duly publishes a legible option called "CC" for it.
+	// On the Apple TV that becomes a Subtitles entry in the transport bar's own
+	// menu which selects captions that do not exist — a control that does
+	// nothing, next to Flimm's own subtitles, which work. The renditions never
+	// carry embedded captions (the encoder is given none, and the archive's
+	// subtitles are separate WebVTT files this app renders itself), so saying so
+	// is both true and what the HLS authoring spec requires.
+	fmt.Fprintf(&b, "#EXT-X-STREAM-INF:BANDWIDTH=%d,CODECS=%q,CLOSED-CAPTIONS=NONE", bandwidth, codecs)
 	if width > 0 && height > 0 {
 		fmt.Fprintf(&b, ",RESOLUTION=%dx%d", width, height)
 	}

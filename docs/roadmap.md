@@ -2,6 +2,16 @@
 
 ## Done
 
+- **The Apple TV's dead subtitle menu** (2026-08-30) — the transport bar
+  offered a "CC" subtitle option that selected nothing, beside Flimm's own
+  subtitles, which work. The HLS master playlist declared nothing about
+  captions, and a player told nothing must assume CEA-608/708 *might* be
+  embedded in the video: `AVPlayer` published a legible option for the
+  possibility and AVKit drew a menu for it. The renditions never carry embedded
+  captions, so the playlist now says `CLOSED-CAPTIONS=NONE` and the phantom
+  option is gone. Found by loading the playlist's asset and printing its media
+  selection groups, which is the same list AVKit builds that menu from.
+
 - **Stall tracking** (2026-08-30) — "why does it buffer occasionally?" was a
   question nothing in the system could answer. The client is the only side that
   knows the picture stopped — no request fails, nothing errors, the viewer just
