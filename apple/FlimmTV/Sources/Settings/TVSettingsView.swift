@@ -68,6 +68,14 @@ struct TVSettingsView: View {
         }
     }
 
+    /// What the Home screen would show, read back from the shared container.
+    private var topShelfStatus: String {
+        guard let snapshot = TopShelfStore.read(), !snapshot.entries.isEmpty else {
+            return "nothing published yet"
+        }
+        return "\(snapshot.entries.count) from \(snapshot.feedName) · \(Fmt.relativeDay(snapshot.updatedAt))"
+    }
+
     private func note(_ text: String) -> some View {
         Text(text)
             .font(.footnote)
@@ -252,6 +260,12 @@ struct TVSettingsView: View {
             LabeledContent("Server", value: session.server?.baseURL.host() ?? "—")
             LabeledContent("Server version", value: session.server?.config.version ?? "—")
             LabeledContent("App version", value: TVConfig.displayVersion)
+            // The top shelf is drawn by tvOS, outside the app, from a snapshot
+            // the app leaves in a shared container. When it shows nothing there
+            // is otherwise no way to tell whether the app failed to write it or
+            // the Home screen simply is not asking — which is the difference
+            // between a bug here and Flimm not being in the top row.
+            LabeledContent("Top shelf", value: topShelfStatus)
             if !session.requiresSignIn {
                 note("""
                 This server runs with authentication disabled: no sign-in, and \

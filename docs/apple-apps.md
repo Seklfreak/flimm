@@ -231,6 +231,16 @@ What is there:
     ExportOptions; an archive whose embedded bundles are not all named there
     fails to export.
 
+    **When it shows nothing, the question is which nothing.** tvOS only draws a
+    top shelf for an app in the Home screen's **top row** — anywhere else and
+    the extension is never asked, which looks exactly like a broken extension.
+    So the extension answers an empty container with one card ("Open Flimm to
+    fill this row") rather than `nil`: a shelf with that card means tvOS is
+    asking and the app has not written yet, and a shelf with nothing at all
+    means the app is not in the top row. Settings shows the other half —
+    "Top shelf: 8 from Making · today", read back from the shared container, so
+    what the app *wrote* can be checked from the sofa without a Mac attached.
+
     The phone and iPad have no equivalent and want none: iOS has no top shelf,
     and a widget is a different feature with a different design.
   - **Scrub previews are the TV's one stated gap.** The web, phone and iPad
