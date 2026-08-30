@@ -169,8 +169,11 @@ type Comment struct {
 	Timestamp float64 `json:"comment_timestamp"`
 	// Hearted by the uploader. TubeArchivist carries yt-dlp's spelling.
 	Favorited bool `json:"comment_is_favorited"`
-	// Written by the channel the video belongs to.
-	FromUploader bool      `json:"comment_is_uploader"`
+	// Written by the channel the video belongs to. yt-dlp's key is
+	// `author_is_uploader`, which TubeArchivist keeps under its own prefix —
+	// verified against a real archive, because a wrong guess here is a field
+	// that is silently false everywhere rather than an error anyone notices.
+	FromUploader bool      `json:"comment_author_is_uploader"`
 	Replies      []Comment `json:"comment_replies"`
 }
 

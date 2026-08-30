@@ -125,3 +125,63 @@ func TestNoCommentsIsAnEmptyPage(t *testing.T) {
 		t.Errorf("page = %+v", page)
 	}
 }
+
+// The exact key set a real TubeArchivist archive returns, checked against a
+// live one: `comment_author_is_uploader` (not `comment_is_uploader`, which is
+// what a reasonable guess produces and what shipped first), the favourited
+// flag, a Unix `comment_timestamp`, and replies nested under the same shape.
+//
+// A wrong key here does not fail anything — it decodes as false, or zero, on
+// every comment in the archive, which is exactly the kind of bug that survives
+// a test suite built only on a fake.
+func TestCommentsDecodeTheArchivesOwnKeys(t *testing.T) {
+	raw := `[{
+	  "comment_id": "Ug123",
+	  "comment_text": "Worth the wait.",
+	  "comment_author": "@someone",
+	  "comment_author_id": "UCsomeone",
+	  "comment_author_is_uploader": false,
+	  "comment_author_thumbnail": "https://yt3.ggpht.com/…",
+	  "comment_is_favorited": true,
+	  "comment_likecount": 128,
+	  "comment_parent": "root",
+	  "comment_time_text": "1 week ago",
+	  "comment_timestamp": 1755680400,
+	  "comment_replies": [{
+	    "comment_id": "Ug123.1",
+	    "comment_text": "Thanks!",
+	    "comment_author": "@the-channel",
+	    "comment_author_id": "UCchannel",
+	    "comment_author_is_uploader": true,
+	    "comment_is_favorited": false,
+	    "comment_likecount": 9,
+	    "comment_parent": "Ug123",
+	    "comment_time_text": "6 days ago",
+	    "comment_timestamp": 1755766800,
+	    "comment_replies": []
+	  }]
+	}]`
+	var tree ta.Comments
+	if err := json.Unmarshal([]byte(raw), &tree); err != nil {
+		t.Fatal(err)
+	}
+	got := commentList(tree)
+	if len(got) != 1 || len(got[0].Replies) != 1 {
+		t.Fatalf("comments = %+v", got)
+	}
+	if !got[0].Hearted {
+		t.Error("comment_is_favorited did not reach `hearted`")
+	}
+	if got[0].FromUploader {
+		t.Error("a viewer's comment was marked as the uploader's")
+	}
+	if !got[0].Replies[0].FromUploader {
+		t.Error("comment_author_is_uploader did not reach `from_uploader` — the archive's spelling changed or was guessed")
+	}
+	if got[0].Published == nil {
+		t.Error("comment_timestamp did not reach `published`")
+	}
+	if got[0].Likes != 128 || got[0].AuthorID != "UCsomeone" {
+		t.Errorf("comment = %+v", got[0])
+	}
+}
