@@ -132,7 +132,7 @@ public enum TopShelfStore {
     }
 
     public static func write(_ snapshot: TopShelfSnapshot, group: String = appGroup) throws {
-        guard let defaults = UserDefaults(suiteName: group) else { throw TopShelfError.noContainer }
+        guard let defaults = UserDefaults(suiteName: group) else { throw TopShelfError.noDefaults }
         defaults.set(try FlimmCoding.encoder.encode(snapshot), forKey: snapshotKey)
     }
 
@@ -154,8 +154,17 @@ public enum TopShelfStore {
     }
 }
 
-public enum TopShelfError: Error {
+public enum TopShelfError: Error, LocalizedError {
     /// The App Group entitlement is missing, so there is nowhere both
     /// processes can see.
     case noContainer
+    /// The group's defaults would not take the snapshot.
+    case noDefaults
+
+    public var errorDescription: String? {
+        switch self {
+        case .noContainer: "no app group container"
+        case .noDefaults: "no app group defaults"
+        }
+    }
 }

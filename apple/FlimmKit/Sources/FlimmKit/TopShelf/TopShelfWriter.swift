@@ -13,9 +13,11 @@ import Foundation
 /// shared container first. They are cached by file name: a video that was on
 /// the shelf yesterday costs nothing today.
 public enum TopShelfWriter {
-    /// Rebuilds the snapshot. Returns what was written, or nil when there is
-    /// no App Group container (the entitlement is missing, or this is a build
-    /// that never had one).
+    /// Rebuilds the snapshot, or throws saying why it could not.
+    ///
+    /// Every failure here used to be a `nil` or a swallowed `try?`, which meant
+    /// an empty Home screen row and no way to find out which step gave up —
+    /// the entitlement, the container, the encode. They are errors now.
     @discardableResult
     public static func write(
         feedName: String,
@@ -23,11 +25,9 @@ public enum TopShelfWriter {
         client: APIClient,
         now: Date = Date(),
         group: String = TopShelfStore.appGroup
-    ) async -> TopShelfSnapshot? {
-        guard let dir = TopShelfStore.directory(for: group) else { return nil }
-        guard (try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)) != nil else {
-            return nil
-        }
+    ) async throws -> TopShelfSnapshot {
+        guard let dir = TopShelfStore.directory(for: group) else { throw TopShelfError.noContainer }
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let wanted = Array(videos.prefix(TopShelfStore.maxEntries))
         let headers = (try? await client.mediaHeaders()) ?? [:]
 
@@ -49,7 +49,7 @@ public enum TopShelfWriter {
             ))
         }
         let snapshot = TopShelfSnapshot(feedName: feedName, entries: entries, updatedAt: now)
-        guard (try? TopShelfStore.write(snapshot, group: group)) != nil else { return nil }
+        try TopShelfStore.write(snapshot, group: group)
         TopShelfStore.pruneImages(keeping: snapshot, group: group)
         return snapshot
     }

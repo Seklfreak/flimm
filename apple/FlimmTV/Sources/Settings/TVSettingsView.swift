@@ -87,27 +87,17 @@ struct TVSettingsView: View {
             return "unavailable — no app group"
         }
         guard let snapshot = TopShelfStore.read(), !snapshot.entries.isEmpty else {
-            return "nothing published yet"
+            return "nothing published yet · would publish \(app.launchFeed?.name ?? "no feed")"
         }
         return "\(snapshot.entries.count) from \(snapshot.feedName) · \(Fmt.relativeDay(snapshot.updatedAt))"
     }
 
-    /// Publishes the shelf on demand, the same way launching the app does —
-    /// reporting what happened either way, because a silent no-op is what made
-    /// this hard to place to begin with.
+    /// Publishes the shelf on demand, the same way launching the app does, and
+    /// says exactly which step gave up if one did.
     private func publishTopShelf() async {
         isPublishing = true
         defer { isPublishing = false }
-        guard app.launchFeed != nil else {
-            publishResult = "No feed to publish: none loaded."
-            return
-        }
-        await TopShelfRefresh.publishLaunchFeed(app: app)
-        if let snapshot = TopShelfStore.read() {
-            publishResult = "Published \(snapshot.entries.count) from \(snapshot.feedName)."
-        } else {
-            publishResult = "Nothing was written — the feed may be empty."
-        }
+        publishResult = await TopShelfRefresh.publishLaunchFeed(app: app).message
     }
 
     private func note(_ text: String) -> some View {
