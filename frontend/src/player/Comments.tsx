@@ -15,11 +15,13 @@ export interface CommentsProps {
   onToggle: (open: boolean) => void;
 }
 
-// The archived comments, under the video.
+// The archived comments, under the video's description.
 //
-// Collapsed to start with: they are the longest thing on the page and the
-// least often wanted, and opening the section is what loads the first page —
-// a video nobody scrolls to the bottom of costs no request at all.
+// Open to start with: what people said about a video belongs under it, not
+// behind a control that has to be found first. Closing the section is
+// remembered for the session (see WatchPage), so someone who does not want
+// comments closes them once rather than on every video — and while it is
+// closed nothing is requested, which is what the `open` prop is for.
 export function Comments({
   comments,
   total,

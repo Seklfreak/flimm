@@ -2,6 +2,15 @@
 
 ## Done
 
+- **Comments under the description** (2026-08-30) — they were behind a
+  collapsed section on the phone and the web, and on the iPad they were in the
+  column beside the video, next to "up next", where nothing else about the
+  video was. They now open with the video, directly under its description, on
+  all three. Closing the section is remembered for the session, so the request
+  is still never made for someone who does not want them. The Apple TV keeps
+  its own Info-panel tab, which is a different shape for a different reason
+  (see [apple-apps.md](apple-apps.md)).
+
 - **Captions that clear the controls** (2026-08-30) — pausing to read a line
   put it behind the scrubber, and on an iPad the line sat on the bottom edge of
   the picture even while playing. Both were one mistake: a fixed inset, asked to

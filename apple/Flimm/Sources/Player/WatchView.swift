@@ -142,6 +142,12 @@ struct WatchView: View {
                         stage(model)
                             .aspectRatio(16 / 9, contentMode: .fit)
                         header(model)
+                        // Under the description, as on the phone and the web,
+                        // rather than in the column beside the video: comments
+                        // are about what is being watched, and reading them
+                        // next to "up next" put them where nothing else about
+                        // this video was.
+                        CommentsSection(videoID: model.videoId)
                     }
                     .padding(.bottom, 24)
                 }
@@ -149,7 +155,6 @@ struct WatchView: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 20) {
                         ChapterListView(chapters: model.chapters, activeIndex: model.activeChapter) { model.seek(to: $0) }
-                        CommentsSection(videoID: model.videoId)
                         UpNextList(model: model, columnWidth: columnWidth)
                     }
                     .padding(.bottom, 24)

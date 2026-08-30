@@ -1,23 +1,28 @@
 import FlimmKit
 import SwiftUI
 
-/// The archived comments, under the video on the phone and beside it on iPad.
+/// The archived comments, under the video's description on every screen size.
 ///
-/// Collapsed until asked for, and opening it is what loads the first page:
-/// comments are the longest thing attached to a video and the least often
-/// wanted, so a video watched and closed costs no request at all. The web
-/// client behaves the same way.
+/// Open from the start: they belong under the description rather than behind a
+/// button that has to be found, and the first page loads with the video. The
+/// section can still be collapsed, and closing it is remembered for as long as
+/// the app is running — someone who does not want comments should not have to
+/// close them on every video. The web client behaves the same way.
 struct CommentsSection: View {
     let videoID: String
 
     @Environment(AppModel.self) private var app
     @State private var store = CommentsStore()
-    @State private var isOpen = false
+    @State private var isOpen = CommentsSection.openByDefault
+
+    /// Whether the section opens, for the rest of this launch; see above.
+    @MainActor private static var openByDefault = true
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Button {
                 withAnimation(.easeOut(duration: 0.15)) { isOpen.toggle() }
+                CommentsSection.openByDefault = isOpen
             } label: {
                 HStack {
                     Text(store.total > 0 ? "Comments · \(Fmt.count(store.total))" : "Comments")

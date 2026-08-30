@@ -179,13 +179,19 @@ What is there:
     `HLSJob.Request`). It is the difference between a black screen for minutes
     and picture in under a second.
   - **Comments are a second Info-panel tab on the TV, and a section under the
-    video on the phone and iPad.** Selecting a video on tvOS plays it, so
+    description on the phone and iPad.** Selecting a video on tvOS plays it, so
     there is no detail screen to hang comments on, and the panel AVKit gives a
     custom tab is a wide, short band — a vertical list there shows two
     comments and clips the third. So the TV tab is a *horizontal* row of
     cards, which is the shape that band has and what a remote moves through
-    well; the phone gets the ordinary collapsed section. Both load on being
-    opened, and both drive one ``CommentsStore`` in `Shared/`.
+    well; the phone and iPad get an ordinary section, **open from the start and
+    directly under the description**, because that is where what is said about
+    a video belongs. On the iPad it sits in the column with the video rather
+    than the one with "up next", for the same reason. Closing it is remembered
+    for the rest of the launch, so someone who does not want comments closes
+    them once. Both platforms drive one ``CommentsStore`` in `Shared/`; the TV
+    tab still loads when it is opened, because a tab nobody moves to is a
+    request nobody needs.
 
     **Replies are a level down, not an expansion.** A band that shows three
     cards cannot also show a thread underneath one of them, so selecting a

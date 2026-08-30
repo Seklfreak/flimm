@@ -12,6 +12,12 @@ import { Comments } from "@/player/Comments";
 import { AddToPlaylist } from "@/player/AddToPlaylist";
 import { UpNextPanel } from "@/player/UpNextPanel";
 
+/// Whether the comments section is open, for the rest of this session. It
+/// starts open — the comments belong under the description — and a viewer who
+/// closes it keeps it closed as they move between videos, which a per-page
+/// `useState` alone cannot do.
+let commentsOpenDefault = true;
+
 export default function WatchPage() {
   const { id = "" } = useParams();
   const [params, setParams] = useSearchParams();
@@ -63,7 +69,11 @@ export default function WatchPage() {
   const chapters = useChapters(id).data?.chapters ?? [];
   // The comments load when the section is opened and not before: they are the
   // longest thing on the page and the least often wanted.
-  const [commentsOpen, setCommentsOpen] = useState(false);
+  // Open from the start: the comments belong under the description, not behind
+  // a button that has to be found. The section can still be collapsed, and
+  // collapsing it is remembered for the session — someone who does not want
+  // them does not have to close them on every video.
+  const [commentsOpen, setCommentsOpen] = useState(commentsOpenDefault);
   const comments = useComments(id, commentsOpen);
   const commentPages = comments.data?.pages.flatMap((p) => p.items) ?? [];
   const [activeChapter, setActiveChapter] = useState(-1);
@@ -209,7 +219,10 @@ export default function WatchPage() {
             isFetchingMore={comments.isFetchingNextPage}
             fetchMore={() => void comments.fetchNextPage()}
             open={commentsOpen}
-            onToggle={setCommentsOpen}
+            onToggle={(open) => {
+              commentsOpenDefault = open;
+              setCommentsOpen(open);
+            }}
           />
         </div>
       </div>
