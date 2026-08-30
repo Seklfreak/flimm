@@ -185,12 +185,26 @@ const (
 	// access log by `redactMediaToken`, because a credential in a log line is
 	// a credential given away.
 	mediaTokenParam = "media_token"
-	mediaTokenTTL   = 12 * time.Hour
+	// defaultMediaTokenTTL is how long a media token stays good, and the knob
+	// is `MEDIA_TOKEN_SECONDS`.
+	//
+	// Thirty days, not the twelve hours this started at, because the token now
+	// outlives the session that minted it: the Apple TV's top shelf holds URLs
+	// the *system* fetches days later, and a viewer who does not open Flimm
+	// for a fortnight should not come back to a row of missing pictures. The
+	// web client re-mints on any media 401, so a longer life costs it nothing.
+	//
+	// It is a bearer credential for `/media/*` and nothing else — no API, no
+	// account — signed and carrying its own user id and expiry. A month of
+	// validity is a month a leaked URL would work, which is the trade being
+	// made deliberately here; shorten it with the env var if that is not the
+	// right trade for a deployment.
+	defaultMediaTokenTTL = 30 * 24 * time.Hour
 )
 
 // mediaToken is "<user uuid>.<expiry unix>.<base64url hmac>".
 func (s *Server) mediaToken(userID uuid.UUID, now time.Time) string {
-	exp := now.Add(mediaTokenTTL).Unix()
+	exp := now.Add(s.mediaTokenTTL).Unix()
 	payload := userID.String() + "." + strconv.FormatInt(exp, 10)
 	return payload + "." + s.signMedia(payload)
 }
@@ -238,7 +252,7 @@ func (s *Server) setMediaCookie(w http.ResponseWriter, r *http.Request) {
 		Name:     mediaCookieName,
 		Value:    token,
 		Path:     "/media",
-		MaxAge:   int(mediaTokenTTL / time.Second),
+		MaxAge:   int(s.mediaTokenTTL / time.Second),
 		HttpOnly: true,
 		Secure:   s.secureCookies,
 		SameSite: http.SameSiteLaxMode,
@@ -246,7 +260,7 @@ func (s *Server) setMediaCookie(w http.ResponseWriter, r *http.Request) {
 	// The body is for the native clients; browsers use the cookie and ignore
 	// it. It was a 204 before, which a client with no cookie jar could do
 	// nothing with.
-	writeJSON(w, http.StatusOK, MediaSession{Token: token, ExpiresIn: int(mediaTokenTTL / time.Second)})
+	writeJSON(w, http.StatusOK, MediaSession{Token: token, ExpiresIn: int(s.mediaTokenTTL / time.Second)})
 }
 
 // ---- helpers ----

@@ -31,9 +31,14 @@ struct TVPlayerOverlay: View {
                 // tvOS hands a hosting controller 60pt of overscan inset at
                 // top and bottom, so a padding of 60 here landed the cue 120pt
                 // up — a fifth of the way into the picture, which is what
-                // "the subtitles are too high" was. The number below is what
-                // reaches the panel, and it stays clear of overscan on its
+                // "the subtitles are too high" was. The numbers below are what
+                // reaches the panel, and they stay clear of overscan on their
                 // own.
+                //
+                // 42 sits the cue about where a TV viewer expects it, low in
+                // the frame without touching the edge. With the transport bar
+                // up it has to clear the bar instead, which is a fixed lump of
+                // AVKit's own and the reason that number is not simply double.
                 VStack {
                     Spacer()
                     Text(cue)
@@ -43,7 +48,7 @@ struct TVPlayerOverlay: View {
                         .padding(.horizontal, 26)
                         .padding(.vertical, 14)
                         .background(Palette.overlay, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                        .padding(.bottom, transportBarVisible ? 300 : 84)
+                        .padding(.bottom, transportBarVisible ? 300 : 42)
                         .frame(maxWidth: 1400)
                 }
                 .ignoresSafeArea()

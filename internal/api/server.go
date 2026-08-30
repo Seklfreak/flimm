@@ -73,6 +73,10 @@ type Options struct {
 	// the transcode has not produced yet blocks before the client is told to
 	// come back. 0 uses the default.
 	SegmentWait time.Duration
+	// MediaTokenTTL is MEDIA_TOKEN_SECONDS: how long a signed media token —
+	// the cookie and the `media_token` URL parameter alike — stays valid. 0
+	// uses the default.
+	MediaTokenTTL time.Duration
 	// SeekAheadSegments is MEDIA_SEEK_AHEAD_SEGMENTS: how far ahead of the
 	// encoder a segment request has to be for the run to be re-aimed at it.
 	// 0 uses the default.
@@ -121,6 +125,7 @@ type Server struct {
 	hlsJobs           *media.HLSRegistry
 	segmentWait       time.Duration
 	seekAheadSegments int
+	mediaTokenTTL     time.Duration
 }
 
 func NewServer(o Options) *Server {
@@ -163,6 +168,7 @@ func NewServer(o Options) *Server {
 		hlsJobs:           media.NewHLSRegistry(),
 		segmentWait:       cmp.Or(o.SegmentWait, defaultSegmentWait),
 		seekAheadSegments: cmp.Or(o.SeekAheadSegments, media.DefaultSeekAheadSegments),
+		mediaTokenTTL:     cmp.Or(o.MediaTokenTTL, defaultMediaTokenTTL),
 	}
 	if o.MediaProxy != nil {
 		// Thumbnails are immutable per id; let the browser keep them a day.

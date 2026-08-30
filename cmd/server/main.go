@@ -175,6 +175,7 @@ func main() {
 		HWAccel:           hwaccel,
 		SegmentWait:       cfg.MediaSegmentWait,
 		SeekAheadSegments: cfg.MediaSeekAheadSegments,
+		MediaTokenTTL:     cfg.MediaTokenTTL,
 		SecureCookies:     cfg.SecureCookies(),
 		CORSOrigins:       append([]string{cfg.PublicURL}, cfg.CORSOrigins...),
 		Frontend:          dist,

@@ -21,9 +21,16 @@ Base path: `/api/v1`. JSON, snake_case. Times are RFC 3339 UTC. IDs are strings.
   `flimm_media` cookie, or the same token as a `media_token` query parameter.
   `POST /api/v1/session/media` (authenticated) sets that HttpOnly, SameSite=Lax,
   Secure cookie and **returns the token in its body**
-  (`{ "token": "…", "expires_in": 43200 }`); the web app calls it after login and
-  again when a media request returns 401, and ignores the body. Native clients
-  pass the Bearer header via `AVURLAssetHTTPHeaderFieldsKey`.
+  (`{ "token": "…", "expires_in": 2592000 }`); the web app calls it after login
+  and again when a media request returns 401, and ignores the body. Native
+  clients pass the Bearer header via `AVURLAssetHTTPHeaderFieldsKey`.
+- **A media token lasts 30 days** (`MEDIA_TOKEN_SECONDS`). It outlives the
+  session that minted it on purpose: the Apple TV's top shelf holds URLs the
+  *system* fetches days after the app last ran, and a viewer who does not open
+  Flimm for a fortnight should not come back to a row of missing pictures. It
+  is a bearer credential for `/media/*` and nothing else — no API, no account —
+  signed, carrying its own user id and expiry. A month of validity is a month a
+  leaked URL would work; shorten it where that is the wrong trade.
 - **The query parameter is for a fetcher that can set neither.** tvOS draws the
   Home screen's top shelf itself, in a process with no session of ours, from
   URLs an app extension hands it — a URL that carries its own credential is the
@@ -931,6 +938,7 @@ tested against a fake.
 | `MEDIA_TOKEN_SECRET` | yes | HMAC secret for the media cookie |
 | `PUBLIC_URL` | yes | for cookie/CORS |
 | `MIN_PLAY_SECONDS` | no | seconds of playback before a video is recorded; default 15 |
+| `MEDIA_TOKEN_SECONDS` | no | how long a signed media token (cookie and `media_token` URL parameter) stays valid; default 2592000 (30 days) |
 | `MEDIA_CACHE_DIR` | no | where derived media is cached; default a temp dir. Must be writable; an HLS rendition of a 1080p hour is ~1.5 GB |
 | `MEDIA_CACHE_MAX_BYTES` | no | cache size cap before LRU eviction; default 5 GiB |
 | `MEDIA_TRANSCODE_JOBS` | no | concurrent HLS transcodes; default 1, extra requests queue |

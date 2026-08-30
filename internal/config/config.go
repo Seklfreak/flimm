@@ -62,6 +62,11 @@ type Config struct {
 	// segments) a segment request has to be before the running transcode is
 	// re-aimed at it. Below it, waiting is cheaper than restarting.
 	MediaSeekAheadSegments int
+	// MediaTokenTTL is how long a signed media token stays valid — the
+	// `flimm_media` cookie and the `media_token` URL parameter alike. Long by
+	// default: the Apple TV's top shelf holds URLs the system fetches days
+	// after the app last ran.
+	MediaTokenTTL time.Duration
 	// FFmpegPath is the ffmpeg binary used for derivations.
 	FFmpegPath string
 	// MediaHWAccel selects hardware-accelerated transcoding: "auto" (the
@@ -123,6 +128,7 @@ func Load() (*Config, error) {
 		MediaTranscodeJobs:     int(envFloat("MEDIA_TRANSCODE_JOBS", 1)),
 		MediaSegmentWait:       time.Duration(envFloat("MEDIA_SEGMENT_WAIT", 60) * float64(time.Second)),
 		MediaSeekAheadSegments: int(envFloat("MEDIA_SEEK_AHEAD_SEGMENTS", 30)),
+		MediaTokenTTL:          time.Duration(envFloat("MEDIA_TOKEN_SECONDS", 30*24*60*60)) * time.Second,
 		FFmpegPath:             cmp.Or(os.Getenv("FFMPEG_PATH"), "ffmpeg"),
 		MediaHWAccel:           getenvDefault("MEDIA_HWACCEL", "auto"),
 		MediaVAAPIDevice:       os.Getenv("MEDIA_VAAPI_DEVICE"),

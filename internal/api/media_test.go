@@ -98,8 +98,11 @@ func TestMediaAuthCookieVsBearer(t *testing.T) {
 	if len(cookies) != 1 || cookies[0].Name != "flimm_media" || !cookies[0].HttpOnly || cookies[0].SameSite != http.SameSiteLaxMode || cookies[0].Path != "/media" {
 		t.Fatalf("cookie = %+v", cookies)
 	}
-	if cookies[0].MaxAge != int((12 * time.Hour).Seconds()) {
-		t.Errorf("max-age = %d", cookies[0].MaxAge)
+	// The cookie lives as long as the token it carries, whatever that is
+	// configured to be — thirty days by default, because the Apple TV's top
+	// shelf holds URLs the system fetches long after the app last ran.
+	if cookies[0].MaxAge != int(defaultMediaTokenTTL.Seconds()) {
+		t.Errorf("max-age = %d, want the token's own lifetime", cookies[0].MaxAge)
 	}
 	req = httptest.NewRequest(http.MethodGet, "/media/thumb/channel/A", nil)
 	req.AddCookie(cookies[0])
@@ -120,7 +123,7 @@ func TestMediaAuthCookieVsBearer(t *testing.T) {
 
 	// Expired token → 401.
 	req = httptest.NewRequest(http.MethodGet, "/media/thumb/channel/A", nil)
-	req.AddCookie(testCookie(s.mediaToken(uuid.New(), time.Now().Add(-13*time.Hour))))
+	req.AddCookie(testCookie(s.mediaToken(uuid.New(), time.Now().Add(-defaultMediaTokenTTL-time.Hour))))
 	rec = httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	if rec.Code != http.StatusUnauthorized {
