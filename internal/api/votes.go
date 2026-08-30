@@ -45,5 +45,11 @@ func (s *Server) videoStats(ctx context.Context, v *ta.Video) VideoStats {
 	}
 	dislikes := votes.Dislikes
 	stats.Dislikes = &dislikes
+	// Views take the larger of the two, which is the only comparison either
+	// number supports: a view count only ever goes up, so the bigger one is
+	// simply the more recently read. The archive's was true the day the file
+	// was downloaded and the service's the day it last looked, and neither
+	// knows which of those was later.
+	stats.Views = max(stats.Views, votes.Views)
 	return stats
 }

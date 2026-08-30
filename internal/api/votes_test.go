@@ -49,7 +49,7 @@ func detailStats(t *testing.T, h http.Handler) VideoStats {
 // The whole point of the integration: the half of the vote YouTube stopped
 // publishing, and with it the like count it was measured against.
 func TestDislikesComeFromTheServiceAsAPair(t *testing.T) {
-	h := videoWithVotes(t, `{"id":"v1","likes":45120,"dislikes":1183}`, http.StatusOK)
+	h := videoWithVotes(t, `{"id":"v1","likes":45120,"dislikes":1183,"viewCount":1200000}`, http.StatusOK)
 	stats := detailStats(t, h)
 	if stats.Dislikes == nil || *stats.Dislikes != 1183 {
 		t.Fatalf("dislikes = %v, want 1183", stats.Dislikes)
@@ -57,9 +57,10 @@ func TestDislikesComeFromTheServiceAsAPair(t *testing.T) {
 	if stats.Likes != 45120 {
 		t.Errorf("likes = %d, want the service's own, not the archive's 40", stats.Likes)
 	}
-	// Views are the archive's throughout; the service is not asked about them.
-	if stats.Views != 900 {
-		t.Errorf("views = %d, want the archive's", stats.Views)
+	// A view count only goes up, so the larger of the two is simply the more
+	// recently read.
+	if stats.Views != 1_200_000 {
+		t.Errorf("views = %d, want the service's newer count", stats.Views)
 	}
 }
 
@@ -83,6 +84,15 @@ func TestAnOutageFallsBackToTheArchive(t *testing.T) {
 	stats := detailStats(t, h)
 	if stats.Dislikes != nil || stats.Likes != 40 {
 		t.Errorf("stats = %+v, want the archive's counts and no dislikes", stats)
+	}
+}
+
+// The other direction of the same rule: a service record older than the
+// download keeps the archive's larger count.
+func TestTheLargerViewCountWins(t *testing.T) {
+	h := videoWithVotes(t, `{"id":"v1","likes":40,"dislikes":3,"viewCount":12}`, http.StatusOK)
+	if views := detailStats(t, h).Views; views != 900 {
+		t.Errorf("views = %d, want the archive's 900", views)
 	}
 }
 

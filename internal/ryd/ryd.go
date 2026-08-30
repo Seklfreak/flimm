@@ -62,6 +62,9 @@ const (
 type Votes struct {
 	Likes    int64
 	Dislikes int64
+	// Views the service last recorded. Its vintage is its own — see the API
+	// layer, which takes the larger of this and the archive's.
+	Views int64
 	// Found reports that the service knows this video at all. A video it has
 	// never seen is zero votes and Found false, which is not the same as a
 	// video that genuinely has none.
@@ -162,9 +165,10 @@ func (c *Client) Votes(ctx context.Context, videoID string) (Votes, error) {
 }
 
 type apiVotes struct {
-	ID       string `json:"id"`
-	Likes    int64  `json:"likes"`
-	Dislikes int64  `json:"dislikes"`
+	ID        string `json:"id"`
+	Likes     int64  `json:"likes"`
+	Dislikes  int64  `json:"dislikes"`
+	ViewCount int64  `json:"viewCount"`
 	// Deleted marks a video YouTube no longer has. Its last known counts are
 	// still the right ones to show for an archived copy.
 	Deleted bool `json:"deleted"`
@@ -200,6 +204,7 @@ func (c *Client) fetch(ctx context.Context, videoID string) (Votes, error) {
 	return Votes{
 		Likes:    max(out.Likes, 0),
 		Dislikes: max(out.Dislikes, 0),
+		Views:    max(out.ViewCount, 0),
 		Found:    true,
 	}, nil
 }

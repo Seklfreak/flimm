@@ -40,12 +40,19 @@ struct VideoHeader: View {
     /// Counts, not controls: nothing here votes on YouTube's behalf. The
     /// dislike half exists only when the deployment enabled Return YouTube
     /// Dislike and that service knows the video, so it appears and disappears
-    /// per video rather than per install (docs/api.md, "Vote counts").
+    /// per video rather than per install (docs/api.md, "Views and votes").
     @ViewBuilder
     private var votes: some View {
-        if video.stats.likes > 0 || video.stats.dislikes != nil {
+        if video.stats.views > 0 || video.stats.likes > 0 || video.stats.dislikes != nil {
             HStack(spacing: 14) {
-                Label(Fmt.compact(video.stats.likes), systemImage: "hand.thumbsup")
+                if video.stats.views > 0 {
+                    Text("\(Fmt.compact(video.stats.views)) views")
+                }
+                // An archive that recorded no likes shows none, rather than a
+                // thumb reading zero. A real zero arrives with a dislike count.
+                if video.stats.likes > 0 || video.stats.dislikes != nil {
+                    Label(Fmt.compact(video.stats.likes), systemImage: "hand.thumbsup")
+                }
                 if let dislikes = video.stats.dislikes {
                     Label(Fmt.compact(dislikes), systemImage: "hand.thumbsdown")
                 }

@@ -138,16 +138,22 @@ export default function WatchPage() {
                 watch on YouTube
               </a>
             </span>
-            {/* The votes, when there are any to show. Counts, not controls:
-                nothing here can vote on YouTube's behalf, and the dislike half
-                only exists when the deployment turned on Return YouTube
-                Dislike (docs/api.md "Vote counts"). */}
-            {(v.stats.likes > 0 || v.stats.dislikes !== undefined) && (
-              <span className="meta flex items-center gap-3" aria-label="vote counts">
-                <span className="flex items-center gap-1.5">
-                  <ThumbIcon />
-                  {compactCount(v.stats.likes)}
-                </span>
+            {/* Views and votes. Counts, not controls: nothing here can vote on
+                YouTube's behalf, and the dislike half only exists when the
+                deployment turned on Return YouTube Dislike (docs/api.md
+                "Views and votes"). */}
+            {(v.stats.views > 0 || v.stats.likes > 0 || v.stats.dislikes !== undefined) && (
+              <span className="meta flex items-center gap-3" aria-label="view and vote counts">
+                {v.stats.views > 0 && <span>{compactCount(v.stats.views)} views</span>}
+                {/* An archive that recorded no likes shows none, rather than a
+                    thumb reading zero. A real zero — the service knows the
+                    video and it has none — comes with a dislike count. */}
+                {(v.stats.likes > 0 || v.stats.dislikes !== undefined) && (
+                  <span className="flex items-center gap-1.5">
+                    <ThumbIcon />
+                    {compactCount(v.stats.likes)}
+                  </span>
+                )}
                 {v.stats.dislikes !== undefined && (
                   <span className="flex items-center gap-1.5">
                     <ThumbIcon down />

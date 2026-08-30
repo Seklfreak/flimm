@@ -68,15 +68,21 @@ struct TVPlayerInfoPanel: View {
         }
     }
 
-    /// The vote counts, exactly as the phone shows them. Counts, not controls
-    /// — the remote cannot vote on YouTube's behalf — and the dislike half is
-    /// there only when the deployment enabled Return YouTube Dislike and that
-    /// service knows the video (docs/api.md, "Vote counts").
+    /// The view and vote counts, exactly as the phone shows them. Counts, not
+    /// controls — the remote cannot vote on YouTube's behalf — and the dislike
+    /// half is there only when the deployment enabled Return YouTube Dislike
+    /// and that service knows the video (docs/api.md, "Views and votes").
     @ViewBuilder
     private var votes: some View {
-        if let stats = model.video?.stats, stats.likes > 0 || stats.dislikes != nil {
+        if let stats = model.video?.stats, stats.views > 0 || stats.likes > 0 || stats.dislikes != nil {
             HStack(spacing: 14) {
-                Label(Fmt.compact(stats.likes), systemImage: "hand.thumbsup")
+                if stats.views > 0 {
+                    Text("\(Fmt.compact(stats.views)) views")
+                }
+                // See the phone: no thumb rather than a thumb reading zero.
+                if stats.likes > 0 || stats.dislikes != nil {
+                    Label(Fmt.compact(stats.likes), systemImage: "hand.thumbsup")
+                }
                 if let dislikes = stats.dislikes {
                     Label(Fmt.compact(dislikes), systemImage: "hand.thumbsdown")
                 }

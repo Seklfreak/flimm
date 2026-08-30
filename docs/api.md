@@ -137,7 +137,7 @@ resume is the default action, and `t=` only exists to jump to a subtitle hit.
                { "type": "audio", "codec": "mp4a", "width": 0, "height": 0, "bitrate": 130000 } ],
   "subtitles": [ { "lang": "en", "source": "user|auto", "url": "/media/subtitles/yt-id/en.vtt" } ],
   "sponsorblock": [ { "category": "sponsor", "action_type": "skip", "start": 12.3, "end": 45.6 } ],
-  "stats": { "views": 0, "likes": 0, "dislikes": 0 }, // dislikes: see "Vote counts" — absent unless known
+  "stats": { "views": 0, "likes": 0, "dislikes": 0 }, // see "Views and votes"; dislikes absent unless known
   "tags": [],
   "playlists": [ { "id": "PL…|custom-id", "name": "…", "position": 9, "count": 14 } ],
   "channel": { …ChannelSummary… }
@@ -607,7 +607,7 @@ the default MIME map for that location, so `.mp4` would otherwise arrive as
 `application/octet-stream` and `<video>` refuses to decode it.
 
 
-### Vote counts
+### Views and votes
 
 `stats` on a video carries `views` and `likes` from TubeArchivist, which
 indexes what YouTube publishes. Since 2021 that no longer includes the dislike
@@ -619,23 +619,33 @@ different facts, and a client that cannot tell them apart draws "0 dislikes"
 over the first one. So the key is omitted whenever the answer is unknown: no
 `RYD_URL`, a service outage, or a video that service has never seen.
 
-**When it answers, both counts come from it.** Its numbers are estimates of the
-same kind measured against each other; pairing its dislike count with the
-archive's like count from download day would put two vintages either side of a
-slash and invite arithmetic on them. The one exception is a record with no
+**When it answers, both vote counts come from it.** Its numbers are estimates
+of the same kind measured against each other; pairing its dislike count with
+the archive's like count from download day would put two vintages either side
+of a slash and invite arithmetic on them. The one exception is a record with no
 likes at all beside an archive that counted plenty — that is the service
 missing data, not the video losing its likes, so the archive's like count
-stands. `views` is always the archive's; the service is not asked about it.
+stands.
+
+`views` is the **larger** of the archive's count and the service's, which is
+the only comparison either number supports: a view count only goes up, so the
+bigger one is simply the more recently read. The archive's was true the day the
+file was downloaded and the service's the day it last looked, and neither knows
+which of those was later. With no service configured it is the archive's, and
+it is the one count here that every video has.
 
 The lookup runs concurrently with the SponsorBlock one on `GET /videos/{id}`,
 so it adds no latency of its own, answers are cached for six hours, and a
 failure is not retried for two minutes.
 
-**Clients** show the pair under the title (web, iPhone, iPad) or beside it in
-the Info panel (Apple TV), as counts rather than controls — nothing here can
-vote on YouTube's behalf. The dislike half is drawn only when it is present,
-so switching `RYD_URL` on or off changes what every client shows with no client
-change at all.
+**Clients** show `1.2M views · 45.1K 👍 · 1.2K 👎` under the title (web,
+iPhone, iPad) or beside it in the Info panel (Apple TV), as counts rather than
+controls — nothing here can vote on YouTube's behalf. Each part is drawn only
+when it is there: the dislike count when the service supplied one, the like
+count unless the archive recorded none — no thumb rather than a thumb reading
+zero, and a *real* zero arrives with a dislike count beside it. So switching
+`RYD_URL` on or off changes what every client shows with no client change at
+all.
 
 ### Playback stalls
 
@@ -1021,7 +1031,7 @@ tested against a fake.
 | `MEDIA_VAAPI_DEVICE` | no | DRM render node for VAAPI; default `/dev/dri/renderD128` |
 | `SPONSORBLOCK_URL` | no | SponsorBlock server segments are fetched from; default `https://sponsor.ajay.app`. **Empty disables the lookup**, leaving TubeArchivist's download-time snapshot as the only source — what an offline deploy wants |
 | `SPONSORBLOCK_CATEGORIES` | no | comma list restricting what is asked for; default asks for everything the service offers and lets each client decide |
-| `RYD_URL` | no | Return YouTube Dislike API for dislike counts. **Empty (the default) disables it**, and every video then carries no `stats.dislikes` at all. Unlike SponsorBlock and DeArrow it is asked about a video *by id* — see [Vote counts](#vote-counts) |
+| `RYD_URL` | no | Return YouTube Dislike API for dislike counts. **Empty (the default) disables it**, and every video then carries no `stats.dislikes` at all. Unlike SponsorBlock and DeArrow it is asked about a video *by id* — see [Views and votes](#views-and-votes) |
 | `APP_NAME` | no | default `Flimm` |
 | `PORT` | no | default 8080 |
 | `SENTRY_DSN` | no | |

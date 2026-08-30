@@ -49,6 +49,9 @@ func TestVotesComeBackAsAPair(t *testing.T) {
 	if got.Likes != 45120 || got.Dislikes != 1183 {
 		t.Errorf("votes = %+v, want 45120/1183", got)
 	}
+	if got.Views != 1_200_000 {
+		t.Errorf("views = %d, want 1200000", got.Views)
+	}
 	if !got.Found {
 		t.Error("Found = false for a video the service knows")
 	}

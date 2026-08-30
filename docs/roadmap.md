@@ -2,7 +2,7 @@
 
 ## Done
 
-- **Vote counts** (2026-08-30) — the dislike count YouTube stopped publishing
+- **Views and vote counts** (2026-08-30) — the dislike count YouTube stopped publishing
   in 2021, from Return YouTube Dislike, beside the like count nothing had ever
   displayed. Both halves come from that service when it answers, because its
   numbers are estimates measured against each other and pairing one of them
@@ -16,6 +16,11 @@
   make knowingly, and [deploy.md](deploy.md) now says so. With it off, `stats`
   carries no `dislikes` key at all — absent rather than zero, because "nobody
   counted" and "none" are different facts — and every client hides that half.
+
+  The view count came along with it: already on the API, displayed by nothing
+  until now. It is the larger of the archive's and the service's — a view count
+  only goes up, so the bigger number is the more recently read — and it is the
+  one count every video has, service or no service.
 
   Shipped to web, iPhone, iPad and Apple TV.
 
