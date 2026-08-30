@@ -186,6 +186,16 @@ What is there:
     cards, which is the shape that band has and what a remote moves through
     well; the phone gets the ordinary collapsed section. Both load on being
     opened, and both drive one ``CommentsStore`` in `Shared/`.
+
+    **Replies are a level down, not an expansion.** A band that shows three
+    cards cannot also show a thread underneath one of them, so selecting a
+    comment replaces the row with that thread — back button, the parent in
+    full (the list truncates it to four lines, so this is also how a long
+    comment gets read), then the replies. Menu goes back to the row rather
+    than closing the panel, and only while a thread is open; otherwise Menu
+    stays AVKit's. `FLIMM_OPEN_COMMENT=<n>` (Debug only) opens the nth thread
+    at launch, because selecting a card needs a remote a simulator does not
+    have.
   - **The Home screen's top shelf shows the pinned feed.** When Flimm is
     focused in the Home screen's top row, tvOS draws a row of what is waiting
     in the feed the app opens on — titles, artwork, and the resume bar on
