@@ -249,10 +249,6 @@ final class TVWatchModel {
         pendingSeek = resume > 0 ? resume : nil
         player.playImmediately(atRate: Float(prefs.playbackSpeed))
         Analytics.play(videoID: detail.id, kind: detail.type.rawValue, audioOnly: audioOnly)
-        // Play it at the level the server measured, exactly as the phone does.
-        loudness.apply(videoID: detail.id, enabled: prefs.normalizeLoudness, client: client) { [weak self] gain in
-            self?.player.volume = LoudnessGain.volume(forGainDB: gain)
-        }
         itemGeneration += 1
         if usingCompatibleRendition {
             // "Waiting" is either overlay: nothing on screen yet, or a stall
@@ -507,6 +503,10 @@ final class TVWatchModel {
             resumedFrom = nil
         }
         activeCue = WebVTT.cue(at: seconds, in: cues)?.text
+        // On a tick rather than on load, and idempotent; see LoudnessNormalizer.
+        loudness.apply(videoID: videoId, enabled: prefs.normalizeLoudness, client: client) { [weak self] gain in
+            self?.player.volume = LoudnessGain.volume(forGainDB: gain)
+        }
         // The same decision the phone applies, from the same place.
         let sponsor = sponsors.tick(at: seconds, segments: video?.sponsorblock ?? [], prefs: prefs, isMuted: player.isMuted)
         if let to = sponsor.skipTo { player.seek(to: CMTime(seconds: to, preferredTimescale: 600)) }

@@ -252,9 +252,18 @@ func (j *HLSJob) Request(i int) {
 	case j.produced[i], cancel == nil, j.steered:
 		j.mu.Unlock()
 		return
-	case i < j.runPos+j.ahead:
-		// The encoder is already heading there; waiting is cheaper than
-		// restarting.
+	case i >= j.runPos && i < j.runPos+j.ahead:
+		// Ahead of the encoder but close: it is heading there, and waiting a
+		// few seconds is cheaper than restarting.
+		//
+		// The bound has to be `i >= runPos` as well. A segment *behind* the
+		// encoder that is not produced is one this run skipped — everything
+		// before a resume point, which the first run leaves for later — and
+		// this run will never write it. Treating that as "heading there" left
+		// the request waiting for the encoder to finish the rest of the video
+		// and wrap around: minutes of nothing, while AVPlayer cancelled every
+		// four seconds and asked again. Those are exactly the requests that
+		// have to re-aim the run.
 		j.mu.Unlock()
 		return
 	case time.Since(j.lastSteer) < hlsSteerInterval:

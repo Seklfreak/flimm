@@ -231,9 +231,6 @@ final class WatchModel {
             duration: detail.duration
         )
         Analytics.play(videoID: detail.id, kind: detail.type.rawValue, audioOnly: audioOnly)
-        loudness.apply(videoID: detail.id, enabled: prefs.normalizeLoudness, client: client) { [weak self] gain in
-            self?.engine.setGain(dB: gain)
-        }
         if audioOnly { engine.detachPiP() }
         if usingCompatibleRendition {
             // "Waiting" is either overlay: nothing on screen yet, or a stall
@@ -533,6 +530,10 @@ final class WatchModel {
         }
         activeCue = WebVTT.cue(at: time, in: cues)?.text
         activeChapter = ChapterMath.index(of: time, in: chapters)
+        // On a tick rather than on load, and idempotent; see LoudnessNormalizer.
+        loudness.apply(videoID: videoId, enabled: prefs.normalizeLoudness, client: client) { [weak self] gain in
+            self?.engine.setGain(dB: gain)
+        }
         // SponsorBlock decides in FlimmKit, so the TV does exactly this too.
         let sponsor = sponsors.tick(at: time, segments: video?.sponsorblock ?? [], prefs: prefs, isMuted: engine.isMuted)
         if let to = sponsor.skipTo { engine.seek(to: to) }

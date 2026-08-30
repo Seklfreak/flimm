@@ -156,6 +156,17 @@ What is there:
     `contentOverlayView` — the tracks are authenticated sidecars an
     `AVPlayerItem` cannot fetch itself. Audio-only plays `audio_aac_url` with
     artwork in the overlay and `MPNowPlayingInfoCenter`.
+  - **A resumed video must never wait on the segments before it.** The
+    compatible rendition is encoded from the resume point first, leaving the
+    part before it for a later run — and `AVPlayer` asks for segments *around*
+    where it was told to start, including a little before it, and cancels any
+    request that has not answered in about four seconds. The job used to treat
+    "behind the encoder" as "the encoder is heading there", so those requests
+    waited for the whole rest of the video to encode and then wrap around,
+    while the player retried every four seconds and showed nothing. A request
+    for an unproduced segment behind the run now re-aims it (see
+    `HLSJob.Request`). It is the difference between a black screen for minutes
+    and picture in under a second.
   - **Comments are a second Info-panel tab on the TV, and a section under the
     video on the phone and iPad.** Selecting a video on tvOS plays it, so
     there is no detail screen to hang comments on, and the panel AVKit gives a

@@ -10,10 +10,25 @@ import Foundation
 @MainActor
 public final class LoudnessNormalizer {
     private var task: Task<Void, Never>?
+    /// What the last request was for, so a caller may ask on every playback
+    /// tick — which is how both players wait for playback to actually begin
+    /// before spending anything on this.
+    private var applied: Key?
+
+    private struct Key: Equatable {
+        let videoID: String
+        let enabled: Bool
+    }
 
     public init() {}
 
     /// Starts normalising a video.
+    ///
+    /// **Call this from playback, not from loading it.** The measurement is a
+    /// decode of the whole file server-side, and asking for it while a
+    /// compatible rendition is still being transcoded puts a second ffmpeg
+    /// between the viewer and their own video. Both players call it on a
+    /// playback tick, which is why it is idempotent per video and per setting.
     ///
     /// The gain is reset to 0 first, and always: a new video plays at its
     /// archived level until its own measurement lands, and a viewer who turns
@@ -25,6 +40,9 @@ public final class LoudnessNormalizer {
         client: APIClient,
         setGain: @escaping @MainActor (Double) -> Void
     ) {
+        let key = Key(videoID: videoID, enabled: enabled)
+        guard applied != key else { return }
+        applied = key
         task?.cancel()
         task = nil
         setGain(0)
@@ -41,5 +59,6 @@ public final class LoudnessNormalizer {
     public func cancel() {
         task?.cancel()
         task = nil
+        applied = nil
     }
 }

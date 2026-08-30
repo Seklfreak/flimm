@@ -600,3 +600,69 @@ func waitFor(t *testing.T, timeout time.Duration, cond func() bool) {
 	}
 	t.Fatal("timed out waiting for the job to make progress")
 }
+
+// The bug this fixes, and the reason a resumed video on an Apple TV sat on a
+// black screen for minutes:
+//
+// A resume starts the run part-way in — segment 20 of 40 — leaving 0..19 for a
+// later run. `AVPlayer` then asks for a segment just *before* where it was
+// told to start (it buffers around the start position, and falls back when a
+// request fails). That segment is one this run has passed and will never
+// write, but the "the encoder is heading there" rule counted it as imminent
+// because it only compared against `runPos + ahead`. So the request waited for
+// the encoder to finish the rest of the video and wrap around, while the
+// player cancelled every four seconds and asked again. It has to re-aim.
+func TestHLSRequestBehindTheRunReaimsIt(t *testing.T) {
+	dir := t.TempDir()
+	callLog := filepath.Join(dir, "calls.log")
+	stub := writeStubHLSFFmpeg(t, dir, callLog, stubOptions{total: 40, segmentDelay: "0.1"})
+	out := filepath.Join(dir, "out")
+	if err := os.MkdirAll(out, 0o750); err != nil {
+		t.Fatal(err)
+	}
+
+	reg := NewHLSRegistry()
+	// Resuming at 80 s of a 160 s video: the first run starts at segment 20.
+	cfg := swConfig(stub, 160, 80)
+	cfg.Registry = reg
+	cfg.SeekAheadSegments = 30
+	prepare, derive := HLS(cfg)
+	if err := prepare(t.Context(), out); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- derive(t.Context(), out) }()
+
+	job := reg.Get(filepath.Base(out))
+	if job == nil {
+		t.Fatal("the job was not published for a segment request to find")
+	}
+	waitFor(t, 5*time.Second, func() bool { return job.Progress() > 0 })
+	// Behind the resume point, and well inside `SeekAheadSegments` of the
+	// encoder — which is what used to make this wait forever.
+	job.Request(15)
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("derive: %v", err)
+		}
+	case <-time.After(30 * time.Second):
+		t.Fatal("the job never finished")
+	}
+
+	calls := strings.Split(readCalls(t, callLog), "\n")
+	if len(calls) < 2 {
+		t.Fatalf("ffmpeg calls =\n%s\nwant the resume run cut short and re-aimed", strings.Join(calls, "\n"))
+	}
+	// 80 s into a 4 s grid: the resume run starts at segment 20.
+	if !strings.HasPrefix(calls[0], "libx264 20 ") {
+		t.Errorf("the first run did not start at the resume point: %q", calls[0])
+	}
+	if !strings.HasPrefix(calls[1], "libx264 15 ") {
+		t.Errorf("the run was not re-aimed at the segment behind it: %q", calls[1])
+	}
+	if got := len(readSegments(t, out)); got != 40 {
+		t.Errorf("the finished rendition has %d segments, want 40", got)
+	}
+}
