@@ -95,10 +95,6 @@ public enum TopShelfStore {
             .appendingPathComponent("TopShelf", isDirectory: true)
     }
 
-    public static func snapshotURL(for group: String = appGroup) -> URL? {
-        directory(for: group)?.appendingPathComponent("snapshot.json")
-    }
-
     public static func imageURL(named name: String, group: String = appGroup) -> URL? {
         directory(for: group)?.appendingPathComponent(name)
     }
@@ -114,28 +110,37 @@ public enum TopShelfStore {
         return url
     }
 
+    /// The key the snapshot is stored under in the group's defaults.
+    private static let snapshotKey = "topShelfSnapshot"
+
+    /// Where the snapshot lives: the App Group's *defaults*, not a file.
+    ///
+    /// tvOS gives an app almost no persistent storage — the group container it
+    /// hands back sits in a purgeable cache area, so a snapshot written there
+    /// can be gone by the time the Home screen asks for it, which looks
+    /// exactly like an app that never wrote one. Defaults are small (this is a
+    /// few hundred bytes) and are not purged that way. The *images* stay in
+    /// the container, because they are the part that must be a file for tvOS
+    /// to load, and the part that can be fetched again if it disappears: an
+    /// entry whose artwork is gone still shows its title.
     public static func read(group: String = appGroup) -> TopShelfSnapshot? {
-        guard let url = snapshotURL(for: group), let data = try? Data(contentsOf: url) else { return nil }
+        guard let defaults = UserDefaults(suiteName: group),
+              let data = defaults.data(forKey: snapshotKey) else {
+            return nil
+        }
         return try? FlimmCoding.decoder.decode(TopShelfSnapshot.self, from: data)
     }
 
     public static func write(_ snapshot: TopShelfSnapshot, group: String = appGroup) throws {
-        guard let dir = directory(for: group), let url = snapshotURL(for: group) else {
-            throw TopShelfError.noContainer
-        }
-        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        // Written whole and by rename: the extension may be reading it in
-        // another process at any moment, and half a JSON file is no snapshot.
-        let tmp = dir.appendingPathComponent("snapshot.json.partial")
-        try FlimmCoding.encoder.encode(snapshot).write(to: tmp, options: .atomic)
-        _ = try? FileManager.default.replaceItemAt(url, withItemAt: tmp)
+        guard let defaults = UserDefaults(suiteName: group) else { throw TopShelfError.noContainer }
+        defaults.set(try FlimmCoding.encoder.encode(snapshot), forKey: snapshotKey)
     }
 
     /// Removes every image the snapshot does not name. The container is small
     /// and shared; a feed that changes daily would otherwise grow it forever.
     public static func pruneImages(keeping snapshot: TopShelfSnapshot, group: String = appGroup) {
         guard let dir = directory(for: group) else { return }
-        let keep = Set(snapshot.entries.compactMap(\.imageName) + ["snapshot.json"])
+        let keep = Set(snapshot.entries.compactMap(\.imageName))
         let files = (try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? []
         for file in files where !keep.contains(file) {
             try? FileManager.default.removeItem(at: dir.appendingPathComponent(file))
@@ -143,6 +148,7 @@ public enum TopShelfStore {
     }
 
     public static func clear(group: String = appGroup) {
+        UserDefaults(suiteName: group)?.removeObject(forKey: snapshotKey)
         guard let dir = directory(for: group) else { return }
         try? FileManager.default.removeItem(at: dir)
     }

@@ -61,14 +61,16 @@ final class TopShelfTests: XCTestCase {
         XCTAssertNil(TopShelfStore.read(group: "group.never.written.\(UUID().uuidString)"))
     }
 
-    /// The snapshot survives a round trip through a real file, which is the
-    /// only way the extension ever sees one.
-    func testSnapshotSurvivesTheFile() throws {
+    /// The snapshot round-trips through the group's defaults, which is how the
+    /// extension sees it — and, on tvOS, the only storage that is not a cache
+    /// the system may purge before the Home screen asks.
+    func testSnapshotSurvivesTheStore() throws {
         guard let dir = TopShelfStore.directory(for: group) else {
             throw XCTSkip("no group container on this platform")
         }
         let group = group
         addTeardownBlock { TopShelfStore.clear(group: group) }
+        XCTAssertNil(TopShelfStore.read(group: group), "the suite should start empty")
         let entry = TopShelfEntry(videoID: "v1", title: "A", channel: "C", imageName: "v1.jpg",
                                   progress: 0.25, duration: 300)
         let snapshot = TopShelfSnapshot(feedName: "Making", entries: [entry], updatedAt: Date())
@@ -78,7 +80,10 @@ final class TopShelfTests: XCTestCase {
         XCTAssertEqual(back.entries.first?.progress, 0.25)
         XCTAssertEqual(back.feedName, "Making")
 
-        // An image the snapshot does not name is swept up; one it does is kept.
+        // An image the snapshot does not name is swept up; one it does is
+        // kept. The directory is the writer's to create — the snapshot itself
+        // no longer lives on disk.
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         try Data("x".utf8).write(to: dir.appendingPathComponent("v1.jpg"))
         try Data("x".utf8).write(to: dir.appendingPathComponent("stale.jpg"))
         TopShelfStore.pruneImages(keeping: snapshot, group: group)

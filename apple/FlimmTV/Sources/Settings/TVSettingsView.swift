@@ -15,6 +15,8 @@ struct TVSettingsView: View {
     @Environment(PlaybackSettings.self) private var playback
 
     @State private var confirmSignOut = false
+    @State private var isPublishing = false
+    @State private var publishResult: String?
     @State private var confirmChangeServer = false
 
     private var prefs: Prefs { app.prefs }
@@ -69,11 +71,43 @@ struct TVSettingsView: View {
     }
 
     /// What the Home screen would show, read back from the shared container.
+    ///
+    /// The three answers are three different problems. No container at all is
+    /// an entitlement that did not survive signing — nothing the app can fix.
+    /// A container with nothing in it means the app never got as far as
+    /// writing. Numbers mean the app's half works and anything still missing
+    /// on the Home screen is tvOS not asking, which is what happens when Flimm
+    /// is not in the top row.
     private var topShelfStatus: String {
+        // Two different halves of the App Group: the defaults the snapshot
+        // lives in, and the container the artwork does. Either one missing is
+        // an entitlement that did not survive signing.
+        guard UserDefaults(suiteName: TopShelfStore.appGroup) != nil,
+              TopShelfStore.directory() != nil else {
+            return "unavailable — no app group"
+        }
         guard let snapshot = TopShelfStore.read(), !snapshot.entries.isEmpty else {
             return "nothing published yet"
         }
         return "\(snapshot.entries.count) from \(snapshot.feedName) · \(Fmt.relativeDay(snapshot.updatedAt))"
+    }
+
+    /// Publishes the shelf on demand, the same way launching the app does —
+    /// reporting what happened either way, because a silent no-op is what made
+    /// this hard to place to begin with.
+    private func publishTopShelf() async {
+        isPublishing = true
+        defer { isPublishing = false }
+        guard app.launchFeed != nil else {
+            publishResult = "No feed to publish: none loaded."
+            return
+        }
+        await TopShelfRefresh.publishLaunchFeed(app: app)
+        if let snapshot = TopShelfStore.read() {
+            publishResult = "Published \(snapshot.entries.count) from \(snapshot.feedName)."
+        } else {
+            publishResult = "Nothing was written — the feed may be empty."
+        }
     }
 
     private func note(_ text: String) -> some View {
@@ -266,6 +300,12 @@ struct TVSettingsView: View {
             // the Home screen simply is not asking — which is the difference
             // between a bug here and Flimm not being in the top row.
             LabeledContent("Top shelf", value: topShelfStatus)
+            // Publishing normally happens when the pinned feed is shown. Doing
+            // it from here as well is what tells "the app cannot write" apart
+            // from "the app never ran the code that writes".
+            Button("Publish to top shelf now") { Task { await publishTopShelf() } }
+                .disabled(isPublishing)
+            if let publishResult { note(publishResult) }
             if !session.requiresSignIn {
                 note("""
                 This server runs with authentication disabled: no sign-in, and \

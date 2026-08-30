@@ -34,7 +34,12 @@ struct TVShell: View {
                 .tag(item)
             }
         }
-        .task { await app.loadIfNeeded() }
+        .task {
+            await app.loadIfNeeded()
+            // The Home screen's row is written here rather than only from the
+            // Feeds screen, so it does not depend on where the viewer goes.
+            await TopShelfRefresh.publishLaunchFeed(app: app)
+        }
         // Full-bleed: the player covers the tab bar rather than sitting under
         // it, which is what a TV player is expected to do.
         .fullScreenCover(item: player.presented) { _ in

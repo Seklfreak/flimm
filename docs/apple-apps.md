@@ -205,13 +205,29 @@ What is there:
     tvOS draws that row **in its own process**, through a small extension
     (`FlimmTopShelf`) that gets a few seconds, no session of ours, and fetches
     artwork itself with none of our headers. So the extension fetches nothing:
-    the *app* writes a snapshot and the thumbnails into a shared **App Group**
-    container whenever it shows the pinned feed, and the extension reads it
+    the *app* writes a snapshot into the App Group's **defaults** and the
+    thumbnails into its **container**, and the extension reads it
     (`TopShelfSnapshot`, `TopShelfWriter`, `TopShelfRefresh`). The alternative
     — sharing the keychain so the extension could call the API — puts two
     processes on one OIDC session, and a rotated refresh token consumed by the
     extension is a signed-out app. The cost is that the shelf is as fresh as
     the last time someone opened Flimm, which is also when it changes.
+
+    **The snapshot is in defaults, not a file, and that is a tvOS rule rather
+    than a preference.** The container tvOS hands back sits in a purgeable
+    cache area — write a snapshot there and it can be gone before the Home
+    screen asks, which is indistinguishable from an app that never wrote one.
+    Defaults are a few hundred bytes and are not purged that way. The images
+    stay in the container because tvOS has to load them as files, and because
+    they are the part that can be fetched again: an entry whose artwork went
+    missing still shows its title.
+
+    **It publishes at launch, not only from the Feeds screen.** Publishing what
+    that screen already shows costs nothing, but it only runs when that screen
+    runs and only when it has something on it — so opening the app on another
+    tab, or onto a pinned feed with nothing unseen left, left the row empty for
+    ever. A feed with nothing unseen falls back to everything in it, because
+    the row exists to offer something.
 
     Two consequences worth knowing. Signing out **clears** the shelf, because
     it lives outside the app where a signed-out person can still see it. And
