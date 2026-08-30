@@ -234,16 +234,23 @@ public struct MediaStream: Codable, Sendable, Hashable {
 public struct VideoStats: Codable, Sendable, Hashable {
     public let views: Int
     public let likes: Int
+    /// The dislike count, or nil when nobody knows it: the deployment has not
+    /// enabled Return YouTube Dislike, or that service has never seen this
+    /// video. Never confuse it with zero — a video with no dislikes and a video
+    /// nothing has counted look nothing alike to a viewer.
+    public let dislikes: Int?
 
-    public init(views: Int = 0, likes: Int = 0) {
+    public init(views: Int = 0, likes: Int = 0, dislikes: Int? = nil) {
         self.views = views
         self.likes = likes
+        self.dislikes = dislikes
     }
 
     public init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         views = try c.decode(.views, or: 0)
         likes = try c.decode(.likes, or: 0)
+        dislikes = try c.decodeIfPresent(Int.self, forKey: .dislikes)
     }
 }
 

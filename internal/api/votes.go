@@ -1,0 +1,49 @@
+package api
+
+import (
+	"context"
+
+	"github.com/Seklfreak/flimm/internal/ta"
+)
+
+// videoStats resolves a video's vote counts.
+//
+// TubeArchivist indexes what YouTube publishes, which since 2021 is views and
+// likes and no dislikes at all. Return YouTube Dislike has the other half —
+// archived while it was still public, estimated from its own users since — and
+// is asked for it when a deployment has turned it on (`RYD_URL`; see the ryd
+// package for why that is off by default).
+//
+// **The pair comes from one source or the counts are not a ratio.** Both of
+// that service's numbers are estimates of the same kind, measured against each
+// other; pairing its dislike count with the archive's like count from download
+// day would put two different vintages either side of a slash and invite
+// arithmetic on them. So when the service knows the video, both counts are
+// its own. Anything else — no service, an outage, a video it has never seen —
+// leaves the archive's like count exactly as it was, and no dislike count at
+// all, because "unknown" and "zero" are different answers and a client must be
+// able to tell them apart.
+func (s *Server) videoStats(ctx context.Context, v *ta.Video) VideoStats {
+	stats := VideoStats{Views: v.Stats.ViewCount, Likes: v.Stats.LikeCount}
+	if s.ryd == nil {
+		return stats
+	}
+	votes, err := s.ryd.Votes(ctx, v.YoutubeID)
+	if err != nil {
+		s.log.Debug("return youtube dislike: lookup failed, showing the archive's counts",
+			"video", v.YoutubeID, "err", err)
+		return stats
+	}
+	if !votes.Found {
+		return stats
+	}
+	// One exception to taking the pair whole: a record with no likes at all
+	// beside an archive that counted plenty is the service missing data, not
+	// the video losing its likes.
+	if votes.Likes > 0 || stats.Likes == 0 {
+		stats.Likes = votes.Likes
+	}
+	dislikes := votes.Dislikes
+	stats.Dislikes = &dislikes
+	return stats
+}

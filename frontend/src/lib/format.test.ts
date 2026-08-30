@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ccLabel, dayHeading, fmtDuration, fmtDurationLong, relativeDay, remainingUnseen, seenLabel } from "./format";
+import { ccLabel, compactCount, dayHeading, fmtDuration, fmtDurationLong, relativeDay, remainingUnseen, seenLabel } from "./format";
 
 const now = new Date(2026, 7, 26, 12, 0, 0); // Wed Aug 26 2026
 const daysAgo = (n: number) => new Date(now.getTime() - n * 86_400_000).toISOString();
@@ -54,5 +54,21 @@ describe("remainingUnseen", () => {
   it("clamps at 0 rather than going negative", () => {
     expect(remainingUnseen(14, 14)).toBe(0);
     expect(remainingUnseen(14, 20)).toBe(0);
+  });
+});
+
+describe("compactCount", () => {
+  it("shortens a vote count without capping it", () => {
+    expect(compactCount(947)).toBe("947");
+    expect(compactCount(1200)).toBe("1.2K");
+    expect(compactCount(45120)).toBe("45.1K");
+    expect(compactCount(452300)).toBe("452K");
+    expect(compactCount(1_200_000)).toBe("1.2M");
+  });
+
+  // formatCount's "10,000+" is a search-result cap; a like count is a real
+  // number and keeping it is the whole point.
+  it("does not borrow the search cap", () => {
+    expect(compactCount(10000)).toBe("10K");
   });
 });

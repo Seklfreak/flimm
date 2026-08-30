@@ -24,6 +24,7 @@ import (
 	"github.com/Seklfreak/flimm/internal/db/sqlc"
 	"github.com/Seklfreak/flimm/internal/dearrow"
 	"github.com/Seklfreak/flimm/internal/media"
+	"github.com/Seklfreak/flimm/internal/ryd"
 	"github.com/Seklfreak/flimm/internal/sponsorblock"
 	"github.com/Seklfreak/flimm/internal/ta"
 )
@@ -64,6 +65,9 @@ type Options struct {
 	// DeArrow supplies crowd-sourced titles and thumbnails; nil disables them
 	// for the deployment, whatever a viewer's preferences say.
 	DeArrow *dearrow.Client
+	// RYD supplies dislike counts, or is nil when RYD_URL is unset — which is
+	// the default. See the ryd package for why that is not mere caution.
+	RYD *ryd.Client
 	// FFmpegPath is the ffmpeg binary used for derivations.
 	FFmpegPath string
 	// HWAccel is the hardware-transcode decision made at start-up; the zero
@@ -117,6 +121,7 @@ type Server struct {
 	// sponsorblock is the segment source; nil uses TA's snapshot.
 	sponsorblock *sponsorblock.Client
 	dearrow      *dearrow.Client
+	ryd          *ryd.Client
 	// minPlaySeconds gates recording a watch event; see Options.
 	minPlaySeconds float64
 	mediaCache     *media.Cache
@@ -163,6 +168,7 @@ func NewServer(o Options) *Server {
 		stalls:         &stallLog{},
 		sponsorblock:   o.Sponsorblock,
 		dearrow:        o.DeArrow,
+		ryd:            o.RYD,
 		minPlaySeconds: cmp.Or(o.MinPlaySeconds, defaultMinPlaySeconds),
 		mediaCache:     o.MediaCache,
 		ffmpegPath:     cmp.Or(o.FFmpegPath, "ffmpeg"),

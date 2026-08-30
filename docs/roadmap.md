@@ -2,6 +2,23 @@
 
 ## Done
 
+- **Vote counts** (2026-08-30) — the dislike count YouTube stopped publishing
+  in 2021, from Return YouTube Dislike, beside the like count nothing had ever
+  displayed. Both halves come from that service when it answers, because its
+  numbers are estimates measured against each other and pairing one of them
+  with the archive's like count from download day would put two vintages either
+  side of a slash.
+
+  `RYD_URL` is **empty by default**, which is the shape this was always going
+  to have: the service has no hash-prefix endpoint like SponsorBlock's or
+  DeArrow's, so it is asked about a video by name, and switching it on tells a
+  third party what this deployment is watching. That is an operator's trade to
+  make knowingly, and [deploy.md](deploy.md) now says so. With it off, `stats`
+  carries no `dislikes` key at all — absent rather than zero, because "nobody
+  counted" and "none" are different facts — and every client hides that half.
+
+  Shipped to web, iPhone, iPad and Apple TV.
+
 - **The Apple TV's dead subtitle menu** (2026-08-30) — the transport bar
   offered a "CC" subtitle option that selected nothing, beside Flimm's own
   subtitles, which work. The HLS master playlist declared nothing about
@@ -604,11 +621,6 @@ are picked up.
 - **Transcripts (Whisper)** — generate subtitles for videos the archive has
   none for, and index them for search *inside* a video. The heaviest item here
   by a wide margin, and the only one that unlocks a new kind of search.
-- **Return YouTube Dislike** — dislike counts, which TA does not index (it
-  carries `view_count` and `like_count` only). Ranked last deliberately: its
-  API takes a bare video id with no hash prefix, so every video detail view
-  would leak watch history to a third party. It would have to be off by
-  default and called out in [deploy.md](deploy.md).
 - **"Most replayed" heatmap** — yt-dlp exposes YouTube's heatmap, which would
   tint the scrubber beside the SponsorBlock segments. It needs a live YouTube
   request per video, though, so the honest place to capture it is at download

@@ -379,6 +379,10 @@ func (s *Server) getVideo(w http.ResponseWriter, r *http.Request) {
 	// them. It never fails the request — it falls back to TA's snapshot.
 	sponsorCh := make(chan []SponsorSegment, 1)
 	go func() { sponsorCh <- s.sponsorSegments(r.Context(), v) }()
+	// The same for the vote counts, which are a second round trip to a second
+	// service and must not add their latency to this one either.
+	votesCh := make(chan VideoStats, 1)
+	go func() { votesCh <- s.videoStats(r.Context(), v) }()
 	items, err := s.overlay(r.Context(), uid, []ta.Video{*v})
 	if err != nil {
 		s.writeDBError(w, "load watch state", err)
@@ -404,7 +408,7 @@ func (s *Server) getVideo(w http.ResponseWriter, r *http.Request) {
 		Streams:      []StreamInfo{},
 		Subtitles:    []SubtitleTrack{},
 		Sponsorblock: <-sponsorCh,
-		Stats:        VideoStats{Views: v.Stats.ViewCount, Likes: v.Stats.LikeCount},
+		Stats:        <-votesCh,
 		Tags:         v.Tags,
 		Playlists:    []VideoPlaylistRef{},
 		Channel:      *ch,

@@ -91,6 +91,15 @@ type Config struct {
 	// their preferences, which is what an offline deployment wants.
 	DeArrowURL string
 
+	// RYDURL is the Return YouTube Dislike API dislike counts are read from.
+	//
+	// Empty — the default — disables it, and deliberately: unlike SponsorBlock
+	// and DeArrow, which are asked about a *hash prefix*, this service is asked
+	// about a video by name, so switching it on tells a third party what is
+	// being watched here. That is the deployment's call to make, not a
+	// default's. See docs/deploy.md.
+	RYDURL string
+
 	// PublicURL is the browser-facing origin: the cookie's Secure flag follows
 	// its scheme and it is the CORS allowed origin.
 	PublicURL string
@@ -135,6 +144,7 @@ func Load() (*Config, error) {
 		SponsorblockURL:        strings.TrimRight(envOrDefault("SPONSORBLOCK_URL", sponsorblock.DefaultBaseURL), "/"),
 		SponsorblockCategories: splitCSV(os.Getenv("SPONSORBLOCK_CATEGORIES")),
 		DeArrowURL:             strings.TrimRight(envOrDefault("DEARROW_URL", dearrow.DefaultBaseURL), "/"),
+		RYDURL:                 strings.TrimRight(os.Getenv("RYD_URL"), "/"),
 		PublicURL:              strings.TrimRight(os.Getenv("PUBLIC_URL"), "/"),
 		CORSOrigins:            splitCSV(os.Getenv("CORS_ORIGINS")),
 		AppName:                getenvDefault("APP_NAME", "Flimm"),
@@ -183,6 +193,11 @@ func Load() (*Config, error) {
 	if cfg.DeArrowURL != "" {
 		if _, err := url.Parse(cfg.DeArrowURL); err != nil {
 			return nil, fmt.Errorf("invalid DEARROW_URL: %w", err)
+		}
+	}
+	if cfg.RYDURL != "" {
+		if _, err := url.Parse(cfg.RYDURL); err != nil {
+			return nil, fmt.Errorf("invalid RYD_URL: %w", err)
 		}
 	}
 	return cfg, nil

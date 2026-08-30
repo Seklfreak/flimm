@@ -3,8 +3,8 @@ import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, EVERYTHING_ID } from "@/lib/api";
 import { invalidateWatchState, keys, useChapters, useComments, useFeeds, usePrefs, useSetWatched, useUpdatePrefs, useUpNext, useVideo } from "@/lib/queries";
-import { fmtDuration, plural, relativeDay } from "@/lib/format";
-import { Avatar, CheckIcon, ErrorState, Spinner } from "@/components/ui";
+import { compactCount, fmtDuration, plural, relativeDay } from "@/lib/format";
+import { Avatar, CheckIcon, ErrorState, Spinner, ThumbIcon } from "@/components/ui";
 import { watchHref } from "@/components/VideoCard";
 import { Player, SUBTITLE_OFF, langName, pickTrack, type PlayerHandle } from "@/player/Player";
 import { Chapters } from "@/player/Chapters";
@@ -138,6 +138,24 @@ export default function WatchPage() {
                 watch on YouTube
               </a>
             </span>
+            {/* The votes, when there are any to show. Counts, not controls:
+                nothing here can vote on YouTube's behalf, and the dislike half
+                only exists when the deployment turned on Return YouTube
+                Dislike (docs/api.md "Vote counts"). */}
+            {(v.stats.likes > 0 || v.stats.dislikes !== undefined) && (
+              <span className="meta flex items-center gap-3" aria-label="vote counts">
+                <span className="flex items-center gap-1.5">
+                  <ThumbIcon />
+                  {compactCount(v.stats.likes)}
+                </span>
+                {v.stats.dislikes !== undefined && (
+                  <span className="flex items-center gap-1.5">
+                    <ThumbIcon down />
+                    {compactCount(v.stats.dislikes)}
+                  </span>
+                )}
+              </span>
+            )}
           </div>
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-3">

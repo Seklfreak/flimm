@@ -155,6 +155,26 @@ export function PinIcon({ size = 14 }: { size?: number }) {
   );
 }
 
+/** A thumb, pointing up or down: the two halves of a vote count. */
+export function ThumbIcon({ size = 14, down = false }: { size?: number; down?: boolean }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinejoin="round"
+      style={down ? { transform: "rotate(180deg)" } : undefined}
+      aria-hidden="true"
+    >
+      <path d="M7 22V10l5-8a2.5 2.5 0 0 1 2.4 3.2L13.5 9H19a2 2 0 0 1 2 2.4l-1.7 8A2 2 0 0 1 17.3 21H7z" />
+      <path d="M7 10H4a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3" />
+    </svg>
+  );
+}
+
 export function HeadphonesIcon({ size = 14 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">

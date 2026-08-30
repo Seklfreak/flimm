@@ -65,7 +65,7 @@ data:
 
 See the [configuration table](../README.md#configuration) for every variable.
 
-### Outbound network (SponsorBlock)
+### Outbound network (SponsorBlock, and the one that is off)
 
 Besides TubeArchivist and the OIDC issuer, the server makes one other outbound
 call: SponsorBlock segments and crowd-sourced chapter names are fetched from
@@ -78,6 +78,26 @@ lookup off and leaves the snapshot TubeArchivist indexed at download time as
 the source. Leaving it on without egress is not fatal — a failed lookup falls
 back to that same snapshot and is not retried for ten minutes — but it costs a
 timeout on the first video detail of each such window.
+
+DeArrow (`DEARROW_URL`) is the same service and the same hash-prefix lookup,
+and nothing is asked of it until a viewer turns crowd titles or thumbnails on.
+
+**`RYD_URL` is the exception, and it is off by default.** Return YouTube
+Dislike is the only source for the dislike count YouTube stopped publishing in
+2021, and it has no hash-prefix endpoint: its API is asked about a video **by
+id**. So switching it on means that every video detail view tells a third
+party, from this server's address, exactly what is being watched here. Answers
+are cached for six hours and a failure is not retried for two minutes, which
+bounds how often — but not what. It is a trade an operator should make
+knowingly rather than inherit from a default:
+
+```yaml
+- name: RYD_URL
+  value: "https://returnyoutubedislikeapi.com"
+```
+
+With it unset, videos simply carry no dislike count and every client hides that
+half of the display.
 
 ## Deployment + Service
 

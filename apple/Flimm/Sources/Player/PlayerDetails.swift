@@ -16,6 +16,7 @@ struct VideoHeader: View {
             Text(meta)
                 .font(.caption)
                 .foregroundStyle(.secondary)
+            votes
             HStack(spacing: 10) {
                 ChannelAvatar(path: video.channel.thumbUrl, name: video.channel.name, size: 40)
                 VStack(alignment: .leading, spacing: 1) {
@@ -33,6 +34,24 @@ struct VideoHeader: View {
             if !video.description.isEmpty {
                 description
             }
+        }
+    }
+
+    /// Counts, not controls: nothing here votes on YouTube's behalf. The
+    /// dislike half exists only when the deployment enabled Return YouTube
+    /// Dislike and that service knows the video, so it appears and disappears
+    /// per video rather than per install (docs/api.md, "Vote counts").
+    @ViewBuilder
+    private var votes: some View {
+        if video.stats.likes > 0 || video.stats.dislikes != nil {
+            HStack(spacing: 14) {
+                Label(Fmt.compact(video.stats.likes), systemImage: "hand.thumbsup")
+                if let dislikes = video.stats.dislikes {
+                    Label(Fmt.compact(dislikes), systemImage: "hand.thumbsdown")
+                }
+            }
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(.secondary)
         }
     }
 

@@ -197,7 +197,9 @@ export interface Video extends Omit<VideoSummary, "channel"> {
   streams?: StreamInfo[];
   subtitles: SubtitleTrack[];
   sponsorblock: SponsorSegment[];
-  stats: { views: number; likes: number };
+  // `dislikes` is absent unless the deployment enabled Return YouTube Dislike
+  // *and* the service knows this video — "nobody knows" rather than "none".
+  stats: { views: number; likes: number; dislikes?: number };
   tags: string[];
   playlists: VideoPlaylistRef[];
   channel: ChannelSummary;

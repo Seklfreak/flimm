@@ -76,6 +76,23 @@ enum Fmt {
         number >= 10000 ? "10,000+" : String(number)
     }
 
+    /// A vote count, shortened: `947`, `45.1K`, `1.2M`.
+    ///
+    /// Not ``count(_:)``, whose `10,000+` is an Elasticsearch hit-cap artifact.
+    /// A video with 45 120 likes has 45 120 likes, and saying "10,000+" about
+    /// it throws away a number nobody capped. The web client's `compactCount`
+    /// is the same rule.
+    static func compact(_ number: Int) -> String {
+        if number < 1000 { return String(number) }
+        let (value, suffix) = number < 1_000_000
+            ? (Double(number) / 1000, "K")
+            : (Double(number) / 1_000_000, "M")
+        // One decimal until the number is big enough not to need it: 1.2K and
+        // 45.1K, but 452K rather than 452.3K.
+        let text = String(format: value < 100 ? "%.1f" : "%.0f", value)
+        return (text.hasSuffix(".0") ? String(text.dropLast(2)) : text) + suffix
+    }
+
     static func plural(_ number: Int, _ one: String, _ many: String? = nil) -> String {
         "\(count(number)) \(number == 1 ? one : (many ?? one + "s"))"
     }

@@ -88,6 +88,22 @@ export function formatCount(n: number): string {
   return n >= 10000 ? "10,000+" : String(n);
 }
 
+/**
+ * A vote count, shortened: `947`, `45.1K`, `1.2M`.
+ *
+ * Not `formatCount`, whose `10,000+` is an Elasticsearch hit-cap artifact — a
+ * video with 45 120 likes has 45 120 likes, and saying "10,000+" about it would
+ * be throwing away a number nobody capped.
+ */
+export function compactCount(n: number): string {
+  if (n < 1000) return String(n);
+  const [value, suffix] = n < 1_000_000 ? [n / 1000, "K"] : [n / 1_000_000, "M"];
+  // One decimal until the number is big enough not to need it: 1.2K, but 45.1K
+  // and then 452K rather than 452.3K.
+  const digits = value < 100 ? 1 : 0;
+  return `${value.toFixed(digits).replace(/\.0$/, "")}${suffix}`;
+}
+
 export function plural(n: number, one: string, many = one + "s"): string {
   return `${formatCount(n)} ${n === 1 ? one : many}`;
 }

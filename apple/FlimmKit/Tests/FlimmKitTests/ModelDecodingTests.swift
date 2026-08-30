@@ -9,6 +9,21 @@ final class ModelDecodingTests: XCTestCase {
         try decoder.decode(type, from: Data(json.utf8))
     }
 
+    /// "Unknown" and "none" are different answers, and only one of them draws
+    /// a control. A server without Return YouTube Dislike omits the key.
+    func testVoteCountsSayWhenNobodyKnowsTheDislikes() throws {
+        let known = try decode(VideoStats.self, #"{"views": 900, "likes": 45120, "dislikes": 1183}"#)
+        XCTAssertEqual(known.likes, 45120)
+        XCTAssertEqual(known.dislikes, 1183)
+
+        let unknown = try decode(VideoStats.self, #"{"views": 900, "likes": 40}"#)
+        XCTAssertNil(unknown.dislikes)
+
+        // A video the service knows and that genuinely has none.
+        let none = try decode(VideoStats.self, #"{"views": 900, "likes": 40, "dislikes": 0}"#)
+        XCTAssertEqual(none.dislikes, 0)
+    }
+
     func testVideoSummary() throws {
         let video = try decode(VideoSummary.self, Fixtures.videoSummary)
         XCTAssertEqual(video.id, "yt-id")

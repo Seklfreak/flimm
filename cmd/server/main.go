@@ -23,6 +23,7 @@ import (
 	"github.com/Seklfreak/flimm/internal/dearrow"
 	"github.com/Seklfreak/flimm/internal/media"
 	"github.com/Seklfreak/flimm/internal/obs"
+	"github.com/Seklfreak/flimm/internal/ryd"
 	"github.com/Seklfreak/flimm/internal/sponsorblock"
 	"github.com/Seklfreak/flimm/internal/ta"
 )
@@ -155,6 +156,21 @@ func main() {
 		log.Info("dearrow disabled; titles and thumbnails come from the archive")
 	}
 
+	// Dislike counts. Off unless someone set RYD_URL: this service is asked
+	// about a video by name rather than by hash prefix, so it is the one
+	// integration here that tells a third party what is being watched.
+	var rydClient *ryd.Client
+	if cfg.RYDURL != "" {
+		rydClient = ryd.New(ryd.Options{
+			BaseURL:   cfg.RYDURL,
+			UserAgent: "flimm/" + version,
+			Log:       log,
+		})
+		log.Info("return youtube dislike", "url", cfg.RYDURL)
+	} else {
+		log.Info("return youtube dislike disabled; videos carry no dislike count")
+	}
+
 	srv := api.NewServer(api.Options{
 		Pool:              pool,
 		TA:                client,
@@ -171,6 +187,7 @@ func main() {
 		MediaCache:        mediaCache,
 		Sponsorblock:      sbClient,
 		DeArrow:           deClient,
+		RYD:               rydClient,
 		FFmpegPath:        cfg.FFmpegPath,
 		HWAccel:           hwaccel,
 		SegmentWait:       cfg.MediaSegmentWait,

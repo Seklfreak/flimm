@@ -62,6 +62,10 @@ type SponsorSegment struct {
 type VideoStats struct {
 	Views int64 `json:"views"`
 	Likes int64 `json:"likes"`
+	// Dislikes is absent unless the deployment enabled Return YouTube Dislike
+	// *and* that service knows the video. Nil is "nobody knows", which is not
+	// the same as a video that has none — see videoStats.
+	Dislikes *int64 `json:"dislikes,omitempty"`
 }
 
 type VideoPlaylistRef struct {
