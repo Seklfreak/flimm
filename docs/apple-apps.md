@@ -249,15 +249,16 @@ What is there:
     ExportOptions; an archive whose embedded bundles are not all named there
     fails to export.
 
-    **When it shows nothing, the question is which nothing.** tvOS only draws a
-    top shelf for an app in the Home screen's **top row** — anywhere else and
-    the extension is never asked, which looks exactly like a broken extension.
-    So the extension answers an empty container with one card ("Open Flimm to
-    fill this row") rather than `nil`: a shelf with that card means tvOS is
-    asking and the app has not written yet, and a shelf with nothing at all
-    means the app is not in the top row. Settings shows the other half —
-    "Top shelf: 8 from Making · today", read back from the shared container, so
-    what the app *wrote* can be checked from the sofa without a Mac attached.
+    **With nothing to show it shows nothing**, answering `nil` so tvOS falls
+    back to the app's own top shelf image — which is what belongs there, and
+    better than a card explaining itself on someone's Home screen. Diagnosis
+    lives in Settings instead: a "Top shelf" row reading "8 from Making ·
+    today", "nothing published yet · would publish Making", or "unavailable —
+    no app group", and a button that publishes on demand and says which step
+    failed. That is enough to tell the three cases apart — the app cannot
+    write, the app has not written, or tvOS is not asking because Flimm is not
+    in the Home screen's top row — without attaching a Mac to read the
+    extension's log.
 
     The phone and iPad have no equivalent and want none: iOS has no top shelf,
     and a widget is a different feature with a different design.

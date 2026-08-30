@@ -12,12 +12,6 @@ final class TopShelfTests: XCTestCase {
         XCTAssertEqual(TopShelfLink.videoID(from: url), "yt-id_123")
     }
 
-    /// The shelf's "nothing here yet" card opens the app and plays nothing.
-    func testTheOpenLinkIsNotAVideo() {
-        XCTAssertEqual(TopShelfLink.open.absoluteString, "dev.winktech.flimm.tv://open")
-        XCTAssertNil(TopShelfLink.videoID(from: TopShelfLink.open))
-    }
-
     /// The app is opened with all sorts of URLs; only the shelf's own mean
     /// "play this".
     func testOtherURLsAreNotVideos() {

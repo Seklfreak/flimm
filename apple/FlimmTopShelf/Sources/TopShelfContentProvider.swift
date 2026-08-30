@@ -13,30 +13,16 @@ final class TopShelfContentProvider: TVTopShelfContentProvider {
     override func loadTopShelfContent(completionHandler: @escaping (TVTopShelfContent?) -> Void) {
         guard let snapshot = TopShelfStore.read(), !snapshot.entries.isEmpty else {
             // Nothing written yet: nobody has signed in, or the app has not
-            // been opened since it was installed. One card saying so beats an
-            // empty shelf — and it is the only way to tell this apart from
-            // tvOS never asking at all, which is what happens when Flimm is
-            // not in the Home screen's top row. Silence there would look
-            // identical to a broken extension.
-            completionHandler(placeholder())
+            // been opened since it was installed. `nil` hands the shelf back
+            // to tvOS, which shows the app's own top shelf image — the right
+            // thing to look at, and better than a card explaining itself.
+            // What went wrong, when something has, is Settings' job.
+            completionHandler(nil)
             return
         }
         let collection = TVTopShelfItemCollection(items: snapshot.entries.map(item(for:)))
         collection.title = snapshot.feedName
         completionHandler(TVTopShelfSectionedContent(sections: [collection]))
-    }
-
-    /// The shelf when there is nothing to put on it.
-    private func placeholder() -> TVTopShelfContent {
-        let item = TVTopShelfSectionedItem(identifier: "flimm-empty")
-        item.title = "Open Flimm to fill this row"
-        item.imageShape = .hdtv
-        let action = TVTopShelfAction(url: TopShelfLink.open)
-        item.displayAction = action
-        item.playAction = action
-        let collection = TVTopShelfItemCollection(items: [item])
-        collection.title = "Flimm"
-        return TVTopShelfSectionedContent(sections: [collection])
     }
 
     private func item(for entry: TopShelfEntry) -> TVTopShelfSectionedItem {

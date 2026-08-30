@@ -18,11 +18,6 @@ public enum TopShelfLink {
         return components.url ?? URL(string: "\(TopShelfStore.urlScheme)://play")!
     }
 
-    /// `dev.winktech.flimm.tv://open` — just bring the app up, no video.
-    public static var open: URL {
-        URL(string: "\(TopShelfStore.urlScheme)://open")!
-    }
-
     /// The video id in a link the app was opened with, or nil when the URL is
     /// something else entirely.
     public static func videoID(from url: URL) -> String? {
