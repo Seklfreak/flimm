@@ -206,6 +206,12 @@ targets:
         CFBundleDisplayName: Flimm Top Shelf
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        # App Store validation rejects a tvOS *extension* without this
+        # ("has a 64-bit architecture slice, so you must include the arm64
+        # value"), even though the app target it is embedded in needs no such
+        # key. It costs an upload to find out, so it stays written down.
+        UIRequiredDeviceCapabilities:
+          - arm64
         NSExtension:
           NSExtensionPointIdentifier: com.apple.tv-top-shelf
           NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).TopShelfContentProvider
