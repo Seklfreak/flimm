@@ -19,6 +19,8 @@ name: TestFlight
 #   APPLE_DIST_CERT_PASSWORD                          - the .p12 export password
 #   APP_STORE_PROFILE                                 - base64 of the iOS App Store .mobileprovision
 #   APP_STORE_TV_PROFILE                              - base64 of the tvOS App Store .mobileprovision
+#   APP_STORE_TV_TOPSHELF_PROFILE                     - base64 of the App Store profile for the tvOS
+#                                                       top shelf extension (dev.winktech.flimm.tv.topshelf)
 #   SENTRY_DSN                                        - baked into the shipped apps (crash reporting)
 # Repo variables (Settings -> Variables):
 #   UMAMI_URL / UMAMI_WEBSITE_ID                      - baked into the shipped apps (usage analytics);
@@ -55,6 +57,11 @@ jobs:
             bundle_id: dev.winktech.flimm.tv
             sdk: tvOS
             profile_secret: APP_STORE_TV_PROFILE
+            # The app embeds the top shelf extension, which is signed with its
+            # own profile — an archive is only exportable when every bundle it
+            # contains is named in ExportOptions.
+            extension_bundle_id: dev.winktech.flimm.tv.topshelf
+            extension_profile_secret: APP_STORE_TV_TOPSHELF_PROFILE
     name: testflight (${{ matrix.sdk }})
     steps:
       - uses: actions/checkout@v7
@@ -102,6 +109,7 @@ jobs:
           CERT_P12: ${{ secrets.APPLE_DIST_CERT_P12 }}
           CERT_PW: ${{ secrets.APPLE_DIST_CERT_PASSWORD }}
           PROFILE_B64: ${{ secrets[matrix.profile_secret] }}
+          EXT_PROFILE_B64: ${{ secrets[matrix.extension_profile_secret] }}
         run: |
           set -euo pipefail
           KEYCHAIN="$RUNNER_TEMP/build.keychain-db"
@@ -128,6 +136,17 @@ jobs:
           cp "$RUNNER_TEMP/pp.mobileprovision" "$HOME/Library/MobileDevice/Provisioning Profiles/$UUID.mobileprovision"
           echo "PROFILE_NAME=$NAME" >> "$GITHUB_ENV"
           echo "Installed profile '$NAME' ($UUID)"
+
+          # The embedded extension's own profile, when this scheme has one.
+          if [ -n "${EXT_PROFILE_B64:-}" ]; then
+            echo "$EXT_PROFILE_B64" | base64 --decode > "$RUNNER_TEMP/ext.mobileprovision"
+            security cms -D -i "$RUNNER_TEMP/ext.mobileprovision" > "$RUNNER_TEMP/ext.plist"
+            EXT_UUID=$(/usr/libexec/PlistBuddy -c "Print :UUID" "$RUNNER_TEMP/ext.plist")
+            EXT_NAME=$(/usr/libexec/PlistBuddy -c "Print :Name" "$RUNNER_TEMP/ext.plist")
+            cp "$RUNNER_TEMP/ext.mobileprovision" "$HOME/Library/MobileDevice/Provisioning Profiles/$EXT_UUID.mobileprovision"
+            echo "EXT_PROFILE_NAME=$EXT_NAME" >> "$GITHUB_ENV"
+            echo "Installed extension profile '$EXT_NAME' ($EXT_UUID)"
+          fi
 
       - name: Archive (manual signing)
         if: steps.gate.outputs.ready == 'true'
@@ -189,7 +208,14 @@ jobs:
           ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
           SCHEME: ${{ matrix.scheme }}
           BUNDLE_ID: ${{ matrix.bundle_id }}
+          EXT_BUNDLE_ID: ${{ matrix.extension_bundle_id }}
         run: |
+          # Every embedded bundle needs its own line here, or the export fails
+          # with "no profile for <bundle id>".
+          EXTENSION_ENTRY=""
+          if [ -n "${EXT_BUNDLE_ID:-}" ] && [ -n "${EXT_PROFILE_NAME:-}" ]; then
+            EXTENSION_ENTRY="  <key>${EXT_BUNDLE_ID}</key><string>${EXT_PROFILE_NAME}</string>"
+          fi
           cat > build/ExportOptions.plist <<PLIST
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -203,6 +229,7 @@ jobs:
             <key>provisioningProfiles</key>
             <dict>
               <key>${BUNDLE_ID}</key><string>${PROFILE_NAME}</string>
+            ${EXTENSION_ENTRY}
             </dict>
           </dict>
           </plist>

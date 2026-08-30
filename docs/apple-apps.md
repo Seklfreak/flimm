@@ -156,6 +156,43 @@ What is there:
     `contentOverlayView` — the tracks are authenticated sidecars an
     `AVPlayerItem` cannot fetch itself. Audio-only plays `audio_aac_url` with
     artwork in the overlay and `MPNowPlayingInfoCenter`.
+  - **The Home screen's top shelf shows the pinned feed.** When Flimm is
+    focused in the Home screen's top row, tvOS draws a row of what is waiting
+    in the feed the app opens on — titles, artwork, and the resume bar on
+    anything part-watched — and selecting one opens the app straight into
+    playback.
+
+    tvOS draws that row **in its own process**, through a small extension
+    (`FlimmTopShelf`) that gets a few seconds, no session of ours, and fetches
+    artwork itself with none of our headers. So the extension fetches nothing:
+    the *app* writes a snapshot and the thumbnails into a shared **App Group**
+    container whenever it shows the pinned feed, and the extension reads it
+    (`TopShelfSnapshot`, `TopShelfWriter`, `TopShelfRefresh`). The alternative
+    — sharing the keychain so the extension could call the API — puts two
+    processes on one OIDC session, and a rotated refresh token consumed by the
+    extension is a signed-out app. The cost is that the shelf is as fresh as
+    the last time someone opened Flimm, which is also when it changes.
+
+    Two consequences worth knowing. Signing out **clears** the shelf, because
+    it lives outside the app where a signed-out person can still see it. And
+    the shelf's actions are URLs — the only channel an extension has back to
+    the app — which is why the TV target has a `CFBundleURLTypes` at all
+    (`dev.winktech.flimm.tv://play/<id>`, built and parsed by `TopShelfLink`);
+    it is not a sign-in redirect, which tvOS has no way to receive.
+
+    **It needs provisioning that the other targets do not**: the App Group on
+    both the app and the extension, the extension's own bundle id
+    (`dev.winktech.flimm.tv.topshelf`) and its own App Store profile. An App
+    Group cannot be created through the App Store Connect API — `/v1/appGroups`
+    is not a resource — so that step is done in the developer portal by hand,
+    and the app's own profile has to be regenerated afterwards to carry the
+    new entitlement. CI installs both profiles (`APP_STORE_TV_PROFILE` and
+    `APP_STORE_TV_TOPSHELF_PROFILE`) and names both bundle ids in
+    ExportOptions; an archive whose embedded bundles are not all named there
+    fails to export.
+
+    The phone and iPad have no equivalent and want none: iOS has no top shelf,
+    and a widget is a different feature with a different design.
   - **Scrub previews are the TV's one stated gap.** The web, phone and iPad
     draw `preview_url`'s stills above the scrubber; the TV cannot be handed
     them, because the scrubber there is `AVPlayerViewController`'s and AVKit

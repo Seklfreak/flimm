@@ -292,7 +292,8 @@ The **native Apple apps** are built and live in `apple/` on the shared
 navigation model, a custom `AVPlayer` shell with resume, chapters,
 SponsorBlock, subtitles, Picture in Picture and audio-only playback) and an
 **Apple TV** app (focus-driven grids and `AVPlayerViewController`, signing in
-with the OIDC device authorization grant since tvOS has no browser). Both ship
+with the OIDC device authorization grant since tvOS has no browser, and the
+pinned feed on the Home screen's top shelf). Both ship
 to TestFlight on every version tag — see [docs/roadmap.md](docs/roadmap.md) and the plan in
 [docs/apple-apps.md](docs/apple-apps.md).
 

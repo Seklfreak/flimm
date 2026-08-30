@@ -114,6 +114,15 @@ targets:
         product: FlimmKit
       - package: Sentry
         product: Sentry
+      # The Home screen's top shelf. Embedded in the app, and the only reason
+      # this target has an App Group: the extension runs in another process
+      # and can only see what the app leaves in the shared container.
+      - target: FlimmTopShelf
+    entitlements:
+      path: FlimmTV/FlimmTV.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.dev.winktech.flimm
     settings:
       base:
         # A separate record from the phone app: tvOS is its own platform in
@@ -152,7 +161,51 @@ targets:
         # them with the screen saver up.
         UIBackgroundModes:
           - audio
-        # No CFBundleURLTypes: tvOS has no ASWebAuthenticationSession and no
-        # browser, so sign-in is the OIDC device authorization grant and no
-        # redirect ever comes back to the app.
+        # Not for sign-in: tvOS has no ASWebAuthenticationSession and no
+        # browser, so the device authorization grant never redirects back
+        # here. This scheme exists for the top shelf, whose actions are URLs
+        # the system opens in the app — see TopShelfLink.
+        CFBundleURLTypes:
+          - CFBundleTypeRole: Editor
+            CFBundleURLName: dev.winktech.flimm.tv
+            CFBundleURLSchemes:
+              - dev.winktech.flimm.tv
         UIUserInterfaceStyle: Automatic
+
+  # The top shelf extension: a reader over the snapshot the app writes into
+  # the shared container. It has no network, no token and no UI of its own.
+  FlimmTopShelf:
+    type: app-extension
+    platform: tvOS
+    sources:
+      - FlimmTopShelf/Sources
+    dependencies:
+      - package: FlimmKit
+        product: FlimmKit
+    entitlements:
+      path: FlimmTopShelf/FlimmTopShelf.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.dev.winktech.flimm
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.winktech.flimm.tv.topshelf
+        DEVELOPMENT_TEAM: $(DEVELOPMENT_TEAM)
+        CODE_SIGN_STYLE: Automatic
+        MARKETING_VERSION: 1.0.0
+        CURRENT_PROJECT_VERSION: 1
+        TARGETED_DEVICE_FAMILY: "3"
+      configs:
+        Release:
+          CODE_SIGN_STYLE: Manual
+          CODE_SIGN_IDENTITY: Apple Distribution
+          PROVISIONING_PROFILE_SPECIFIER: Flimm TV Top Shelf App Store
+    info:
+      path: FlimmTopShelf/Info.plist
+      properties:
+        CFBundleDisplayName: Flimm Top Shelf
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.tv-top-shelf
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).TopShelfContentProvider

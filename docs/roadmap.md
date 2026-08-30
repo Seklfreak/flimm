@@ -2,6 +2,25 @@
 
 ## Done
 
+- **Apple TV top shelf** (2026-08-29) — the Home screen row above the icons now
+  shows the pinned feed: what is waiting, with artwork, and a resume bar on
+  anything part-watched. Selecting one opens Flimm straight into playback.
+
+  tvOS draws that row in its own process, through an extension with no session
+  of ours that fetches artwork itself without our headers — so the extension
+  fetches nothing. The app writes a snapshot and the thumbnails into a shared
+  App Group container whenever it shows the pinned feed, and the extension is a
+  reader. Sharing the keychain instead would have put two processes on one OIDC
+  session, where a rotated refresh token consumed by the extension is a
+  signed-out app; the price of not doing that is a shelf as fresh as the last
+  time someone opened the app, which is also when it changes. Signing out
+  clears it, because it lives outside the app.
+
+  The provisioning is the part with teeth: an App Group on both bundles, a
+  bundle id and App Store profile for the extension, and a regenerated profile
+  for the app — an App Group cannot be created through the App Store Connect
+  API at all. See [apple-apps.md](apple-apps.md).
+
 - **Loudness normalisation** (2026-08-29) — one EBU R128 pass per video
   (ffmpeg's `loudnorm`, measure-only, `-vn` so only the audio is decoded), the
   numbers cached like any other derived media, and `GET /videos/{id}/loudness`

@@ -11,6 +11,8 @@ bin/
 apple/*.xcodeproj/
 apple/Config/Secrets.xcconfig
 apple/*/Info.plist
+# Entitlements are written by xcodegen from project.yml, like the Info.plists.
+apple/*/*.entitlements
 apple/**/.build/
 apple/**/DerivedData/
 apple/**/xcuserdata/

@@ -63,6 +63,12 @@ feeds without leaving the page.
   position.
 - Seen state and resume position are written back to TubeArchivist, so the
   stock TA UI stays consistent.
+- **The Apple TV's Home screen offers the pinned feed.** Focusing Flimm in the
+  top row shows what is waiting in it, with a resume bar on anything
+  part-watched, and selecting one plays it — the same list the app opens on,
+  one step earlier. It is what the app last saw rather than a live query: the
+  row is drawn by tvOS in a process that has no session, so the app leaves it
+  ready. Signing out takes it down.
 - **Videos play at an even volume.** Each one is measured once against a
   broadcast loudness target, and the loud ones are turned down to meet it, so
   moving between channels stops meaning reaching for the volume. Only *down*:

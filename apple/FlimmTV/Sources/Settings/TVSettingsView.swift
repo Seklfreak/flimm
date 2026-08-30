@@ -87,7 +87,12 @@ struct TVSettingsView: View {
         }
         .onAppear { Analytics.screen(.settings) }
         .confirmationDialog("Sign out?", isPresented: $confirmSignOut, titleVisibility: .visible) {
-            Button("Sign out", role: .destructive) { Task { await session.signOut() } }
+            Button("Sign out", role: .destructive) {
+                // The top shelf lives on the Home screen, outside the app, so
+                // signing out has to take it down too.
+                TopShelfRefresh.clear()
+                Task { await session.signOut() }
+            }
             Button("Cancel", role: .cancel) {}
         }
         .confirmationDialog("Change server?", isPresented: $confirmChangeServer, titleVisibility: .visible) {

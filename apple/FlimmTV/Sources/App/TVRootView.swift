@@ -39,6 +39,14 @@ struct TVRootView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background { TVPageBackground() }
         .task(id: sessionKey) { syncAppModel() }
+        // A top-shelf item opened from the Home screen. The shelf's actions
+        // are URLs — that is the only channel tvOS gives an extension — and
+        // playing straight away is what selecting a video does everywhere
+        // else in this app.
+        .onOpenURL { url in
+            guard let id = TopShelfLink.videoID(from: url) else { return }
+            player.play(id)
+        }
     }
 
     /// Changes when the session or the server does, which is exactly when the

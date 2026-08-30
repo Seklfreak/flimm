@@ -42,6 +42,9 @@ struct TVFeedsView: View {
         // the cache; coming back to a stale "Unseen" grid is the bug.
         .reloadsWhenPlayerCloses(request: player.request, isStale: isPagerStale) {
             await rebuildPager()
+            // Watching something changes the shelf too: that video is either
+            // gone from an unseen feed or carrying a resume bar now.
+            await publishTopShelf()
         }
     }
 
@@ -190,6 +193,7 @@ struct TVFeedsView: View {
         let key = "feed:\(id):\(view.rawValue)"
         if let cached: Pager<VideoSummary> = app.pagers.existing(key) {
             pager = cached
+            await publishTopShelf()
             return
         }
         let next = Pager<VideoSummary> { page, cursor in
@@ -198,6 +202,15 @@ struct TVFeedsView: View {
         app.pagers.insert(next, for: key)
         pager = next
         await next.reload()
+        await publishTopShelf()
+    }
+
+    /// Hands the Home screen what this screen is showing — but only for the
+    /// feed the app opens on, and only its first page. Browsing another feed
+    /// does not change what the shelf should offer.
+    private func publishTopShelf() async {
+        guard let feed, feed.id == app.launchFeed?.id, let items = pager?.items else { return }
+        await TopShelfRefresh.publish(feed: feed, videos: items, client: app.client)
     }
 
     private func markSeen() async {
