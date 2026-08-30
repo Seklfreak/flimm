@@ -115,6 +115,13 @@ func Measure(ffmpegPath string, log *slog.Logger, open RangeSourceFunc) DirDeriv
 
 		args := []string{
 			"-hide_banner", "-nostats",
+			// One thread. This runs *while the viewer watches the same video*,
+			// beside a transcode of it, and `loudnorm` is a software decode of
+			// the whole audio track — on a long file it will happily take
+			// every core it is given and slow down the encode the viewer is
+			// actually waiting on. One core still analyses far faster than
+			// realtime, which is all this has to be.
+			"-threads", "1",
 			"-i", src,
 			"-vn",
 			"-af", fmt.Sprintf("loudnorm=I=%s:TP=%s:print_format=json",
