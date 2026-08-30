@@ -147,7 +147,12 @@ TA_URL=http://localhost:8001 TA_TOKEN=dev SPONSORBLOCK_URL= \
   -data <hex of {"baseURL":…,"config":…}>`), and the TV app opens a video
   directly in **Debug** builds when `FLIMM_PLAY_VIDEO=<id>` is in its
   environment (`SIMCTL_CHILD_FLIMM_PLAY_VIDEO=… xcrun simctl launch …`), which
-  is the only way to reach a screen that exists during playback.
+  is the only way to reach a screen that exists during playback. The same door
+  opens a tab (`FLIMM_OPEN_TAB`), a feed (`FLIMM_OPEN_FEED=<name>`) and puts
+  the remote's focus on a feed chip (`FLIMM_FOCUS_FEED=<name>`) — **focus is
+  invisible to a screenshot otherwise**, and a state nobody can see is a state
+  nobody checks: the feed row shipped for weeks with no focus indication at
+  all.
 - **A screen that only appears while something is slow** — the
   compatible-rendition wait, most of all — can be held open by taking the
   single transcode slot first: run the server with `MEDIA_TRANSCODE_JOBS=1`,

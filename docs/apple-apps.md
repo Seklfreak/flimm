@@ -156,6 +156,17 @@ What is there:
     `contentOverlayView` — the tracks are authenticated sidecars an
     `AVPlayerItem` cannot fetch itself. Audio-only plays `audio_aac_url` with
     artwork in the overlay and `MPNowPlayingInfoCenter`.
+  - **Focus and selection are two different things on a TV.** The feed picker
+    marks which feed you are looking at with an accent capsule — and that
+    capsule is painted inside the button's label, so the fill wraps the words
+    rather than the button's frame. Which left `.borderless` with nothing to
+    repaint on focus, and moving the remote along the row showed nothing at
+    all: you could not see which chip you were about to press, only which feed
+    was pinned. The chip now draws both — white and lifted for focus, accent
+    for the current feed, and an accent ring when it is both. `FLIMM_OPEN_FEED`
+    and `FLIMM_FOCUS_FEED` (Debug only) put the app on a given feed and the
+    remote on a given chip, because focus is the half of that row a simulator
+    screenshot cannot otherwise reach.
   - **A resumed video must never wait on the segments before it.** The
     compatible rendition is encoded from the resume point first, leaving the
     part before it for a later run — and `AVPlayer` asks for segments *around*
