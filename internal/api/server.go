@@ -184,6 +184,9 @@ func (s *Server) Router() http.Handler {
 	// RealIP is deprecated for spoofing reasons when directly exposed; the app
 	// sits behind a trusted reverse proxy and the IP is only logged.
 	r.Use(middleware.RealIP) //nolint:staticcheck // trusted-proxy-only; logging
+	// The media token can travel in a query string (see mediaAuthMiddleware),
+	// and the access log must not become the place it leaks.
+	r.Use(redactMediaToken)
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
 	// Inside Recoverer on purpose: a panic is captured to Sentry first, then

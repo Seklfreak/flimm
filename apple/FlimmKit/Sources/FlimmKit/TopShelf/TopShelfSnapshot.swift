@@ -21,10 +21,12 @@ public struct TopShelfEntry: Codable, Sendable, Hashable, Identifiable {
     public let title: String
     /// The channel name — the top shelf draws it under the title.
     public let channel: String
-    /// The thumbnail's file name inside the shared container, or nil when it
-    /// could not be fetched. An entry without one still shows, with tvOS's own
-    /// placeholder, rather than being dropped.
-    public let imageName: String?
+    /// An absolute URL tvOS can fetch the artwork from, carrying its own
+    /// media token — the system draws the shelf in a process with no session
+    /// of ours, and **the App Group container is not writable on tvOS**, so a
+    /// downloaded file is not an option. Nil when no token could be got; the
+    /// entry still shows, with tvOS's own placeholder.
+    public let imageURL: String?
     /// 0…1, drawn as the resume bar on the item. 0 for an unwatched video.
     public let progress: Double
     public let duration: Double
@@ -38,21 +40,22 @@ public struct TopShelfEntry: Codable, Sendable, Hashable, Identifiable {
     /// anywhere.
     private enum CodingKeys: String, CodingKey {
         case videoID = "videoId"
-        case title, channel, imageName, progress, duration
+        case imageURL = "imageUrl"
+        case title, channel, progress, duration
     }
 
     public init(
         videoID: String,
         title: String,
         channel: String,
-        imageName: String?,
+        imageURL: String?,
         progress: Double,
         duration: Double
     ) {
         self.videoID = videoID
         self.title = title
         self.channel = channel
-        self.imageName = imageName
+        self.imageURL = imageURL
         self.progress = progress
         self.duration = duration
     }
@@ -73,12 +76,18 @@ public struct TopShelfSnapshot: Codable, Sendable, Hashable {
     }
 }
 
-/// Where the snapshot and its images live: the App Group container both the
-/// app and the extension can reach.
+/// Where the snapshot lives: the App Group's shared defaults.
+///
+/// **Not a file.** On tvOS an App Group shares *preferences*, not a writable
+/// directory — `containerURL(forSecurityApplicationGroupIdentifier:)` returns a
+/// path the app cannot write to, and trying earned "You don't have permission
+/// to save the file". The simulator does not enforce that, which is exactly
+/// how it shipped. Artwork therefore travels as a URL tvOS fetches itself
+/// rather than as a file we place for it.
 public enum TopShelfStore {
     /// The App Group. Both the app and the extension carry it as an
-    /// entitlement; without it `containerURL` is nil and the shelf simply
-    /// stays empty.
+    /// entitlement; without it there are no shared defaults and the shelf
+    /// simply stays empty.
     public static let appGroup = "group.dev.winktech.flimm"
 
     /// The URL scheme the top shelf's actions use to open a video. tvOS has no
@@ -86,29 +95,8 @@ public enum TopShelfStore {
     public static let urlScheme = "dev.winktech.flimm.tv"
 
     /// How many videos the row holds. The top shelf scrolls, but nobody
-    /// scrolls a Home screen shelf far, and every item costs a thumbnail
-    /// download when the snapshot is rebuilt.
+    /// scrolls a Home screen shelf far.
     public static let maxEntries = 8
-
-    public static func directory(for group: String = appGroup) -> URL? {
-        FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: group)?
-            .appendingPathComponent("TopShelf", isDirectory: true)
-    }
-
-    public static func imageURL(named name: String, group: String = appGroup) -> URL? {
-        directory(for: group)?.appendingPathComponent(name)
-    }
-
-    /// The file URL for an entry's artwork, if it has one and it is still on
-    /// disk. The extension hands this to tvOS, which reads the file itself —
-    /// which is the whole reason the images are downloaded up front.
-    public static func imageURL(for entry: TopShelfEntry, group: String = appGroup) -> URL? {
-        guard let name = entry.imageName, let url = imageURL(named: name, group: group),
-              FileManager.default.fileExists(atPath: url.path) else {
-            return nil
-        }
-        return url
-    }
 
     /// The key the snapshot is stored under in the group's defaults.
     private static let snapshotKey = "topShelfSnapshot"
@@ -136,34 +124,18 @@ public enum TopShelfStore {
         defaults.set(try FlimmCoding.encoder.encode(snapshot), forKey: snapshotKey)
     }
 
-    /// Removes every image the snapshot does not name. The container is small
-    /// and shared; a feed that changes daily would otherwise grow it forever.
-    public static func pruneImages(keeping snapshot: TopShelfSnapshot, group: String = appGroup) {
-        guard let dir = directory(for: group) else { return }
-        let keep = Set(snapshot.entries.compactMap(\.imageName))
-        let files = (try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? []
-        for file in files where !keep.contains(file) {
-            try? FileManager.default.removeItem(at: dir.appendingPathComponent(file))
-        }
-    }
-
     public static func clear(group: String = appGroup) {
         UserDefaults(suiteName: group)?.removeObject(forKey: snapshotKey)
-        guard let dir = directory(for: group) else { return }
-        try? FileManager.default.removeItem(at: dir)
     }
 }
 
 public enum TopShelfError: Error, LocalizedError {
-    /// The App Group entitlement is missing, so there is nowhere both
-    /// processes can see.
-    case noContainer
-    /// The group's defaults would not take the snapshot.
+    /// The group's defaults would not take the snapshot — the App Group
+    /// entitlement is missing.
     case noDefaults
 
     public var errorDescription: String? {
         switch self {
-        case .noContainer: "no app group container"
         case .noDefaults: "no app group defaults"
         }
     }

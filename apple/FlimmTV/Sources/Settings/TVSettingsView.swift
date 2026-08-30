@@ -79,11 +79,7 @@ struct TVSettingsView: View {
     /// on the Home screen is tvOS not asking, which is what happens when Flimm
     /// is not in the top row.
     private var topShelfStatus: String {
-        // Two different halves of the App Group: the defaults the snapshot
-        // lives in, and the container the artwork does. Either one missing is
-        // an entitlement that did not survive signing.
-        guard UserDefaults(suiteName: TopShelfStore.appGroup) != nil,
-              TopShelfStore.directory() != nil else {
+        guard UserDefaults(suiteName: TopShelfStore.appGroup) != nil else {
             return "unavailable — no app group"
         }
         guard let snapshot = TopShelfStore.read(), !snapshot.entries.isEmpty else {

@@ -17,11 +17,20 @@ Base path: `/api/v1`. JSON, snake_case. Times are RFC 3339 UTC. IDs are strings.
   and upserts a `users` row keyed by the token `sub`.
 - `AUTH_DISABLED=true` (dev only) skips validation and uses a fixed dev user.
 - Media (`/media/*`) is fetched by `<video>` / `AVPlayer`, which cannot always
-  set headers, so media accepts **either** a Bearer header **or** an `flimm_media`
-  cookie. `POST /api/v1/session/media` (authenticated) sets that HttpOnly,
-  SameSite=Lax, Secure cookie containing a signed, short-lived (12h) media token;
-  the web app calls it after login and again when a media request returns 401.
-  Native clients pass the Bearer header via `AVURLAssetHTTPHeaderFieldsKey`.
+  set headers, so media accepts **any** of three: a Bearer header, an
+  `flimm_media` cookie, or the same token as a `media_token` query parameter.
+  `POST /api/v1/session/media` (authenticated) sets that HttpOnly, SameSite=Lax,
+  Secure cookie and **returns the token in its body**
+  (`{ "token": "…", "expires_in": 43200 }`); the web app calls it after login and
+  again when a media request returns 401, and ignores the body. Native clients
+  pass the Bearer header via `AVURLAssetHTTPHeaderFieldsKey`.
+- **The query parameter is for a fetcher that can set neither.** tvOS draws the
+  Home screen's top shelf itself, in a process with no session of ours, from
+  URLs an app extension hands it — a URL that carries its own credential is the
+  only way that artwork can be authenticated at all. It is the same 12-hour,
+  media-only token, and it is **redacted from the access log** before anything
+  formats the request line, because a credential in a log is a credential given
+  away.
 - OIDC discovery for clients: `GET /api/v1/config` (unauthenticated) returns
   `{ "app_name", "oidc_issuer", "oidc_client_id", "version", "auth_disabled",
   "analytics_disabled" }` so native apps need only the server URL.

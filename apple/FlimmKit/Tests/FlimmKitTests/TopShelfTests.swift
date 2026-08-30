@@ -35,9 +35,10 @@ final class TopShelfTests: XCTestCase {
         let snapshot = TopShelfSnapshot(
             feedName: "Making",
             entries: [
-                TopShelfEntry(videoID: "v1", title: "A", channel: "Chan", imageName: "v1-abc.jpg",
+                TopShelfEntry(videoID: "v1", title: "A", channel: "Chan",
+                              imageURL: "https://flimm.example.com/media/thumb/video/v1?media_token=t",
                               progress: 0.4, duration: 600),
-                TopShelfEntry(videoID: "v2", title: "B", channel: "Chan", imageName: nil,
+                TopShelfEntry(videoID: "v2", title: "B", channel: "Chan", imageURL: nil,
                               progress: 0, duration: 90)
             ],
             updatedAt: Date(timeIntervalSince1970: 1_700_000_000)
@@ -47,12 +48,12 @@ final class TopShelfTests: XCTestCase {
         XCTAssertEqual(back, snapshot)
     }
 
-    /// An entry whose image never downloaded still belongs on the shelf; it
-    /// just has no picture.
-    func testAnEntryWithoutAnImageHasNoImageURL() {
-        let entry = TopShelfEntry(videoID: "v1", title: "A", channel: "C", imageName: nil,
+    /// An entry with no artwork URL still belongs on the shelf; it just has no
+    /// picture. tvOS draws its own placeholder.
+    func testAnEntryCanHaveNoImage() {
+        let entry = TopShelfEntry(videoID: "v1", title: "A", channel: "C", imageURL: nil,
                                   progress: 0, duration: 10)
-        XCTAssertNil(TopShelfStore.imageURL(for: entry, group: group))
+        XCTAssertNil(entry.imageURL)
     }
 
     /// Nothing written yet — nobody has signed in, or this build has no App
@@ -62,17 +63,19 @@ final class TopShelfTests: XCTestCase {
     }
 
     /// The snapshot round-trips through the group's defaults, which is how the
-    /// extension sees it — and, on tvOS, the only storage that is not a cache
-    /// the system may purge before the Home screen asks.
+    /// extension sees it — and on tvOS the only shared storage there is: the
+    /// group's *container* is not writable there, which is what "You don't
+    /// have permission to save the file" on a real Apple TV turned out to
+    /// mean.
     func testSnapshotSurvivesTheStore() throws {
-        guard let dir = TopShelfStore.directory(for: group) else {
-            throw XCTSkip("no group container on this platform")
-        }
         let group = group
         addTeardownBlock { TopShelfStore.clear(group: group) }
         XCTAssertNil(TopShelfStore.read(group: group), "the suite should start empty")
-        let entry = TopShelfEntry(videoID: "v1", title: "A", channel: "C", imageName: "v1.jpg",
-                                  progress: 0.25, duration: 300)
+        let entry = TopShelfEntry(
+            videoID: "v1", title: "A", channel: "C",
+            imageURL: "https://flimm.example.com/media/thumb/video/v1?media_token=t",
+            progress: 0.25, duration: 300
+        )
         let snapshot = TopShelfSnapshot(feedName: "Making", entries: [entry], updatedAt: Date())
         try TopShelfStore.write(snapshot, group: group)
         let back = try XCTUnwrap(TopShelfStore.read(group: group))
@@ -80,15 +83,6 @@ final class TopShelfTests: XCTestCase {
         XCTAssertEqual(back.entries.first?.progress, 0.25)
         XCTAssertEqual(back.feedName, "Making")
 
-        // An image the snapshot does not name is swept up; one it does is
-        // kept. The directory is the writer's to create — the snapshot itself
-        // no longer lives on disk.
-        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        try Data("x".utf8).write(to: dir.appendingPathComponent("v1.jpg"))
-        try Data("x".utf8).write(to: dir.appendingPathComponent("stale.jpg"))
-        TopShelfStore.pruneImages(keeping: snapshot, group: group)
-        XCTAssertNotNil(TopShelfStore.imageURL(for: entry, group: group))
-        XCTAssertFalse(FileManager.default.fileExists(atPath: dir.appendingPathComponent("stale.jpg").path))
-        XCTAssertNotNil(TopShelfStore.read(group: group), "pruning must not take the snapshot with it")
+        XCTAssertEqual(back.entries.first?.imageURL?.contains("media_token"), true)
     }
 }

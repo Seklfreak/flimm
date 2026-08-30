@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -86,9 +87,11 @@ func TestMediaAuthCookieVsBearer(t *testing.T) {
 		t.Errorf("bearer: %d %v", rec.Code, rec.Header())
 	}
 
-	// Cookie issued by POST /session/media → 200.
+	// Cookie issued by POST /session/media → 200. It answers 200 with the
+	// token in the body rather than a bare 204: a native client has no cookie
+	// jar, and the Apple TV's top shelf needs the token in a URL.
 	rec = do(t, h, http.MethodPost, "/api/v1/session/media", "")
-	if rec.Code != http.StatusNoContent {
+	if rec.Code != http.StatusOK {
 		t.Fatalf("session/media: %d", rec.Code)
 	}
 	cookies := rec.Result().Cookies()
@@ -265,4 +268,62 @@ func TestTAMediaPath(t *testing.T) {
 			t.Errorf("taMediaPath(%q) = %q, want %q", in, got, want)
 		}
 	}
+}
+
+// The Apple TV's top shelf is drawn by the system from URLs an extension hands
+// it: a process with no header and no cookie of ours. The same signed token in
+// the query is the only way that artwork can be authenticated.
+func TestMediaTokenInTheQueryAuthenticates(t *testing.T) {
+	s, _, _ := mediaServer(t)
+	h := s.Router()
+
+	rec := do(t, h, http.MethodPost, "/api/v1/session/media", "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("session/media: %d", rec.Code)
+	}
+	var session MediaSession
+	if err := json.Unmarshal(rec.Body.Bytes(), &session); err != nil {
+		t.Fatal(err)
+	}
+	if session.Token == "" || session.ExpiresIn == 0 {
+		t.Fatalf("session = %+v, want a token a native client can put in a URL", session)
+	}
+	// The cookie is still set, because browsers use it.
+	if len(rec.Result().Cookies()) != 1 {
+		t.Error("the cookie went away; the web client depends on it")
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/media/thumb/video/v1?media_token="+session.Token, nil)
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Errorf("token in the query: %d, want 200", rec.Code)
+	}
+
+	// And it is a real check, not a wave-through.
+	req = httptest.NewRequest(http.MethodGet, "/media/thumb/video/v1?media_token=nonsense", nil)
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("a bad token: %d, want 401", rec.Code)
+	}
+}
+
+// A credential in a log line is a credential given away, and chi's logger
+// formats straight from the request URL.
+func TestMediaTokenIsRedactedBeforeLogging(t *testing.T) {
+	s, _, _ := mediaServer(t)
+	var logged string
+	probe := redactMediaToken(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		logged = r.URL.String()
+	}))
+	req := httptest.NewRequest(http.MethodGet, "/media/thumb/video/v1?media_token=secret-value", nil)
+	probe.ServeHTTP(httptest.NewRecorder(), req)
+	if strings.Contains(logged, "secret-value") {
+		t.Errorf("the URL a logger would print still holds the token: %q", logged)
+	}
+	if !strings.Contains(logged, "redacted") {
+		t.Errorf("URL = %q, want the parameter kept but redacted", logged)
+	}
+	_ = s
 }

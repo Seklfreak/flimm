@@ -44,9 +44,11 @@ final class TopShelfContentProvider: TVTopShelfContentProvider {
         item.title = entry.title
         // 16:9, like every thumbnail the archive holds.
         item.imageShape = .hdtv
-        if let image = TopShelfStore.imageURL(for: entry) {
-            // A file URL in the shared container, because the process drawing
-            // the shelf fetches artwork itself and carries none of our auth.
+        if let raw = entry.imageURL, let image = URL(string: raw) {
+            // A URL the *system* fetches, carrying its own media token: tvOS
+            // draws this row in a process with no session of ours, and an App
+            // Group on tvOS is shared preferences rather than a writable
+            // directory, so there is nowhere to leave a file for it.
             item.setImageURL(image, for: .screenScale1x)
             item.setImageURL(image, for: .screenScale2x)
         }

@@ -77,6 +77,18 @@ public actor APIClient {
         return ["Authorization": "Bearer \(token)"]
     }
 
+    /// A short-lived token that authenticates a `/media/...` URL on its own.
+    ///
+    /// For a fetcher that can set neither a header nor a cookie — tvOS drawing
+    /// the top shelf from URLs an extension handed it, in a process with no
+    /// session of ours. Twelve hours, media only; see `MediaSession` in the
+    /// contract.
+    public func mediaToken() async throws -> String {
+        struct Session: Decodable { let token: String }
+        let session: Session = try await send(.post, "/session/media")
+        return session.token
+    }
+
     // MARK: - Meta / session
 
     /// Unauthenticated. Validates a server URL and configures the auth flow.

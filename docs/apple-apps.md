@@ -213,14 +213,16 @@ What is there:
     extension is a signed-out app. The cost is that the shelf is as fresh as
     the last time someone opened Flimm, which is also when it changes.
 
-    **The snapshot is in defaults, not a file, and that is a tvOS rule rather
-    than a preference.** The container tvOS hands back sits in a purgeable
-    cache area — write a snapshot there and it can be gone before the Home
-    screen asks, which is indistinguishable from an app that never wrote one.
-    Defaults are a few hundred bytes and are not purged that way. The images
-    stay in the container because tvOS has to load them as files, and because
-    they are the part that can be fetched again: an entry whose artwork went
-    missing still shows its title.
+    **An App Group on tvOS is shared *preferences*, not a shared directory.**
+    `containerURL(forSecurityApplicationGroupIdentifier:)` returns a path there,
+    and writing to it fails: "You don't have permission to save the file". The
+    simulator does not enforce that, which is how a version that downloaded
+    thumbnails into the container passed every check here and did nothing on a
+    real Apple TV. So the snapshot lives in the group's defaults — a few hundred
+    bytes — and the artwork is not a file at all: each entry carries an absolute
+    `/media/thumb/...` URL with a `media_token` in it, which the system fetches
+    itself. The token lasts twelve hours and the app republishes at every
+    launch, so an expired one costs the pictures, never the row.
 
     **It publishes at launch, not only from the Feeds screen.** Publishing what
     that screen already shows costs nothing, but it only runs when that screen

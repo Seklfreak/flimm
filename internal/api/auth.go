@@ -132,14 +132,59 @@ func (s *Server) mediaAuthMiddleware(next http.Handler) http.Handler {
 				return
 			}
 		}
+		// The same signed token in the query, for a fetcher that can set
+		// neither a header nor a cookie. The Apple TV's top shelf is drawn by
+		// the system from URLs an extension hands it, in a process with no
+		// session of ours — without this its artwork cannot be authenticated
+		// at all. It is the same 12-hour, media-only token as the cookie.
+		if token, _ := r.Context().Value(mediaTokenKey).(string); token != "" {
+			if uid, ok := s.verifyMediaToken(token, time.Now()); ok {
+				ctx := context.WithValue(r.Context(), userIDKey, uid)
+				next.ServeHTTP(w, r.WithContext(ctx))
+				return
+			}
+		}
 		writeError(w, http.StatusUnauthorized, "media authentication required")
 	})
 }
+
+// redactMediaToken replaces the media token in the request URL with a marker
+// before anything logs it, and puts the real value where the middleware can
+// still read it.
+//
+// chi's logger formats straight from `r.URL`, so the only way a credential
+// stays out of the line is for it not to be in the URL by the time the logger
+// sees it.
+func redactMediaToken(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		query := r.URL.Query()
+		token := query.Get(mediaTokenParam)
+		if token == "" {
+			next.ServeHTTP(w, r)
+			return
+		}
+		query.Set(mediaTokenParam, "redacted")
+		redacted := *r.URL
+		redacted.RawQuery = query.Encode()
+		r2 := r.Clone(context.WithValue(r.Context(), mediaTokenKey, token))
+		r2.URL = &redacted
+		r2.RequestURI = redacted.RequestURI()
+		next.ServeHTTP(w, r2)
+	})
+}
+
+type mediaTokenCtxKey struct{}
+
+var mediaTokenKey = mediaTokenCtxKey{}
 
 // ---- media token ----
 
 const (
 	mediaCookieName = "flimm_media"
+	// mediaTokenParam carries the same token in a URL. Scrubbed from the
+	// access log by `redactMediaToken`, because a credential in a log line is
+	// a credential given away.
+	mediaTokenParam = "media_token"
 	mediaTokenTTL   = 12 * time.Hour
 )
 
@@ -177,20 +222,31 @@ func (s *Server) verifyMediaToken(tok string, now time.Time) (uuid.UUID, bool) {
 }
 
 // setMediaCookie issues the flimm_media cookie for the current user.
+// MediaSession is what `POST /session/media` answers with: the same token the
+// cookie carries, for a client that has to put it in a URL instead.
+type MediaSession struct {
+	Token     string `json:"token"`
+	ExpiresIn int    `json:"expires_in"`
+}
+
 func (s *Server) setMediaCookie(w http.ResponseWriter, r *http.Request) {
 	uid := currentUserID(r.Context())
+	token := s.mediaToken(uid, time.Now())
 	// Secure follows PUBLIC_URL's scheme: on in every https deploy, off only
 	// for plain-http local dev where browsers would drop a Secure cookie.
 	http.SetCookie(w, &http.Cookie{ //nolint:gosec // G124: Secure is config-driven, see above
 		Name:     mediaCookieName,
-		Value:    s.mediaToken(uid, time.Now()),
+		Value:    token,
 		Path:     "/media",
 		MaxAge:   int(mediaTokenTTL / time.Second),
 		HttpOnly: true,
 		Secure:   s.secureCookies,
 		SameSite: http.SameSiteLaxMode,
 	})
-	w.WriteHeader(http.StatusNoContent)
+	// The body is for the native clients; browsers use the cookie and ignore
+	// it. It was a 204 before, which a client with no cookie jar could do
+	// nothing with.
+	writeJSON(w, http.StatusOK, MediaSession{Token: token, ExpiresIn: int(mediaTokenTTL / time.Second)})
 }
 
 // ---- helpers ----
