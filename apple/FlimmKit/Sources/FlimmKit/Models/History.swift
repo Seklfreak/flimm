@@ -19,10 +19,10 @@ public struct HistoryEntry: Codable, Sendable, Hashable, Identifiable {
     public let video: VideoSummary
     public let playedAt: Date?
     public let state: HistoryState
-    /// First feed (sidebar order) holding the video, via a channel or a
-    /// playlist source — the playback context a resume opens with, so the
-    /// up-next panel shows the feed rather than similar videos. Nil when no
-    /// feed holds it.
+    /// The feed the video most specifically belongs to — a playlist-source
+    /// (series) match beats a channel match — and the playback context a
+    /// resume opens with, so the up-next panel shows the feed rather than
+    /// similar videos. Nil when no feed holds it.
     public let feed: FeedRef?
 
     /// The context a tap on this entry should play with.

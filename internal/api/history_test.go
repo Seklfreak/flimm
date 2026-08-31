@@ -69,9 +69,9 @@ func TestHistoryListAndDelete(t *testing.T) {
 	}
 }
 
-// A history entry names the first feed that holds its video — through a
-// channel or a playlist source — so a resume opens with that feed as its
-// playback context instead of falling back to similar videos.
+// A history entry names the feed its video most specifically belongs to: a
+// playlist-source (series) match beats a channel match even when the channel
+// feed sits higher in the sidebar, and no match means null.
 func TestHistoryEntriesCarryTheirHomeFeed(t *testing.T) {
 	client := ta.NewFake()
 	client.AddVideo(video("a1", "A", "2026-08-01", 600, false))
@@ -96,7 +96,11 @@ func TestHistoryEntriesCarryTheirHomeFeed(t *testing.T) {
 		return []sqlc.Feed{channelFeed, seriesFeed}, nil
 	}
 	q.ListFeedChannelsForUserFn = func(context.Context, uuid.UUID) ([]sqlc.ListFeedChannelsForUserRow, error) {
-		return []sqlc.ListFeedChannelsForUserRow{{FeedID: channelFeed.ID, ChannelID: "A", FeedName: "Making"}}, nil
+		// Channel B is in Making too — the series feed must still win for p1.
+		return []sqlc.ListFeedChannelsForUserRow{
+			{FeedID: channelFeed.ID, ChannelID: "A", FeedName: "Making"},
+			{FeedID: channelFeed.ID, ChannelID: "B", FeedName: "Making"},
+		}, nil
 	}
 	q.ListFeedPlaylistsForUserFn = func(context.Context, uuid.UUID) ([]sqlc.ListFeedPlaylistsForUserRow, error) {
 		return []sqlc.ListFeedPlaylistsForUserRow{{FeedID: seriesFeed.ID, PlaylistID: "PL", FeedName: "Night sides"}}, nil
@@ -115,7 +119,7 @@ func TestHistoryEntriesCarryTheirHomeFeed(t *testing.T) {
 		t.Errorf("a1 feed = %+v, want Making (channel source)", f)
 	}
 	if f := byVideo["p1"]; f == nil || f.Name != "Night sides" {
-		t.Errorf("p1 feed = %+v, want Night sides (playlist source)", f)
+		t.Errorf("p1 feed = %+v, want Night sides (series beats the channel feed above it)", f)
 	}
 	if f := byVideo["x1"]; f != nil {
 		t.Errorf("x1 feed = %+v, want none", f)

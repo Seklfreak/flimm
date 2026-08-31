@@ -309,8 +309,9 @@ export interface HistoryEntry {
   video: VideoSummary;
   played_at: string;
   state: "in_progress" | "seen";
-  /** First feed (sidebar order) holding the video, via a channel or playlist
-   *  source — the context a resume opens with. Null when none does. */
+  /** The feed the video most specifically belongs to — a playlist-source
+   *  (series) match beats a channel match; the context a resume opens with.
+   *  Null when no feed holds it. */
   feed: FeedRef | null;
 }
 

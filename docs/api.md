@@ -322,11 +322,13 @@ resolve, so a stale pin can never wedge the sidebar.
 }
 ```
 
-`feed` is the first of the user's feeds (sidebar order) that contains the
-video — through a channel or a playlist source — so a resume from history or
-the continue-watching rail can open with that feed as its playback context
-(the up-next panel then shows the feed rather than similar videos). Null when
-no feed holds the video.
+`feed` is the feed the video most specifically belongs to, so a resume from
+history or the continue-watching rail can open with that feed as its playback
+context (the up-next panel then shows the feed rather than similar videos).
+A feed holding the video through a **playlist source** (a series) wins over
+one holding the whole channel — the series names this exact run of videos,
+the channel only its uploader — and sidebar order breaks ties within each
+kind. Null when no feed holds the video.
 
 ### Page
 List endpoints take `page` (0-based) and `page_size` (default 30, max 100) and

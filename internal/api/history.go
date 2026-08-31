@@ -98,18 +98,24 @@ type feedHomes []struct {
 	pls   map[string]bool
 }
 
-// find is the first feed containing the channel or one of the playlists.
+// find is the feed the video most specifically belongs to. A playlist-source
+// match wins over a channel match even further down the sidebar: a series
+// feed says "this exact run of videos", a channel feed only "this uploader",
+// so resuming into the series is what continuing actually means. Sidebar
+// order breaks ties within each kind.
 func (h feedHomes) find(channelID string, playlists []string) *FeedRef {
 	for _, f := range h {
-		if f.chans[channelID] {
-			ref := f.ref
-			return &ref
-		}
 		for _, pl := range playlists {
 			if f.pls[pl] {
 				ref := f.ref
 				return &ref
 			}
+		}
+	}
+	for _, f := range h {
+		if f.chans[channelID] {
+			ref := f.ref
+			return &ref
 		}
 	}
 	return nil
