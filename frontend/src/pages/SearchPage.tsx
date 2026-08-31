@@ -3,7 +3,7 @@ import { Link, useLocation, useSearchParams } from "react-router";
 import type { SearchScope, SubtitleHit, VideoSummary } from "@/lib/api";
 import { pinnedFeed, useFeeds, useSearch } from "@/lib/queries";
 import { ccLabel, fmtDuration, plural } from "@/lib/format";
-import { Avatar, EmptyState, ErrorState, MediaImg, SearchIcon, Spinner } from "@/components/ui";
+import { Avatar, EmptyState, ErrorState, LoadingState, MediaImg, SearchIcon } from "@/components/ui";
 import { VideoRow } from "@/components/VideoRow";
 import { trackSearch } from "@/lib/analytics";
 
@@ -111,7 +111,7 @@ export default function SearchPage() {
       {!q ? (
         <EmptyState title="Search the archive" hint="Titles, channel and playlist names, and every word of the archived subtitles." />
       ) : result.isLoading ? (
-        <Spinner label="Searching…" />
+        <LoadingState label="Searching…" />
       ) : result.isError ? (
         <ErrorState message={result.error.message} retry={() => result.refetch()} />
       ) : r && totalResults === 0 ? (

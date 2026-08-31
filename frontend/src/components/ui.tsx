@@ -248,6 +248,17 @@ export function InfiniteSentinel({ onVisible, enabled }: { onVisible: () => void
   return <div ref={ref} className="h-px" />;
 }
 
+/** A page-level wait: spinner over its label, centred with the same vertical
+ *  rhythm as EmptyState so the two states swap without the layout jumping. */
+export function LoadingState({ label }: { label: string }) {
+  return (
+    <div className="flex flex-col items-center gap-3 py-16 text-muted text-sm font-semibold" role="status">
+      <span className="h-5 w-5 animate-spin rounded-full border-2 border-hair-2 border-t-accent" />
+      {label}
+    </div>
+  );
+}
+
 export function EmptyState({ title, hint, action }: { title: string; hint?: string; action?: ReactNode }) {
   return (
     <div className="flex flex-col items-center gap-2 py-16 text-center">
