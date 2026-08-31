@@ -2,6 +2,17 @@
 
 ## Done
 
+- **Scrub previews on the compatible path** (2026-08-31) — dragging the Apple
+  TV's scrubber over a transcoded video showed a bare timeline: an HLS stream
+  has pictures to scrub with only if it says where its I-frames are, and ours
+  said nothing. It does now, and nothing is encoded for it — the rendition is
+  already cut on a keyframe grid, so each segment opens with an I-frame and the
+  playlist is just the byte range holding it, read out of each fragment's own
+  `moof`. One small read per segment, no CPU, no second cache entry.
+
+  Only for a finished rendition: a playlist built mid-transcode would cover
+  half the video and a player keeps it for the session.
+
 - **Watch stats** (2026-08-30) — `watch_events` had been filling up since the
   first release and nothing read it. `GET /stats` now answers what it adds up
   to: time watched, videos started and finished, whose videos, and when — by

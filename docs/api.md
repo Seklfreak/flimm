@@ -590,6 +590,7 @@ and `feed` filter the video results in the backend.
 | `GET /media/hls/{id}/{height}/index.m3u8` | the compatible rendition's **media** playlist (`application/vnd.apple.mpegurl`) at that height — what the master references, and what native players and the byte-range path load directly. Same `{height}` rules and **404**. Starts the transcode on the first request and returns the **complete VOD playlist immediately** — every segment of the video, `#EXT-X-ENDLIST` on the end — whatever the encoder has reached. `?from=<seconds>` (inside `(0, duration)`) is the resume position: it starts the transcode there **and** adds an `#EXT-X-START:TIME-OFFSET=<seconds>,PRECISE=YES` to the playlist header, so a resuming player begins at that point and fetches the resume segment first instead of blocking on segment 0 — which the resume-first transcode produces last. The segment list is unchanged (still the whole video, seekable anywhere); a `from` outside the range adds no tag. A `from`-specific playlist is served `no-store` (it is per-`from`; never cached as the canonical no-`from` playlist). 503 + `Retry-After: 5` only if the playlist itself cannot be produced (a video whose duration has to be probed from an unreachable source) |
 | `GET /media/hls/{id}/{height}/init.mp4` | the fMP4 initialisation segment (`video/mp4`) |
 | `GET /media/hls/{id}/{height}/seg00000.m4s` | a media segment (`video/iso.segment`). A segment the encoder has not reached **blocks** until it lands, up to `MEDIA_SEGMENT_WAIT` (60 s), then 503 + `Retry-After: 2`; a request far ahead of the encoder — or one behind it that this run has skipped — re-aims it. 404 for a segment past the end of the video or of a rendition nothing is deriving; 502 if the transcode failed |
+| `GET /media/hls/{id}/{height}/iframe.m3u8` | the rendition's **I-frame playlist** (`application/vnd.apple.mpegurl`): one `#EXT-X-BYTERANGE` per segment, covering the keyframe each one opens with, so a player has pictures to show while scrubbing. **404 until the rendition is complete** — a playlist built mid-transcode would cover only the part encoded so far, and a player holds it for the whole session. The master carries `#EXT-X-I-FRAME-STREAM-INF` pointing at it under the same condition. Nothing is encoded for it and no job is started by it; see [Scrubbing](#scrubbing) |
 | `GET /media/hls/{id}/master.m3u8`, `/index.m3u8`, `/init.mp4`, `/seg00000.m4s` | the same files without a height: a **legacy alias** for the 1080p rendition, kept for clients written before the ladder. It serves that rendition's cache entry rather than one of its own. New clients use `hls_variants` |
 | `GET /media/subtitles/{id}/{lang}.vtt` | TA subtitle track |
 | `GET /media/frame/{id}/{ms}.jpg` | derived: one still, cut on first request and cached — what a DeArrow thumbnail resolves to |
@@ -607,6 +608,35 @@ nginx declares a `types { text/vtt vtt; }` block on `/media/`, which replaces
 the default MIME map for that location, so `.mp4` would otherwise arrive as
 `application/octet-stream` and `<video>` refuses to decode it.
 
+
+### Scrubbing
+
+Dragging a scrubber over an HLS stream shows pictures only if the stream says
+where its I-frames are. On the archived file a player can go and find them
+itself, which is why the web and the phone have previews there and the Apple TV
+scrubs a direct play happily. On the **compatible-rendition** path it cannot:
+what is playing is a transcode it never sees whole, so without help the Apple
+TV's scrubber is a bare timeline.
+
+`GET /media/hls/{id}/{height}/iframe.m3u8` is that help, and it costs nothing to
+make. The rendition is already cut on a keyframe grid, so every segment *begins*
+with an I-frame; all a player needs is the byte range holding it. That range is
+read out of the fragment itself — the `moof` box, its `trun`'s data offset, and
+the first sample's size — so the playlist is one small read per segment and no
+CPU at all. No second encode, no extra cache entry.
+
+It is built from the rendition's own `index.m3u8` rather than recomputed, so
+the two lists cannot disagree about segment names or the short last one. A
+segment whose first sample cannot be located is left out rather than guessed
+at: a wrong byte range is a broken picture, a missing one only a coarser scrub.
+
+**Only for a finished rendition**, and it starts nothing. A player reads the
+master once, so a video opened mid-transcode simply scrubs the way it always
+did; the next time it is played the master carries the trick-play line.
+
+Web clients are unaffected — hls.js parses the extra tag and ignores it — and
+the archived-file path still uses the [preview sprite sheets](#derived-media),
+which are a different mechanism for a different player.
 
 ### Watch stats
 
@@ -890,6 +920,10 @@ directly reachable for the byte-range and native paths. The `CODECS` string is
 parsed from the init segment the transcode produces — `avc1.PPCCLL` from the
 avcC record (High@4.1 → `avc1.640829`), `hvc1.…` from hvcC, plus `mp4a.40.2` —
 so it is truthful even when the source is copied rather than re-encoded.
+
+When the rendition is complete it also carries an
+`#EXT-X-I-FRAME-STREAM-INF` pointing at `iframe.m3u8`, which is what a player
+scrubs with — see [Scrubbing](#scrubbing).
 
 It also carries `CLOSED-CAPTIONS=NONE`, which is not decoration. A stream that
 says nothing about captions is one a player must assume *might* carry CEA-608/708

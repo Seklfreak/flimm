@@ -65,7 +65,7 @@ const hlsFilePoll = 100 * time.Millisecond
 // but the multivariant playlist rendered on the fly (see serveHLSMaster).
 // Anything else — a traversal, a stray temp file, the completion marker — is a
 // 404 before it reaches the filesystem.
-var validHLSFile = regexp.MustCompile(`^(master\.m3u8|index\.m3u8|init\.mp4|seg[0-9]{5}\.m4s)$`)
+var validHLSFile = regexp.MustCompile(`^(master\.m3u8|iframe\.m3u8|index\.m3u8|init\.mp4|seg[0-9]{5}\.m4s)$`)
 
 // errHLSHeightNotOffered is what starting a rendition the video cannot fill
 // returns: a 4K rendition of a 1080p source is a transcode nobody asked for.
@@ -123,6 +123,8 @@ func (s *Server) serveHLSVariant(w http.ResponseWriter, r *http.Request, height 
 		s.serveHLSMaster(w, r, id, height, enforceOffered)
 	case media.HLSPlaylistName:
 		s.serveHLSPlaylist(w, r, id, height, enforceOffered)
+	case media.HLSIFrameName:
+		s.serveHLSIFrame(w, r, id, height)
 	default:
 		s.serveHLSFile(w, r, id, height, file)
 	}
@@ -217,6 +219,14 @@ func (s *Server) serveHLSMaster(w http.ResponseWriter, r *http.Request, id strin
 	// When resuming, the variant URI carries `?from=` through to the media
 	// playlist, which then serves an EXT-X-START at that point.
 	master := media.BuildHLSMaster(info.Codecs, media.HLSBandwidth(height), info.Width, info.Height, from)
+	// Scrub previews, but only for a rendition that is all there: see
+	// serveHLSIFrame. A player reads the master once, so a video started
+	// mid-transcode simply scrubs the way it always did.
+	if s.mediaCache.DirState(media.HLSName(id, height)) == media.StateDone {
+		master = append(master, media.BuildHLSIFrameStreamInf(
+			info.Codecs, media.HLSBandwidth(height), info.Width, info.Height,
+		)...)
+	}
 
 	// A master built from parsed codecs never changes; one built from the
 	// default is provisional until the init lands, so it must not be cached. A
@@ -256,6 +266,33 @@ func (s *Server) hlsCodecs(ctx context.Context, dir string, height int) (media.H
 		}
 	}
 	return media.EnsureHLSCodecs(dir, height)
+}
+
+// serveHLSIFrame serves the I-frame playlist: the byte ranges a player scrubs
+// with (see the media package).
+//
+// Only for a finished rendition, and it starts nothing. The ranges are read
+// from the segments themselves, so a playlist built mid-transcode would list
+// only the part encoded so far and a player would hold it for the whole
+// session — scrub previews over the first half of a video and none over the
+// second is worse than none at all, and this is the one path that has an
+// honest "not yet" available to it.
+func (s *Server) serveHLSIFrame(w http.ResponseWriter, r *http.Request, id string, height int) {
+	name := media.HLSName(id, height)
+	if s.mediaCache.DirState(name) != media.StateDone {
+		writeError(w, http.StatusNotFound, "not found")
+		return
+	}
+	playlist, err := media.BuildIFramePlaylist(s.mediaCache.Dir(name))
+	if err != nil {
+		s.log.Debug("iframe playlist unavailable", "video", id, "height", height, "err", err)
+		writeError(w, http.StatusNotFound, "not found")
+		return
+	}
+	s.mediaCache.TouchDir(name)
+	w.Header().Set("Cache-Control", "private, max-age=3600")
+	w.Header().Set("Content-Type", media.HLSPlaylistType)
+	http.ServeContent(w, r, media.HLSIFrameName, time.Time{}, bytes.NewReader(playlist))
 }
 
 // serveHLSFile serves an init or media segment out of the cache entry, waiting

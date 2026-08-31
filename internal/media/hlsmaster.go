@@ -408,10 +408,16 @@ func skipDescriptorLen(b []byte, i int) int {
 	return i
 }
 
-// mp4box is one box: its four-character type and its payload (past the header).
+// mp4box is one box: its four-character type, its payload (past the header),
+// and where it sits in the buffer it was read from — which the I-frame
+// playlist needs, since a byte range is measured from the fragment's start.
 type mp4box struct {
 	typ     string
 	payload []byte
+	// offset is the box's own start, and size its whole length including the
+	// header.
+	offset int
+	size   int
 }
 
 // iterBoxes lists the top-level boxes in buf. It handles the 64-bit largesize
@@ -442,7 +448,7 @@ func iterBoxes(buf []byte) []mp4box {
 		if size < hdr || o+size > len(buf) {
 			return out
 		}
-		out = append(out, mp4box{typ: typ, payload: buf[o+hdr : o+size]})
+		out = append(out, mp4box{typ: typ, payload: buf[o+hdr : o+size], offset: o, size: size})
 		o += size
 	}
 	return out
