@@ -7,6 +7,8 @@ import SwiftUI
 /// channel in the archive just to draw the screen.
 struct SeriesPickerView: View {
     @Binding var selection: Set<String>
+    /// Channels whose *new* series the feed announces.
+    @Binding var watched: Set<String>
     /// Channels already in the feed whole; their series are covered and are
     /// shown as such rather than offered again.
     let fullChannelIds: Set<String>
@@ -51,6 +53,7 @@ struct SeriesPickerView: View {
             ChannelSeriesPicker(
                 channel: channel,
                 selection: $selection,
+                watched: $watched,
                 channelIsInFeed: fullChannelIds.contains(channel.id)
             )
         } label: {
@@ -60,6 +63,11 @@ struct SeriesPickerView: View {
                     .font(.subheadline.weight(.semibold))
                     .lineLimit(1)
                 Spacer(minLength: 0)
+                if watched.contains(channel.id) {
+                    Image(systemName: "bell.fill")
+                        .font(.caption2)
+                        .foregroundStyle(Palette.accent)
+                }
             }
         }
     }
@@ -84,6 +92,7 @@ struct SeriesPickerView: View {
 struct ChannelSeriesPicker: View {
     let channel: ChannelSummary
     @Binding var selection: Set<String>
+    @Binding var watched: Set<String>
     let channelIsInFeed: Bool
 
     @Environment(AppModel.self) private var app
@@ -92,6 +101,16 @@ struct ChannelSeriesPicker: View {
 
     var body: some View {
         List {
+            Section {
+                Toggle("Announce new series here", isOn: Binding(
+                    get: { watched.contains(channel.id) },
+                    set: { on in
+                        if on { watched.insert(channel.id) } else { watched.remove(channel.id) }
+                    }
+                ))
+            } footer: {
+                Text("A playlist the archive indexes later shows once in the feed, until you add or dismiss it.")
+            }
             if channelIsInFeed {
                 Text("The whole channel is in the feed already — every series is included.")
                     .font(.footnote)

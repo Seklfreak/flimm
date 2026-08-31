@@ -16,6 +16,8 @@ struct FeedEditorView: View {
     /// Playlist sources — single series picked from a channel, without
     /// following the whole channel.
     @State private var playlistIds: Set<String> = []
+    /// Channels whose *new* series this feed announces.
+    @State private var watchedChannelIds: Set<String> = []
     @State private var sort: FeedSort = .newest
     @State private var hideSeen = true
     @State private var includeShorts = false
@@ -32,6 +34,13 @@ struct FeedEditorView: View {
 
     private var isNew: Bool { feedId == nil }
 
+    private var seriesSummary: String {
+        var parts: [String] = []
+        if !playlistIds.isEmpty { parts.append("\(playlistIds.count) series") }
+        if !watchedChannelIds.isEmpty { parts.append("watching \(Fmt.plural(watchedChannelIds.count, "channel"))") }
+        return parts.isEmpty ? "None" : parts.joined(separator: " · ")
+    }
+
     var body: some View {
         Form {
             Section("Name") {
@@ -47,9 +56,9 @@ struct FeedEditorView: View {
             }
             Section("Series") {
                 NavigationLink {
-                    SeriesPickerView(selection: $playlistIds, fullChannelIds: channelIds)
+                    SeriesPickerView(selection: $playlistIds, watched: $watchedChannelIds, fullChannelIds: channelIds)
                 } label: {
-                    LabeledContent("Series", value: playlistIds.isEmpty ? "None" : "\(playlistIds.count) series")
+                    LabeledContent("Series", value: seriesSummary)
                 }
                 if channelIds.isEmpty && playlistIds.isEmpty {
                     Text("A feed with no channels or series shows nothing. Pick at least one.")
@@ -108,6 +117,7 @@ struct FeedEditorView: View {
         name = feed.name
         channelIds = Set(feed.channelIds)
         playlistIds = Set(feed.playlistIds)
+        watchedChannelIds = Set(feed.seriesWatchChannelIds)
         sort = feed.sort
         hideSeen = feed.hideSeen
         includeShorts = feed.includeShorts
@@ -122,6 +132,7 @@ struct FeedEditorView: View {
             name: name.trimmingCharacters(in: .whitespaces),
             channelIds: Array(channelIds),
             playlistIds: Array(playlistIds),
+            seriesWatchChannelIds: Array(watchedChannelIds),
             sort: sort,
             hideSeen: hideSeen,
             includeShorts: includeShorts,

@@ -299,9 +299,11 @@ function ChannelPickRow({
           type="button"
           aria-expanded={showSeries}
           onClick={() => setShowSeries((o) => !o)}
-          className={`flex flex-none items-center gap-1 rounded-[8px] px-2 py-1.5 text-[12px] font-bold ${pickedHere > 0 ? "text-accent" : "text-muted-2"} hover:bg-raised/70`}
+          className={`flex flex-none items-center gap-1 rounded-[8px] px-2 py-1.5 text-[12px] font-bold ${pickedHere > 0 || watched ? "text-accent" : "text-muted-2"} hover:bg-raised/70`}
+          title="Pick single series, and announce new ones"
         >
           {pickedHere > 0 ? `${pickedHere} series` : "Series"}
+          {watched && " · watching"}
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className={showSeries ? "rotate-180" : ""}><path d="M6 9l6 6 6-6" /></svg>
         </button>
       </div>
