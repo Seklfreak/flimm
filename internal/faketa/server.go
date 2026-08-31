@@ -61,6 +61,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/watched/", s.setWatched)
 	mux.HandleFunc("GET /api/channel/", s.listChannels)
 	mux.HandleFunc("GET /api/channel/{id}/", s.getChannel)
+	// The channel total the everything feed reads (see ta.ChannelCount);
+	// without it GET /feeds 404s against the fake.
+	mux.HandleFunc("GET /api/stats/channel/", s.channelStats)
 	mux.HandleFunc("GET /api/playlist/", s.listPlaylists)
 	mux.HandleFunc("POST /api/playlist/custom/", s.createPlaylist)
 	mux.HandleFunc("POST /api/playlist/custom/{id}/", s.playlistAction)
@@ -306,6 +309,10 @@ func (s *Server) getChannel(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	notFound(w)
+}
+
+func (s *Server) channelStats(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]any{"doc_count": len(s.catalogue.Channels)})
 }
 
 func (s *Server) listPlaylists(w http.ResponseWriter, r *http.Request) {
