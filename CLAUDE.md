@@ -27,8 +27,10 @@ setup, update the docs in the **same change**:
   keep a changelog here; git history and the releases already record what was
   done, and the roadmap grew to 750 lines of it. If shipping something leaves a
   piece of it unbuilt, that piece stays in **Ideas** as its own item rather than
-  as a note attached to finished work. Don't restate roadmap detail in the
-  README — link to it.
+  as a note attached to finished work. **Check the code before writing that
+  something is unbuilt** — prose saying "X is still open" goes stale the moment
+  somebody builds X, and one such note outlived the feature it described.
+  Don't restate roadmap detail in the README — link to it.
 
 If a change makes a doc wrong, fixing the doc is part of the change, not a
 follow-up.

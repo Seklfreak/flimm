@@ -7,9 +7,6 @@ are picked up.
 
 ## Ideas
 
-- **Per-category SponsorBlock skips and a manual skip button** — segments are
-  tinted on the timeline already; choosing what to skip automatically per
-  category, and skipping one by hand, are not built.
 - **Silence and black-frame detection** — an intro/outro heuristic for the long
   tail of videos SponsorBlock has never seen, derived locally.
 - **Transcripts (Whisper)** — generate subtitles for videos the archive has
