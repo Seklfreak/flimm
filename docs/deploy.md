@@ -348,7 +348,8 @@ and others all work:
 
 - Grant type: Authorization Code with PKCE, no client secret.
 - Redirect URI: `https://flimm.example.com/auth/callback`
-  (plus the native apps' custom-scheme URI once you use them, see the roadmap).
+  (plus the native apps' custom-scheme URI once you use them, see
+  [apple-apps.md](apple-apps.md)).
 - Scopes: `openid profile email`.
 - The token must carry `sub` (user key) and ideally `email` / `name`;
   `ADMIN_EMAILS` matches against `email`.
@@ -358,7 +359,7 @@ login; there is no user management in Flimm itself.
 
 ### Native apps
 
-The iOS/iPadOS/tvOS clients (see [roadmap.md](roadmap.md)) reuse the same
+The iOS/iPadOS/tvOS clients (see [apple-apps.md](apple-apps.md)) reuse the same
 public OIDC client as the web app — no separate client id, no client secret.
 Configure the provider to also allow:
 

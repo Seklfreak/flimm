@@ -194,11 +194,11 @@ and the network in front of it, so it is kept on the device (the browser's
 ## Platforms
 
 Web first; native iOS, iPadOS and tvOS apps follow the same model and talk to
-the same API (see [roadmap](roadmap.md)). On Apple platforms the mobile layout
-is the iPhone app (tab bar: Feeds · Channels · Playlists · History, search in
-the header), iPad gets a persistent sidebar and a three-column grid, and Apple
-TV merges feeds and library into a top tab bar with a focus-driven,
-full-bleed player.
+the same API (see [apple-apps.md](apple-apps.md)). On Apple platforms the
+mobile layout is the iPhone app (tab bar: Feeds · Channels · Playlists ·
+History, search in the header), iPad gets a persistent sidebar and a
+three-column grid, and Apple TV merges feeds and library into a top tab bar
+with a focus-driven, full-bleed player.
 
 The iPad's columns follow the window rather than the device: three across a
 full-width iPad, fewer in Split View, and a pane narrow enough (Slide Over)

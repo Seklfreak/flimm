@@ -71,8 +71,9 @@ One container image: a Go backend with the React frontend embedded.
 - **OIDC login** with any provider; media streams through the backend so
   TubeArchivist itself never has to be exposed.
 
-See [docs/design.md](docs/design.md) for the product model and
-[docs/roadmap.md](docs/roadmap.md) for what's next (native Apple apps).
+See [docs/design.md](docs/design.md) for the product model,
+[docs/apple-apps.md](docs/apple-apps.md) for the native clients, and
+[docs/roadmap.md](docs/roadmap.md) for what's next.
 
 ## Architecture
 
@@ -296,9 +297,8 @@ navigation model, a custom `AVPlayer` shell with resume, chapters,
 SponsorBlock, subtitles, Picture in Picture and audio-only playback) and an
 **Apple TV** app (focus-driven grids and `AVPlayerViewController`, signing in
 with the OIDC device authorization grant since tvOS has no browser, and the
-pinned feed on the Home screen's top shelf). Both ship
-to TestFlight on every version tag — see [docs/roadmap.md](docs/roadmap.md) and the plan in
-[docs/apple-apps.md](docs/apple-apps.md).
+pinned feed on the Home screen's top shelf). Both ship to TestFlight on every
+version tag — see [docs/apple-apps.md](docs/apple-apps.md).
 
 ## Notice
 
