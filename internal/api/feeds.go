@@ -58,7 +58,9 @@ func (s *Server) everythingFeed(ctx context.Context, uid uuid.UUID, position int
 	if err != nil {
 		return FeedDTO{}, err
 	}
-	channels, err := s.ta.ListChannels(ctx)
+	// The count, not the channels: reading it as the length of the list walks
+	// every page of channel documents (see ta.ChannelCount).
+	channelCount, err := s.ta.ChannelCount(ctx)
 	if err != nil {
 		return FeedDTO{}, err
 	}
@@ -66,7 +68,7 @@ func (s *Server) everythingFeed(ctx context.Context, uid uuid.UUID, position int
 		ID:            everythingFeedID,
 		Name:          "Everything",
 		ChannelIDs:    []string{},
-		ChannelCount:  len(channels),
+		ChannelCount:  channelCount,
 		UnseenCount:   unseen,
 		Sort:          prefs.EverythingSort,
 		HideSeen:      prefs.EverythingHideSeen,

@@ -9,7 +9,12 @@
   thirty. The `/feeds` sidebar had the same shape at twenty-two calls, on every
   page load.
 
-  Two fixes. The counts now live in the same cache as the third-party lookups,
+  A third followed from the same traces: the "Everything" feed's channel count
+  was `len(ListChannels(ctx))`, which walked nineteen pages of channel documents
+  to produce one integer, on a route that loads with every screen. TubeArchivist
+  publishes the number as an aggregate.
+
+  Two fixes for the page itself. The counts now live in the same cache as the third-party lookups,
   with a window of minutes — they were already cached in memory, which helps
   within a process and not at all across a deploy, and a deploy is exactly when
   a cold page fans out to hundreds of calls at once. And the list pages before

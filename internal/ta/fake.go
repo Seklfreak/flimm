@@ -300,6 +300,15 @@ func (f *Fake) GetChannel(_ context.Context, id string) (*Channel, error) {
 	return &cc, nil
 }
 
+// ChannelCount mirrors TubeArchivist's channel aggregate.
+func (f *Fake) ChannelCount(ctx context.Context) (int, error) {
+	channels, err := f.ListChannels(ctx)
+	if err != nil {
+		return 0, err
+	}
+	return len(channels), nil
+}
+
 func (f *Fake) UnseenCount(ctx context.Context, channelID string) (int, error) {
 	p, err := f.ListVideos(ctx, VideoQuery{Channel: channelID, Watch: "unwatched", PageSize: 1})
 	if err != nil {

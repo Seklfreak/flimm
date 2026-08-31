@@ -704,6 +704,11 @@ looks like.
 
 Nothing sweeps them. A channel nobody looks at does not need a current count.
 
+The **"Everything" feed's channel count** comes from TubeArchivist's own
+aggregate (`/api/stats/channel/`), not from the length of the channel list —
+reading it that way paged through every channel document in the archive,
+nineteen requests for one integer, on a route the app loads with every screen.
+
 `GET /channels` also **pages before it counts**. Ordering by name — the default
 — needs nothing fetched to decide, so only the channels on the page are counted.
 `?sort=videos|unseen|last_upload` cannot be decided that way and still counts

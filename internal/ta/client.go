@@ -43,6 +43,7 @@ type Client interface {
 
 	// ListChannels returns every channel TA knows (cached).
 	ListChannels(ctx context.Context) ([]Channel, error)
+	ChannelCount(ctx context.Context) (int, error)
 	GetChannel(ctx context.Context, id string) (*Channel, error)
 	// UnseenCount is the number of unwatched videos in a channel (cached).
 	UnseenCount(ctx context.Context, channelID string) (int, error)
@@ -377,6 +378,37 @@ func (c *HTTP) invalidateWatch(id string) {
 }
 
 // ListChannels walks every page of /api/channel/, cached 60 s.
+// ChannelCount is how many channels the archive holds.
+//
+// It exists because the count was being taken as `len(ListChannels(ctx))`,
+// which walks every page of channel documents — nineteen requests against this
+// archive, to produce one integer, on a route the app loads with every screen.
+// TubeArchivist publishes the number as an aggregate, so it is one request that
+// reads no documents at all.
+func (c *HTTP) ChannelCount(ctx context.Context) (int, error) {
+	c.mu.Lock()
+	if e, ok := c.counts[channelCountKey]; ok && time.Now().Before(e.exp) {
+		c.mu.Unlock()
+		return e.val, nil
+	}
+	c.mu.Unlock()
+
+	var stats struct {
+		DocCount int `json:"doc_count"`
+	}
+	if err := c.do(ctx, http.MethodGet, "/api/stats/channel/", nil, nil, &stats); err != nil {
+		return 0, err
+	}
+	c.mu.Lock()
+	c.counts[channelCountKey] = &cached[int]{val: stats.DocCount, exp: time.Now().Add(cacheCounts)}
+	c.mu.Unlock()
+	return stats.DocCount, nil
+}
+
+// channelCountKey is not a channel id, so it cannot collide with the unseen
+// counts sharing this map.
+const channelCountKey = "\x00channel-count"
+
 func (c *HTTP) ListChannels(ctx context.Context) ([]Channel, error) {
 	c.mu.Lock()
 	if c.channels != nil && time.Now().Before(c.channels.exp) {

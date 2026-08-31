@@ -144,3 +144,36 @@ func TestFetchRange(t *testing.T) {
 		t.Error("expected an error for a negative start")
 	}
 }
+
+// The count comes from one aggregate rather than from walking every page of
+// channel documents — which was nineteen requests against a real archive, to
+// produce one integer, on a route the app loads with every screen.
+func TestChannelCountReadsTheAggregate(t *testing.T) {
+	var paths []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.URL.Path)
+		_, _ = w.Write([]byte(`{"doc_count":218,"subscribed_true":67,"subscribed_false":151}`))
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "tok")
+	n, err := c.ChannelCount(context.Background())
+	if err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	if n != 218 {
+		t.Errorf("count = %d, want 218", n)
+	}
+	if len(paths) != 1 || paths[0] != "/api/stats/channel/" {
+		t.Errorf("requested %v, want one call to the aggregate", paths)
+	}
+
+	// Cached like the other counts: a sidebar that loads on every screen must
+	// not ask again each time.
+	if _, err := c.ChannelCount(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(paths) != 1 {
+		t.Errorf("made %d requests, want the second answered from the cache", len(paths))
+	}
+}

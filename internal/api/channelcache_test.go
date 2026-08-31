@@ -9,6 +9,9 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/google/uuid"
+
+	"github.com/Seklfreak/flimm/internal/db/sqlc"
 	"github.com/Seklfreak/flimm/internal/ta"
 )
 
@@ -97,5 +100,61 @@ func TestASecondPageReadsTheCountsFromTheCache(t *testing.T) {
 
 	if second != 0 {
 		t.Errorf("the second identical request made %d more lookups, want none", second)
+	}
+}
+
+// countingChannelList counts how often the channel *list* is walked. The
+// "Everything" feed only ever wanted its length, and taking it that way paged
+// through every channel document in the archive — nineteen requests, on a route
+// the app loads with every screen.
+type countingChannelList struct {
+	*ta.Fake
+	lists atomic.Int64
+}
+
+func (c *countingChannelList) ListChannels(ctx context.Context) ([]ta.Channel, error) {
+	c.lists.Add(1)
+	return c.Fake.ListChannels(ctx)
+}
+
+func TestListingFeedsDoesNotWalkTheChannelList(t *testing.T) {
+	fake := ta.NewFake()
+	for i := range 30 {
+		fake.AddVideo(video("v"+strconv.Itoa(i), "UC"+strconv.Itoa(i), "2026-08-01", 100, false))
+	}
+	client := &countingChannelList{Fake: fake}
+	q := newEventStore().querier()
+	q.ListFeedsFn = func(context.Context, uuid.UUID) ([]sqlc.Feed, error) { return nil, nil }
+	q.ListFeedChannelsForUserFn = func(context.Context, uuid.UUID) ([]sqlc.ListFeedChannelsForUserRow, error) {
+		return nil, nil
+	}
+	s := NewServer(Options{
+		Querier:     q,
+		TA:          client,
+		Log:         slog.New(slog.NewTextHandler(io.Discard, nil)),
+		AppName:     "Flimm",
+		MediaSecret: testSecret,
+	})
+
+	rec := do(t, s.Router(), http.MethodGet, "/api/v1/feeds", "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", rec.Code, rec.Body.String())
+	}
+	if n := client.lists.Load(); n != 0 {
+		t.Errorf("walked the channel list %d times, want the aggregate instead", n)
+	}
+	// The count still has to be right — this is a page's worth of channels.
+	feeds := decode[[]FeedDTO](t, rec)
+	var everything *FeedDTO
+	for i := range feeds {
+		if feeds[i].ID == everythingFeedID {
+			everything = &feeds[i]
+		}
+	}
+	if everything == nil {
+		t.Fatal("no Everything feed")
+	}
+	if everything.ChannelCount != 30 {
+		t.Errorf("channel count = %d, want 30", everything.ChannelCount)
 	}
 }
