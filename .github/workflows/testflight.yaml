@@ -32,7 +32,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Marketing version, e.g. 1.0.1. Blank = derive from the tag."
+        description: "Release version, e.g. 1.0.1 (the app ships as 1.0). Blank = derive from the tag."
         required: false
         default: ""
 
@@ -159,11 +159,17 @@ jobs:
           SCHEME: ${{ matrix.scheme }}
           SDK: ${{ matrix.sdk }}
         run: |
-          # Marketing version: dispatch input wins, else derive from the tag (vX.Y.Z -> X.Y.Z).
+          # Release version: dispatch input wins, else derive from the tag (vX.Y.Z -> X.Y.Z).
           VERSION="$INPUT_VERSION"
           [ -z "$VERSION" ] && VERSION="${GITHUB_REF_NAME#v}"
+          # The app's marketing version is only major.minor. TestFlight runs a
+          # real Beta App Review for the first build of each new marketing
+          # version and waves later builds through, so patch releases — the
+          # common case — reuse the approved version and reach testers without
+          # another review. The build number still identifies the release.
+          MARKETING="$(echo "$VERSION" | cut -d. -f1-2)"
           BUILD="${GITHUB_RUN_NUMBER}"      # monotonic, unique per upload
-          echo "Archiving $SCHEME $VERSION (build $BUILD) with profile '$PROFILE_NAME'"
+          echo "Archiving $SCHEME $MARKETING (build $BUILD, release $VERSION) with profile '$PROFILE_NAME'"
           # Manual-signing settings live in project.yml scoped to the app
           # targets (CLI settings would hit SPM package targets, which refuse
           # provisioning profiles). SENTRY_DSN and the UMAMI_* pair on the
@@ -176,7 +182,7 @@ jobs:
             -destination "generic/platform=$SDK" \
             -archivePath "build/$SCHEME.xcarchive" \
             DEVELOPMENT_TEAM="$TEAM_ID" \
-            MARKETING_VERSION="$VERSION" \
+            MARKETING_VERSION="$MARKETING" \
             CURRENT_PROJECT_VERSION="$BUILD" \
             SENTRY_DSN="$SENTRY_DSN" \
             UMAMI_URL="$UMAMI_URL" \
@@ -272,7 +278,7 @@ jobs:
           [ -z "$NOTES" ] && NOTES="Bug fixes and improvements."
           printf '%s' "$NOTES" > "$RUNNER_TEMP/whats_new.md"
 
-          python scripts/testflight_whats_new.py \
+          python scripts/testflight_publish.py \
             --bundle-id "$BUNDLE_ID" \
             --version "$VERSION" --build "$BUILD" \
             --notes-file "$RUNNER_TEMP/whats_new.md" \
