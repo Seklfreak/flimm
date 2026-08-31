@@ -27,8 +27,8 @@ type Querier interface {
 	GetUser(ctx context.Context, id uuid.UUID) (User, error)
 	GetWatchEvent(ctx context.Context, arg GetWatchEventParams) (WatchEvent, error)
 	HideHistoryEntry(ctx context.Context, arg HideHistoryEntryParams) (int64, error)
-	// What is already known about these videos. The page asks once for all of them.
-	ListBranding(ctx context.Context, videoIds []string) ([]DearrowBranding, error)
+	// What is already known for these keys. One query per page, per source.
+	ListCached(ctx context.Context, arg ListCachedParams) ([]ExternalCache, error)
 	// Newest first, for the screen that lets a viewer put one back.
 	ListDismissed(ctx context.Context, arg ListDismissedParams) ([]string, error)
 	// Which of these videos the user has dismissed — one round trip per page,
@@ -63,7 +63,7 @@ type Querier interface {
 	UndismissVideo(ctx context.Context, arg UndismissVideoParams) error
 	UnpinFeeds(ctx context.Context, userID uuid.UUID) error
 	UpdateFeed(ctx context.Context, arg UpdateFeedParams) (Feed, error)
-	UpsertBranding(ctx context.Context, arg UpsertBrandingParams) error
+	UpsertCached(ctx context.Context, arg UpsertCachedParams) error
 	UpsertPrefs(ctx context.Context, arg UpsertPrefsParams) error
 	// Heartbeat: creates the event on first play, then moves the position and
 	// last_played_at.

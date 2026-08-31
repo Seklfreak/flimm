@@ -205,10 +205,11 @@ func main() {
 		Handler:           srv.Router(),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
-	// The crowd-title cache warms itself: workers drain the lookup queue and a
-	// sweep fills it from the archive, so a viewer waits for a title at most
-	// once per video. Stops with the process's context.
-	srv.StartBrandingWarmer(ctx)
+	// Everything Flimm asks a third party is cached and refreshed behind the
+	// response; this starts the workers that do the refreshing, and the sweep
+	// that keeps crowd titles ahead of new downloads. Stops with the process's
+	// context.
+	srv.StartCacheWarmer(ctx)
 
 	log.Info("listening", "port", cfg.Port)
 	serveErr := make(chan error, 1)

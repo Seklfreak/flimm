@@ -2,7 +2,9 @@ package api
 
 import (
 	"context"
+	"time"
 
+	"github.com/Seklfreak/flimm/internal/ryd"
 	"github.com/Seklfreak/flimm/internal/ta"
 )
 
@@ -40,13 +42,8 @@ func (s *Server) videoStats(ctx context.Context, v *ta.Video) VideoStats {
 	if s.ryd == nil {
 		return stats
 	}
-	votes, err := s.ryd.Votes(ctx, v.YoutubeID)
-	if err != nil {
-		s.log.Debug("return youtube dislike: lookup failed, showing the archive's counts",
-			"video", v.YoutubeID, "err", err)
-		return stats
-	}
-	if !votes.Found {
+	votes, ok := s.cachedVotes(ctx, v.YoutubeID)
+	if !ok || !votes.Found {
 		return stats
 	}
 	// One exception to taking the pair whole: a record with no likes at all
@@ -64,4 +61,57 @@ func (s *Server) videoStats(ctx context.Context, v *ta.Video) VideoStats {
 	// knows which of those was later.
 	stats.Views = max(stats.Views, votes.Views)
 	return stats
+}
+
+// votesPayload is a Votes as the cache stores it.
+type votesPayload struct {
+	Likes    int64 `json:"likes"`
+	Dislikes int64 `json:"dislikes"`
+	Views    int64 `json:"views"`
+	Found    bool  `json:"found"`
+}
+
+// cachedVotes reads the vote counts without ever waiting for the service.
+//
+// Like SponsorBlock and unlike crowd titles, there is something to show while
+// the answer is fetched: the counts TubeArchivist archived, which is what
+// `stats` already holds. So a video nothing is known about is queued and the
+// archive's own numbers go out — the next view has the live ones.
+func (s *Server) cachedVotes(ctx context.Context, id string) (ryd.Votes, bool) {
+	row, ok := s.cacheLoad(ctx, sourceRYD, []string{id})[id]
+	if !ok {
+		s.cacheQueue(sourceRYD, id)
+		return ryd.Votes{}, false
+	}
+	var payload votesPayload
+	if !row.decode(&payload) {
+		s.cacheQueue(sourceRYD, id)
+		return ryd.Votes{}, false
+	}
+	if !row.fresh(sourceRYD, time.Now()) {
+		s.cacheQueue(sourceRYD, id)
+	}
+	return ryd.Votes{
+		Likes:    payload.Likes,
+		Dislikes: payload.Dislikes,
+		Views:    payload.Views,
+		Found:    payload.Found,
+	}, true
+}
+
+// fetchVotes asks the service and records the answer, including that it has
+// never heard of the video.
+func (s *Server) fetchVotes(ctx context.Context, id string) {
+	if s.ryd == nil {
+		return
+	}
+	votes, err := s.ryd.Votes(ctx, id)
+	if err != nil {
+		s.log.Debug("return youtube dislike lookup failed", "video", id, "err", err)
+		return
+	}
+	payload := votesPayload{
+		Likes: votes.Likes, Dislikes: votes.Dislikes, Views: votes.Views, Found: votes.Found,
+	}
+	s.detachedSave(ctx, sourceRYD, id, payload, votes.Found)
 }

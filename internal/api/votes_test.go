@@ -15,6 +15,12 @@ import (
 // videoWithVotes serves one video whose archived counts are 900 views and
 // 40 likes, and a Return YouTube Dislike stub answering `body`.
 func videoWithVotes(t *testing.T, body string, status int) http.Handler {
+	_, h := votesServer(t, body, status)
+	return h
+}
+
+// votesServer is videoWithVotes with the server, for warming the cache.
+func votesServer(t *testing.T, body string, status int) (*Server, http.Handler) {
 	t.Helper()
 	client := ta.NewFake()
 	v := video("v1", "A", "2026-08-01", 1000, false)
@@ -27,14 +33,23 @@ func videoWithVotes(t *testing.T, body string, status int) http.Handler {
 	}))
 	t.Cleanup(srv.Close)
 
-	return NewServer(Options{
+	s := NewServer(Options{
 		Querier:     newEventStore().querier(),
 		TA:          client,
 		Log:         slog.New(slog.NewTextHandler(io.Discard, nil)),
 		AppName:     "Flimm",
 		MediaSecret: testSecret,
 		RYD:         ryd.New(ryd.Options{BaseURL: srv.URL}),
-	}).Router()
+	})
+	return s, s.Router()
+}
+
+// warmVotes fetches once, the way the background worker does. The first view
+// of a video never waits for the service, so every test that asserts live
+// counts is asserting the state after it has answered.
+func warmVotes(t *testing.T, s *Server) {
+	t.Helper()
+	s.fetchVotes(t.Context(), "v1")
 }
 
 func detailStats(t *testing.T, h http.Handler) VideoStats {
@@ -49,7 +64,8 @@ func detailStats(t *testing.T, h http.Handler) VideoStats {
 // The whole point of the integration: the half of the vote YouTube stopped
 // publishing, and with it the like count it was measured against.
 func TestDislikesComeFromTheServiceAsAPair(t *testing.T) {
-	h := videoWithVotes(t, `{"id":"v1","likes":45120,"dislikes":1183,"viewCount":1200000}`, http.StatusOK)
+	s, h := votesServer(t, `{"id":"v1","likes":45120,"dislikes":1183,"viewCount":1200000}`, http.StatusOK)
+	warmVotes(t, s)
 	stats := detailStats(t, h)
 	if stats.Dislikes == nil || *stats.Dislikes != 1183 {
 		t.Fatalf("dislikes = %v, want 1183", stats.Dislikes)
@@ -61,6 +77,20 @@ func TestDislikesComeFromTheServiceAsAPair(t *testing.T) {
 	// recently read.
 	if stats.Views != 1_200_000 {
 		t.Errorf("views = %d, want the service's newer count", stats.Views)
+	}
+}
+
+// The first view of a video does not wait for the service. The archive's own
+// counts go out and the lookup is queued, so the wait falls on nobody.
+func TestTheFirstViewDoesNotWaitForTheVoteService(t *testing.T) {
+	s, h := votesServer(t, `{"id":"v1","likes":45120,"dislikes":1183}`, http.StatusOK)
+
+	stats := detailStats(t, h)
+	if stats.Likes != 40 {
+		t.Errorf("likes = %d, want the archive's own on a cold cache", stats.Likes)
+	}
+	if len(s.cacheJobs) != 1 {
+		t.Errorf("queued %d lookups, want the one this view could not answer", len(s.cacheJobs))
 	}
 }
 
@@ -99,7 +129,8 @@ func TestTheLargerViewCountWins(t *testing.T) {
 // A record with no likes beside an archive that counted plenty is the service
 // missing data, not the video losing its likes.
 func TestAnEmptyLikeCountDoesNotOverwriteTheArchives(t *testing.T) {
-	h := videoWithVotes(t, `{"id":"v1","likes":0,"dislikes":7}`, http.StatusOK)
+	s, h := votesServer(t, `{"id":"v1","likes":0,"dislikes":7}`, http.StatusOK)
+	warmVotes(t, s)
 	stats := detailStats(t, h)
 	if stats.Likes != 40 {
 		t.Errorf("likes = %d, want the archive's 40", stats.Likes)
@@ -134,16 +165,17 @@ func TestTheServiceOverridesTheArchivedDislikeCount(t *testing.T) {
 		_, _ = w.Write([]byte(`{"id":"v1","likes":45120,"dislikes":1183,"viewCount":1200000}`))
 	}))
 	t.Cleanup(srv.Close)
-	h := NewServer(Options{
+	s := NewServer(Options{
 		Querier:     newEventStore().querier(),
 		TA:          client,
 		Log:         slog.New(slog.NewTextHandler(io.Discard, nil)),
 		AppName:     "Flimm",
 		MediaSecret: testSecret,
 		RYD:         ryd.New(ryd.Options{BaseURL: srv.URL}),
-	}).Router()
+	})
+	warmVotes(t, s)
 
-	if got := detailStats(t, h).Dislikes; got == nil || *got != 1183 {
+	if got := detailStats(t, s.Router()).Dislikes; got == nil || *got != 1183 {
 		t.Errorf("dislikes = %v, want the service's 1183", got)
 	}
 }

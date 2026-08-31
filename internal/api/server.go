@@ -121,11 +121,10 @@ type Server struct {
 	// sponsorblock is the segment source; nil uses TA's snapshot.
 	sponsorblock *sponsorblock.Client
 	dearrow      *dearrow.Client
-	// brandingQueue carries videos to be looked up in the background, so a
-	// viewer waits for a crowd title at most once per video. See
-	// brandingcache.go.
-	brandingQueue chan string
-	ryd           *ryd.Client
+	// cacheJobs carries third-party lookups to be done in the background, so a
+	// viewer waits for one at most once per video. See extcache.go.
+	cacheJobs chan cacheJob
+	ryd       *ryd.Client
 	// minPlaySeconds gates recording a watch event; see Options.
 	minPlaySeconds float64
 	mediaCache     *media.Cache
@@ -172,7 +171,7 @@ func NewServer(o Options) *Server {
 		stalls:         &stallLog{},
 		sponsorblock:   o.Sponsorblock,
 		dearrow:        o.DeArrow,
-		brandingQueue:  make(chan string, brandingQueue),
+		cacheJobs:      make(chan cacheJob, cacheJobsQueue),
 		ryd:            o.RYD,
 		minPlaySeconds: cmp.Or(o.MinPlaySeconds, defaultMinPlaySeconds),
 		mediaCache:     o.MediaCache,

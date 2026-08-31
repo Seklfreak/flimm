@@ -161,6 +161,12 @@ that failed — an offline deploy, an outage, a timeout). An answer of "this
 video has no segments" is authoritative and wins over the snapshot: a segment
 that was removed must not come back.
 
+**No request ever waits for it.** Segments are cached (see
+[External lookups](#external-lookups)) and served from there however old the row
+is, with a refresh queued behind the response. The *first* view of a video is
+the snapshot — there is a floor to show, so nobody waits while the service is
+asked in the background — and every view after it is the live list.
+
 The lookup never tells the service which video is playing. It sends the first
 four hex characters of `sha256(video_id)`, gets every video sharing that prefix
 back and picks ours out server-side. Answers are cached for hours, and a
@@ -375,24 +381,13 @@ has: a title with the shouting taken out, and the frame the service suggests.
 A crowd that voted to *keep* the original is obeyed by both. The two are
 separate preferences because they are separate things to want.
 
-**Nobody waits for the same video twice.** What DeArrow said is kept in
-`dearrow_branding` — one row per video, shared by every user, and durable, so a
-restart does not throw it away (the cache before this one lived in memory and
-died on every deploy). A row is served immediately however old it is; past its
-freshness window a refresh is queued *behind* the response. Only a video with no
-row at all is fetched inside the request, under a **2.5 s** deadline — the
-service answers in 200–400 ms when healthy and has been measured at fifteen
-seconds when not, and a page must not be able to wait that long. Past the
-deadline the archive's own title goes out and the lookup finishes in the
-background, so the second view is right.
-
-Freshness is two windows because the two answers age differently: **24 h** for a
-row carrying a submission (votes move), **7 days** for "nobody has submitted
-anything" — which is around nine rows in ten, measured against a real archive,
-and the least likely to change. A background sweep walks the archive every six
-hours and queues whatever is missing or stale at a deliberate crawl, so a video
-downloaded today is usually already known by the time anyone opens the page it
-is on.
+**Nobody waits for the same video twice.** What DeArrow said is cached and
+refreshed behind the response — see [External lookups](#external-lookups) for
+the rule all three third parties follow. DeArrow is the one that can still make
+a request wait, because a list page has no floor to fall back to: a video with
+no row is fetched inline under a **2.5 s** deadline, after which the archive's
+own title goes out and the lookup finishes in the background. It is also the one
+that is swept ahead of time, so that rarely happens.
 
 A crowd-sourced thumbnail comes back as a `thumb_url` of
 `/media/frame/{id}/{ms}.jpg` — DeArrow returns a timestamp, not an image, so
@@ -657,6 +652,45 @@ Web clients are unaffected — hls.js parses the extra tag and ignores it — an
 the archived-file path still uses the [preview sprite sheets](#derived-media),
 which are a different mechanism for a different player.
 
+### External lookups
+
+Flimm asks three third parties for things: DeArrow for crowd titles,
+SponsorBlock for segments, Return YouTube Dislike for the other half of a vote.
+All three live on hosts that answer in a couple of hundred milliseconds when
+they are happy and have been measured at fifteen seconds when they are not, and
+all three used to be asked *inside* the request that needed the answer.
+
+They now share one cache — `external_cache`, keyed by source and video, global
+rather than per-user because what the crowd said is the same fact for everyone —
+and one rule:
+
+> Serve what is known, refresh what is stale behind the response, and never wait
+> twice for the same thing.
+
+A row is served however old it is; past its freshness window a refresh is queued
+and the viewer sees the row that was already there. What differs between the
+three is only what happens when **nothing** is known yet, and that follows from
+whether there is anything else to show:
+
+| Source | Nothing cached yet | Freshness (has data / empty) |
+| --- | --- | --- |
+| DeArrow | **waits**, up to 2.5 s — an archive title is not a crowd title, so there is no floor. Past the deadline the archive's title goes out and the lookup finishes in the background | 24 h / 7 days |
+| SponsorBlock | never waits — TubeArchivist's download-time snapshot is the floor, and the service is asked in the background | 12 h / 3 days |
+| Return YouTube Dislike | never waits — the archive's own counts are the floor | 24 h / 7 days |
+
+Segments get the shortest window because a stale segment is the one kind of
+staleness a viewer *sees*: a skip that lands in the wrong place. The long empty
+windows are where most of the value is — around three quarters of an archive has
+no crowd title at all, and "nobody has submitted anything" is both the most
+common answer and the least likely to change.
+
+**Only DeArrow is swept.** It is read on list pages, thirty videos at a time, so
+a video nobody has looked up yet is a page that waits; a sweep walks the archive
+every six hours and queues whatever is missing or stale, two workers draining it
+at a few lookups a second. The other two are read when a single video is opened,
+so the first open pays and every later one is free — sweeping them would be
+thousands of requests to warm data that is read once per video.
+
 ### Watch stats
 
 `GET /stats` is the whole of a viewer's history read sideways. Everything in it
@@ -729,9 +763,10 @@ file was downloaded and the service's the day it last looked, and neither knows
 which of those was later. With no service configured it is the archive's, and
 it is the one count here that every video has.
 
-The lookup runs concurrently with the SponsorBlock one on `GET /videos/{id}`,
-so it adds no latency of its own, answers are cached for six hours, and a
-failure is not retried for two minutes.
+Nothing waits for it: the counts are cached like every other third-party
+lookup (see [External lookups](#external-lookups)), and the first view of a
+video shows the archive's own numbers while the service is asked in the
+background.
 
 **Clients** show `1.2M views · 45.1K 👍 · 1.2K 👎` under the title (web,
 iPhone, iPad) or beside it in the Info panel (Apple TV), as counts rather than

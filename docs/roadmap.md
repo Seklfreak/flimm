@@ -2,6 +2,23 @@
 
 ## Done
 
+- **One cache for every third party** (2026-08-31) — SponsorBlock and Return
+  YouTube Dislike had the same problem DeArrow did, on the same host: a lookup
+  inside the request, behind a cache that lived in memory and died on every
+  deploy. They now share one table and one rule — serve what is known, refresh
+  what is stale behind the response, never wait twice.
+
+  What differs between them is only what happens when nothing is known yet, and
+  that follows from whether there is a floor to stand on. DeArrow has none, so a
+  list page waits briefly and once. Segments have TubeArchivist's download-time
+  snapshot and vote counts have its archived numbers, so neither ever waits at
+  all: the first view shows the floor and the service is asked in the
+  background. Only DeArrow is swept, because only DeArrow is read thirty videos
+  at a time.
+
+  The migration carries the eight thousand DeArrow rows across rather than
+  re-fetching them.
+
 - **DeArrow, off the critical path** (2026-08-31) — crowd titles were fetched
   inside the request that needed them: one internet round trip per video, on
   every list page, waited for. Measured from the cluster, the service answers in

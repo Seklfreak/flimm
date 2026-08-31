@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"time"
 
 	"github.com/Seklfreak/flimm/internal/sponsorblock"
 	"github.com/Seklfreak/flimm/internal/ta"
@@ -17,15 +18,45 @@ import (
 // Chapter segments are left out; they reach clients through
 // GET /videos/{id}/chapters instead of the player's tint overlay.
 func (s *Server) sponsorSegments(ctx context.Context, v *ta.Video) []SponsorSegment {
-	if s.sponsorblock != nil {
-		segs, err := s.sponsorblock.Segments(ctx, v.YoutubeID)
-		if err == nil {
-			return apiSponsorSegments(segs, v.Player.Duration)
-		}
-		s.log.Debug("sponsorblock: lookup failed, using the TubeArchivist snapshot",
-			"video", v.YoutubeID, "err", err)
+	if s.sponsorblock == nil {
+		return taSponsorSegments(v)
 	}
+	// Cached first, and served however old it is: the alternative is making a
+	// viewer wait on a service that has been measured at five seconds, for a
+	// list of segments that barely changes after a video's first week.
+	if row, ok := s.cacheLoad(ctx, sourceSponsorBlock, []string{v.YoutubeID})[v.YoutubeID]; ok {
+		var payload []sponsorblock.Segment
+		if row.decode(&payload) {
+			if !row.fresh(sourceSponsorBlock, time.Now()) {
+				s.cacheQueue(sourceSponsorBlock, v.YoutubeID)
+			}
+			return apiSponsorSegments(payload, v.Player.Duration)
+		}
+	}
+	// Nothing known yet. Unlike crowd titles this has a fallback worth having —
+	// the snapshot TubeArchivist stored when it downloaded the video — so the
+	// service is asked in the background and nobody waits at all. The next play
+	// of this video gets the live list.
+	s.cacheQueue(sourceSponsorBlock, v.YoutubeID)
 	return taSponsorSegments(v)
+}
+
+// fetchSponsorSegments asks the service and records the answer, including an
+// empty one: "this video has no segments" is the common case and the one worth
+// not asking twice.
+func (s *Server) fetchSponsorSegments(ctx context.Context, id string) {
+	if s.sponsorblock == nil {
+		return
+	}
+	segs, err := s.sponsorblock.Segments(ctx, id)
+	if err != nil {
+		s.log.Debug("sponsorblock lookup failed", "video", id, "err", err)
+		return
+	}
+	if segs == nil {
+		segs = []sponsorblock.Segment{}
+	}
+	s.detachedSave(ctx, sourceSponsorBlock, id, segs, len(segs) > 0)
 }
 
 // apiSponsorSegments maps fetched segments to the API shape, dropping what

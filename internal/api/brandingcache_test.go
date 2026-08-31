@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"log/slog"
 	"net/http"
@@ -18,30 +19,39 @@ import (
 	"github.com/Seklfreak/flimm/internal/ta"
 )
 
-// brandingStore is the cache table, with a count of the lookups the service
-// was actually asked for — which is the number this whole file exists to keep
-// at zero on a warm page.
+// brandingStore is the external cache table, with a count of the lookups the
+// service was actually asked for — the number this whole file exists to keep at
+// zero on a warm page.
 type brandingStore struct {
-	rows     map[string]sqlc.DearrowBranding
+	rows     map[string]sqlc.ExternalCache
 	lookups  atomic.Int64
 	upserted atomic.Int64
 }
 
+// row builds a cache row for a video, `age` old.
+func cachedBranding(id string, payload brandingPayload, hasData bool, age time.Duration) sqlc.ExternalCache {
+	encoded, _ := json.Marshal(payload)
+	return sqlc.ExternalCache{
+		Source: string(sourceDeArrow), Key: id, Payload: encoded, HasData: hasData,
+		FetchedAt: pgtype.Timestamptz{Time: time.Now().Add(-age), Valid: true},
+	}
+}
+
 func (b *brandingStore) querier() *sqlctest.FakeQuerier {
 	return &sqlctest.FakeQuerier{
-		ListBrandingFn: func(_ context.Context, ids []string) ([]sqlc.DearrowBranding, error) {
-			var out []sqlc.DearrowBranding
-			for _, id := range ids {
-				if row, ok := b.rows[id]; ok {
+		ListCachedFn: func(_ context.Context, arg sqlc.ListCachedParams) ([]sqlc.ExternalCache, error) {
+			var out []sqlc.ExternalCache
+			for _, key := range arg.Keys {
+				if row, ok := b.rows[key]; ok && row.Source == arg.Source {
 					out = append(out, row)
 				}
 			}
 			return out, nil
 		},
-		UpsertBrandingFn: func(_ context.Context, arg sqlc.UpsertBrandingParams) error {
+		UpsertCachedFn: func(_ context.Context, arg sqlc.UpsertCachedParams) error {
 			b.upserted.Add(1)
-			b.rows[arg.VideoID] = sqlc.DearrowBranding{
-				VideoID: arg.VideoID, Title: arg.Title, HasSubmission: arg.HasSubmission,
+			b.rows[arg.Key] = sqlc.ExternalCache{
+				Source: arg.Source, Key: arg.Key, Payload: arg.Payload, HasData: arg.HasData,
 				FetchedAt: pgtype.Timestamptz{Time: time.Now(), Valid: true},
 			}
 			return nil
@@ -77,11 +87,8 @@ func brandingPrefs() Prefs { return Prefs{DeArrowTitles: dearrowManual} }
 
 // The point of the table: a page that has been served before touches nothing.
 func TestAKnownVideoIsBrandedWithoutAskingAnyone(t *testing.T) {
-	store := &brandingStore{rows: map[string]sqlc.DearrowBranding{
-		"v1": {
-			VideoID: "v1", Title: "What it is actually about", HasSubmission: true,
-			FetchedAt: pgtype.Timestamptz{Time: time.Now().Add(-time.Hour), Valid: true},
-		},
+	store := &brandingStore{rows: map[string]sqlc.ExternalCache{
+		"v1": cachedBranding("v1", brandingPayload{Title: "What it is actually about"}, true, time.Hour),
 	}}
 	s := brandingServer(t, store, "from the service", 0)
 
@@ -99,11 +106,8 @@ func TestAKnownVideoIsBrandedWithoutAskingAnyone(t *testing.T) {
 // A row past its freshness window is still served immediately; the refresh
 // happens behind the response. The viewer waits for nothing.
 func TestAStaleRowIsServedNowAndRefreshedAfter(t *testing.T) {
-	store := &brandingStore{rows: map[string]sqlc.DearrowBranding{
-		"v1": {
-			VideoID: "v1", Title: "an old crowd title", HasSubmission: true,
-			FetchedAt: pgtype.Timestamptz{Time: time.Now().Add(-30 * 24 * time.Hour), Valid: true},
-		},
+	store := &brandingStore{rows: map[string]sqlc.ExternalCache{
+		"v1": cachedBranding("v1", brandingPayload{Title: "an old crowd title"}, true, 30*24*time.Hour),
 	}}
 	s := brandingServer(t, store, "from the service", 0)
 
@@ -116,15 +120,15 @@ func TestAStaleRowIsServedNowAndRefreshedAfter(t *testing.T) {
 	if n := store.lookups.Load(); n != 0 {
 		t.Errorf("a stale row cost %d lookups inside the request, want none", n)
 	}
-	if len(s.brandingQueue) != 1 {
-		t.Errorf("queued %d refreshes, want 1", len(s.brandingQueue))
+	if len(s.cacheJobs) != 1 {
+		t.Errorf("queued %d refreshes, want 1", len(s.cacheJobs))
 	}
 }
 
 // The one case that waits: a video nothing is known about. It is also the only
 // case that writes a row, which is what stops it happening twice.
 func TestAnUnknownVideoIsFetchedOnceAndRemembered(t *testing.T) {
-	store := &brandingStore{rows: map[string]sqlc.DearrowBranding{}}
+	store := &brandingStore{rows: map[string]sqlc.ExternalCache{}}
 	s := brandingServer(t, store, "What it is actually about", 0)
 
 	items := []VideoSummary{{ID: "v1", Title: "WATCH THIS NOW"}}
@@ -151,7 +155,7 @@ func TestAnUnknownVideoIsFetchedOnceAndRemembered(t *testing.T) {
 // A service having a bad minute must not hold a page. The archive's own title
 // goes out and the lookup is left to the background.
 func TestASlowServiceDoesNotHoldThePage(t *testing.T) {
-	store := &brandingStore{rows: map[string]sqlc.DearrowBranding{}}
+	store := &brandingStore{rows: map[string]sqlc.ExternalCache{}}
 	s := brandingServer(t, store, "too late", 2*time.Second)
 	// The real deadline is seconds; this test's patience is shorter.
 	ctx, cancel := context.WithTimeout(context.Background(), 150*time.Millisecond)
@@ -167,8 +171,8 @@ func TestASlowServiceDoesNotHoldThePage(t *testing.T) {
 	if items[0].Title != "WATCH THIS NOW" {
 		t.Errorf("title = %q, want the archive's own", items[0].Title)
 	}
-	if len(s.brandingQueue) != 1 {
-		t.Errorf("queued %d background lookups, want the missed one", len(s.brandingQueue))
+	if len(s.cacheJobs) != 1 {
+		t.Errorf("queued %d background lookups, want the missed one", len(s.cacheJobs))
 	}
 }
 
@@ -176,14 +180,20 @@ func TestASlowServiceDoesNotHoldThePage(t *testing.T) {
 // submitted anything" is most of the table and the least likely to change.
 func TestNothingSubmittedStaysFreshLonger(t *testing.T) {
 	old := time.Now().Add(-3 * 24 * time.Hour)
-	submitted := brandingRecord{submission: true, fetchedAt: old}
-	empty := brandingRecord{submission: false, fetchedAt: old}
+	submitted := cacheEntry{hasData: true, fetchedAt: old}
+	empty := cacheEntry{hasData: false, fetchedAt: old}
 
-	if submitted.fresh(time.Now()) {
+	if submitted.fresh(sourceDeArrow, time.Now()) {
 		t.Error("a three-day-old submission should be refreshed")
 	}
-	if !empty.fresh(time.Now()) {
+	if !empty.fresh(sourceDeArrow, time.Now()) {
 		t.Error("a three-day-old empty answer should still be served")
+	}
+	// Segments are the one staleness a viewer sees — a skip in the wrong place
+	// — so they are refreshed sooner.
+	segments := cacheEntry{hasData: true, fetchedAt: time.Now().Add(-18 * time.Hour)}
+	if segments.fresh(sourceSponsorBlock, time.Now()) {
+		t.Error("an eighteen-hour-old segment list should be refreshed")
 	}
 }
 

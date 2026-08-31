@@ -42,7 +42,7 @@ func (s *Server) applyBranding(ctx context.Context, prefs Prefs, items []VideoSu
 	for _, item := range items {
 		ids = append(ids, item.ID)
 	}
-	known := s.loadBranding(ctx, ids)
+	known := s.cacheLoad(ctx, sourceDeArrow, ids)
 
 	// Anything already known is applied without touching the network, however
 	// old it is; anything past its freshness window is refreshed behind the
@@ -53,13 +53,14 @@ func (s *Server) applyBranding(ctx context.Context, prefs Prefs, items []VideoSu
 	var unknown []int
 	for i, item := range items {
 		row, ok := known[item.ID]
-		if !ok {
+		var payload brandingPayload
+		if !ok || !row.decode(&payload) {
 			unknown = append(unknown, i)
 			continue
 		}
-		branding[i], found[i] = row.branding, true
-		if !row.fresh(now) {
-			s.queueBranding(item.ID)
+		branding[i], found[i] = payload.branding(), true
+		if !row.fresh(sourceDeArrow, now) {
+			s.cacheQueue(sourceDeArrow, item.ID)
 		}
 	}
 
@@ -81,7 +82,7 @@ func (s *Server) applyBranding(ctx context.Context, prefs Prefs, items []VideoSu
 		}
 		for _, i := range unknown {
 			if !found[i] {
-				s.queueBranding(items[i].ID)
+				s.cacheQueue(sourceDeArrow, items[i].ID)
 			}
 		}
 	}

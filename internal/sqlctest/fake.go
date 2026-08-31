@@ -23,8 +23,8 @@ type FakeQuerier struct {
 	DismissVideoFn               func(context.Context, sqlc.DismissVideoParams) error
 	UndismissVideoFn             func(context.Context, sqlc.UndismissVideoParams) error
 	ListDismissedForVideosFn     func(context.Context, sqlc.ListDismissedForVideosParams) ([]string, error)
-	ListBrandingFn               func(context.Context, []string) ([]sqlc.DearrowBranding, error)
-	UpsertBrandingFn             func(context.Context, sqlc.UpsertBrandingParams) error
+	ListCachedFn                 func(context.Context, sqlc.ListCachedParams) ([]sqlc.ExternalCache, error)
+	UpsertCachedFn               func(context.Context, sqlc.UpsertCachedParams) error
 	WatchTotalsFn                func(context.Context, sqlc.WatchTotalsParams) (sqlc.WatchTotalsRow, error)
 	WatchTopChannelsFn           func(context.Context, sqlc.WatchTopChannelsParams) ([]sqlc.WatchTopChannelsRow, error)
 	WatchByHourFn                func(context.Context, sqlc.WatchByHourParams) ([]sqlc.WatchByHourRow, error)
@@ -114,12 +114,22 @@ func (f *FakeQuerier) ListFeeds(ctx context.Context, userID uuid.UUID) ([]sqlc.F
 	return f.ListFeedsFn(ctx, userID)
 }
 
-func (f *FakeQuerier) ListBranding(ctx context.Context, ids []string) ([]sqlc.DearrowBranding, error) {
-	return f.ListBrandingFn(ctx, ids)
+// The external cache is the one pair that answers when unset rather than
+// panicking: a miss is the cold state every handler already tolerates, not an
+// unexpected query, and every test that touches a video detail would otherwise
+// have to declare a cache it does not care about.
+func (f *FakeQuerier) ListCached(ctx context.Context, arg sqlc.ListCachedParams) ([]sqlc.ExternalCache, error) {
+	if f.ListCachedFn == nil {
+		return nil, nil
+	}
+	return f.ListCachedFn(ctx, arg)
 }
 
-func (f *FakeQuerier) UpsertBranding(ctx context.Context, arg sqlc.UpsertBrandingParams) error {
-	return f.UpsertBrandingFn(ctx, arg)
+func (f *FakeQuerier) UpsertCached(ctx context.Context, arg sqlc.UpsertCachedParams) error {
+	if f.UpsertCachedFn == nil {
+		return nil
+	}
+	return f.UpsertCachedFn(ctx, arg)
 }
 
 func (f *FakeQuerier) WatchTotals(ctx context.Context, arg sqlc.WatchTotalsParams) (sqlc.WatchTotalsRow, error) {

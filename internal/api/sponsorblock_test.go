@@ -16,6 +16,13 @@ import (
 // sponsorFixture wires a server whose SponsorBlock client talks to a stub
 // service returning body (with status).
 func sponsorFixture(t *testing.T, status int, body string) (*ta.Fake, *eventStore, http.Handler) {
+	client, es, srv := sponsorServer(t, status, body)
+	return client, es, srv.Router()
+}
+
+// sponsorServer is sponsorFixture with the server itself, for the tests that
+// warm the cache or look at what was queued.
+func sponsorServer(t *testing.T, status int, body string) (*ta.Fake, *eventStore, *Server) {
 	t.Helper()
 	svc := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(status)
@@ -32,7 +39,7 @@ func sponsorFixture(t *testing.T, status int, body string) (*ta.Fake, *eventStor
 		MediaSecret:  testSecret,
 		Sponsorblock: sponsorblock.New(sponsorblock.Options{BaseURL: svc.URL}),
 	})
-	return client, es, srv.Router()
+	return client, es, srv
 }
 
 // taSnapshot is the video TubeArchivist indexed, with one stale segment.
@@ -42,8 +49,10 @@ func taSnapshot() ta.Video {
 	return v
 }
 
+// The live list wins once it is known — segments keep being submitted and
+// corrected long after a download, so a snapshot is a floor and not the truth.
 func TestVideoDetailPrefersTheLiveSegments(t *testing.T) {
-	client, _, h := sponsorFixture(t, http.StatusOK, `[{"videoID":"v1","segments":[
+	client, _, srv := sponsorServer(t, http.StatusOK, `[{"videoID":"v1","segments":[
 	  {"category":"sponsor","actionType":"skip","segment":[12.5,45.5]},
 	  {"category":"music_offtopic","actionType":"mute","segment":[60,70]},
 	  {"category":"poi_highlight","actionType":"poi","segment":[100,100]},
@@ -52,8 +61,11 @@ func TestVideoDetailPrefersTheLiveSegments(t *testing.T) {
 	  {"category":"sponsor","actionType":"skip","segment":[1500,1600]}
 	]}]`)
 	client.AddVideo(taSnapshot())
+	// The first view never waits for the service (see below); this is the state
+	// after it has answered once.
+	srv.fetchSponsorSegments(t.Context(), "v1")
 
-	rec := do(t, h, http.MethodGet, "/api/v1/videos/v1", "")
+	rec := do(t, srv.Router(), http.MethodGet, "/api/v1/videos/v1", "")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d: %s", rec.Code, rec.Body.String())
 	}
@@ -70,6 +82,24 @@ func TestVideoDetailPrefersTheLiveSegments(t *testing.T) {
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("sponsorblock = %+v\nwant %+v", got, want)
+	}
+}
+
+// The first view of a video does not wait for the service at all. There is a
+// floor to show — the snapshot TubeArchivist took at download time — so the
+// lookup is queued and the page goes out now.
+func TestTheFirstViewServesTheSnapshotAndQueuesTheLookup(t *testing.T) {
+	client, _, srv := sponsorServer(t, http.StatusOK, `[{"videoID":"v1","segments":[
+	  {"category":"sponsor","actionType":"skip","segment":[12.5,45.5]}]}]`)
+	client.AddVideo(taSnapshot())
+
+	rec := do(t, srv.Router(), http.MethodGet, "/api/v1/videos/v1", "")
+	want := []SponsorSegment{{Category: "sponsor", ActionType: "skip", Start: 1, End: 2}}
+	if got := decode[VideoDetail](t, rec).Sponsorblock; !reflect.DeepEqual(got, want) {
+		t.Errorf("sponsorblock = %+v, want the snapshot %+v", got, want)
+	}
+	if len(srv.cacheJobs) != 1 {
+		t.Errorf("queued %d lookups, want the one this view could not answer", len(srv.cacheJobs))
 	}
 }
 
@@ -90,11 +120,12 @@ func TestVideoDetailFallsBackToTheSnapshotWhenTheServiceFails(t *testing.T) {
 
 func TestVideoDetailServiceAnswerOfNoneWinsOverTheSnapshot(t *testing.T) {
 	// A segment that was removed or downvoted away must not come back from a
-	// snapshot taken at download time.
-	client, _, h := sponsorFixture(t, http.StatusNotFound, "")
+	// snapshot taken at download time — once the service has been asked.
+	client, _, srv := sponsorServer(t, http.StatusNotFound, "")
 	client.AddVideo(taSnapshot())
+	srv.fetchSponsorSegments(t.Context(), "v1")
 
-	rec := do(t, h, http.MethodGet, "/api/v1/videos/v1", "")
+	rec := do(t, srv.Router(), http.MethodGet, "/api/v1/videos/v1", "")
 	if got := decode[VideoDetail](t, rec).Sponsorblock; len(got) != 0 {
 		t.Errorf("sponsorblock = %+v, want none", got)
 	}

@@ -32,9 +32,21 @@ type eventStore struct {
 	mu       sync.Mutex
 	events   map[string]sqlc.WatchEvent
 	settings []sqlc.PlaylistSetting
+	// cached is the external_cache table: what a third party said, keyed by
+	// source and key. Tests that want the warm path fill it by calling the
+	// fetch they are testing.
+	cached map[string]sqlc.ExternalCache
 }
 
-func newEventStore() *eventStore { return &eventStore{events: map[string]sqlc.WatchEvent{}} }
+func newEventStore() *eventStore {
+	return &eventStore{
+		events: map[string]sqlc.WatchEvent{},
+		cached: map[string]sqlc.ExternalCache{},
+	}
+}
+
+// cacheKey is how a row is addressed: one third party, one video.
+func cacheKey(source, key string) string { return source + "\x00" + key }
 
 // upsertSetting mirrors the ON CONFLICT upsert in playlist_settings.sql: one
 // row per playlist, each flag set independently. Caller holds the lock.
@@ -52,6 +64,26 @@ func (es *eventStore) upsertSetting(id string, apply func(*sqlc.PlaylistSetting)
 
 func (es *eventStore) querier() *sqlctest.FakeQuerier {
 	return &sqlctest.FakeQuerier{
+		ListCachedFn: func(_ context.Context, arg sqlc.ListCachedParams) ([]sqlc.ExternalCache, error) {
+			es.mu.Lock()
+			defer es.mu.Unlock()
+			var out []sqlc.ExternalCache
+			for _, key := range arg.Keys {
+				if row, ok := es.cached[cacheKey(arg.Source, key)]; ok {
+					out = append(out, row)
+				}
+			}
+			return out, nil
+		},
+		UpsertCachedFn: func(_ context.Context, arg sqlc.UpsertCachedParams) error {
+			es.mu.Lock()
+			defer es.mu.Unlock()
+			es.cached[cacheKey(arg.Source, arg.Key)] = sqlc.ExternalCache{
+				Source: arg.Source, Key: arg.Key, Payload: arg.Payload, HasData: arg.HasData,
+				FetchedAt: pgtype.Timestamptz{Time: time.Now(), Valid: true},
+			}
+			return nil
+		},
 		ListWatchEventsForVideosFn: func(_ context.Context, arg sqlc.ListWatchEventsForVideosParams) ([]sqlc.WatchEvent, error) {
 			es.mu.Lock()
 			defer es.mu.Unlock()

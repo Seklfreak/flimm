@@ -9,21 +9,18 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-type DearrowBranding struct {
-	VideoID          string             `json:"video_id"`
-	Title            string             `json:"title"`
-	OriginalTitleWon bool               `json:"original_title_won"`
-	ThumbnailTime    pgtype.Float8      `json:"thumbnail_time"`
-	OriginalThumbWon bool               `json:"original_thumb_won"`
-	RandomTime       float64            `json:"random_time"`
-	HasSubmission    bool               `json:"has_submission"`
-	FetchedAt        pgtype.Timestamptz `json:"fetched_at"`
-}
-
 type DismissedVideo struct {
 	UserID      uuid.UUID          `json:"user_id"`
 	VideoID     string             `json:"video_id"`
 	DismissedAt pgtype.Timestamptz `json:"dismissed_at"`
+}
+
+type ExternalCache struct {
+	Source    string             `json:"source"`
+	Key       string             `json:"key"`
+	Payload   []byte             `json:"payload"`
+	HasData   bool               `json:"has_data"`
+	FetchedAt pgtype.Timestamptz `json:"fetched_at"`
 }
 
 type Feed struct {
