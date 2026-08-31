@@ -660,7 +660,7 @@ All three live on hosts that answer in a couple of hundred milliseconds when
 they are happy and have been measured at fifteen seconds when they are not, and
 all three used to be asked *inside* the request that needed the answer.
 
-They now share one cache — `external_cache`, keyed by source and video, global
+They now share one cache — `external_cache`, keyed by source and id, global
 rather than per-user because what the crowd said is the same fact for everyone —
 and one rule:
 
@@ -713,6 +713,32 @@ nineteen requests for one integer, on a route the app loads with every screen.
 — needs nothing fetched to decide, so only the channels on the page are counted.
 `?sort=videos|unseen|last_upload` cannot be decided that way and still counts
 every channel, which is the one order that costs what the whole list costs.
+
+### Playlist counts
+
+A playlist summary reports six things — how many videos, how long in total, how
+many seen, how many started, the fraction done, and where to resume — and
+producing them used to read **every video document in the playlist**, one
+request per hundred entries, on `GET /playlists` and on the pinned-playlist
+sidebar.
+
+Only two of the six need the archive at all. The rest is the caller's own watch
+state, which is already in Postgres and keyed by video id. So the cache holds
+exactly the archive's half — each video's duration, and TubeArchivist's own
+watched flag, which a summary falls back to for a video Flimm has never seen —
+and the per-user half is computed on every request, as it must be. A warm
+summary makes **no** video request; `GET /playlists` costs the one call that
+lists the playlists, and the sidebar one `GET /api/playlist/{id}` per pin.
+
+The freshness window is longer than a channel's, because a duration never
+changes and the set it belongs to changes only when the playlist gains or loses
+a video. That case does not wait for the window: each row records how many of
+the playlist's entries were downloaded when it was written, and a mismatch is
+rebuilt on the spot — so a video that finishes downloading is counted on the
+very next request rather than up to half an hour later.
+
+`GET /playlists/{id}` is unchanged. It renders the videos themselves, so it
+still fetches them — and refreshes the cached counts while it has them.
 
 ### Watch stats
 

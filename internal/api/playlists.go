@@ -29,10 +29,15 @@ func playlistKind(p ta.Playlist) string {
 	return "channel"
 }
 
-// playlistVideos resolves a playlist's entries to per-user summaries in
+// playlistVideoDocs resolves a playlist's entries to TA video documents in
 // playlist order. TA's playlist filter on the video list is tried first (one
 // round trip per 100 entries); entries missing there are fetched by id.
-func (s *Server) playlistVideos(ctx context.Context, uid uuid.UUID, p *ta.Playlist) ([]PlaylistItem, error) {
+//
+// This is the expensive half of a playlist — a page of documents per hundred
+// videos — and the only caller that needs the documents themselves is the
+// detail view. A summary wants six integers, and gets them from the cached
+// aggregate instead; see playlistcache.go.
+func (s *Server) playlistVideoDocs(ctx context.Context, p *ta.Playlist) ([]ta.Video, error) {
 	byID := map[string]ta.Video{}
 	if len(p.PlaylistEntries) > 0 {
 		vids, err := s.fetchAll(ctx, ta.VideoQuery{Playlist: p.PlaylistID})
@@ -77,6 +82,19 @@ func (s *Server) playlistVideos(ctx context.Context, uid uuid.UUID, p *ta.Playli
 			ordered = append(ordered, v)
 		}
 	}
+	return ordered, nil
+}
+
+// playlistVideos resolves a playlist's entries to per-user summaries in
+// playlist order.
+func (s *Server) playlistVideos(ctx context.Context, uid uuid.UUID, p *ta.Playlist) ([]PlaylistItem, error) {
+	ordered, err := s.playlistVideoDocs(ctx, p)
+	if err != nil {
+		return nil, err
+	}
+	// Having paid for the documents, record what a summary would have needed,
+	// so the next one does not have to.
+	s.savePlaylistAggregate(ctx, p, ordered)
 	items, err := s.overlay(ctx, uid, ordered)
 	if err != nil {
 		return nil, err
@@ -88,24 +106,33 @@ func (s *Server) playlistVideos(ctx context.Context, uid uuid.UUID, p *ta.Playli
 	return out, nil
 }
 
-func (s *Server) playlistSummary(ctx context.Context, uid uuid.UUID, p *ta.Playlist) (*PlaylistSummary, []PlaylistItem, error) {
-	items, err := s.playlistVideos(ctx, uid, p)
-	if err != nil {
-		return nil, nil, err
-	}
+// playlistShell is the part of a summary that needs nothing but the playlist
+// itself.
+func playlistShell(p *ta.Playlist) *PlaylistSummary {
 	out := &PlaylistSummary{
-		ID:         p.PlaylistID,
-		Name:       p.PlaylistName,
-		Kind:       playlistKind(*p),
-		ThumbURL:   playlistThumbURL(p.PlaylistID),
-		VideoCount: len(items),
+		ID:       p.PlaylistID,
+		Name:     p.PlaylistName,
+		Kind:     playlistKind(*p),
+		ThumbURL: playlistThumbURL(p.PlaylistID),
 	}
 	if p.PlaylistChannelID != "" {
 		out.Channel = &PlaylistChannelRef{ID: p.PlaylistChannelID, Name: p.PlaylistChannel}
 	}
+	return out
+}
+
+// tallyPlaylist counts a playlist's videos into its summary: how long it is,
+// how much of it is seen, and where to resume.
+//
+// Both paths that build a summary run this same function over the same
+// per-user VideoSummary values — the cheap one over videos rebuilt from the
+// cache, the detail one over the real documents — so the two cannot report a
+// playlist differently.
+func tallyPlaylist(out *PlaylistSummary, videos []VideoSummary) {
+	out.VideoCount = len(videos)
 	var firstInProgress, firstUnseen *string
-	for i := range items {
-		v := items[i].Video
+	for i := range videos {
+		v := videos[i]
 		out.TotalDuration += v.Duration
 		switch {
 		case v.Watched:
@@ -130,13 +157,29 @@ func (s *Server) playlistSummary(ctx context.Context, uid uuid.UUID, p *ta.Playl
 	if out.ResumeVideoID == nil {
 		out.ResumeVideoID = firstUnseen
 	}
+}
+
+// playlistSummary builds a summary and the items behind it. Only the detail
+// view wants the items; everything else should call playlistSummaryOnly, which
+// does not fetch them.
+func (s *Server) playlistSummary(ctx context.Context, uid uuid.UUID, p *ta.Playlist) (*PlaylistSummary, []PlaylistItem, error) {
+	items, err := s.playlistVideos(ctx, uid, p)
+	if err != nil {
+		return nil, nil, err
+	}
+	videos := make([]VideoSummary, len(items))
+	for i := range items {
+		videos[i] = items[i].Video
+	}
+	out := playlistShell(p)
+	tallyPlaylist(out, videos)
 	return out, items, nil
 }
 
 func (s *Server) playlistSummaries(ctx context.Context, uid uuid.UUID, lists []ta.Playlist) ([]PlaylistSummary, error) {
 	out := make([]PlaylistSummary, len(lists))
 	err := parallel(ctx, lists, func(ctx context.Context, i int, p ta.Playlist) error {
-		sum, _, err := s.playlistSummary(ctx, uid, &p)
+		sum, err := s.playlistSummaryOnly(ctx, uid, &p)
 		if err != nil {
 			return err
 		}
@@ -216,7 +259,7 @@ func (s *Server) listPinnedPlaylists(w http.ResponseWriter, r *http.Request) {
 			s.writeTAError(w, "get playlist", err)
 			return
 		}
-		sum, _, err := s.playlistSummary(r.Context(), uid, p)
+		sum, err := s.playlistSummaryOnly(r.Context(), uid, p)
 		if err != nil {
 			s.writeTAError(w, "playlist summary", err)
 			return
@@ -317,7 +360,7 @@ func (s *Server) createPlaylist(w http.ResponseWriter, r *http.Request) {
 		s.writeTAError(w, "create playlist", err)
 		return
 	}
-	sum, _, err := s.playlistSummary(r.Context(), uid, p)
+	sum, err := s.playlistSummaryOnly(r.Context(), uid, p)
 	if err != nil {
 		s.writeTAError(w, "playlist summary", err)
 		return
@@ -391,7 +434,7 @@ func (s *Server) renamePlaylist(w http.ResponseWriter, r *http.Request) {
 		s.writeTAError(w, "get playlist", err)
 		return
 	}
-	sum, _, err := s.playlistSummary(r.Context(), uid, fresh)
+	sum, err := s.playlistSummaryOnly(r.Context(), uid, fresh)
 	if err != nil {
 		s.writeTAError(w, "playlist summary", err)
 		return

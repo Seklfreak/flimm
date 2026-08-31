@@ -2,6 +2,26 @@
 
 ## Done
 
+- **A sidebar's totals cost the whole playlist** (2026-08-31) — the last of the
+  fan-out routes the traces named. A playlist summary is six integers, and
+  producing them read every video document in the playlist: sixteen calls for
+  `GET /playlists`, seven more for the pinned sidebar, on every page load. The
+  documents were then run through DeArrow branding to render numbers nobody
+  reads a title from.
+
+  Only two of the six need the archive — the count and the total duration. The
+  rest is the viewer's own watch state, already in Postgres and keyed by video
+  id. So the cache holds exactly the archive's half, per playlist, and the
+  per-user half is computed fresh on every request. A warm summary fetches no
+  videos at all: `/playlists` is down to the one call that lists them.
+
+  Time-based freshness would have been wrong for the case a viewer notices — a
+  video finishes downloading and belongs in the count *now* — so each row also
+  records how many entries were downloaded when it was written, and a mismatch
+  is rebuilt on the spot instead of waiting for the window. Verified against the
+  dev stack by running both paths over the same playlist through a watch: they
+  agree at every step.
+
 - **429 queries for one page of channels** (2026-08-31) — the new traces named
   it immediately: a single request to `GET /api/v1/channels` made **429** calls
   to TubeArchivist. Two per channel, for a video count and an unseen count, and

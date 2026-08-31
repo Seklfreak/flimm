@@ -41,6 +41,10 @@ const (
 	// per-channel counts that TubeArchivist can only answer one channel at a
 	// time. See channelcache.go.
 	sourceChannel cacheSource = "channel"
+	// sourcePlaylist is the same idea one level up: the durations and watch
+	// flags of a playlist's videos, which otherwise cost every one of its video
+	// documents to total. See playlistcache.go.
+	sourcePlaylist cacheSource = "playlist"
 )
 
 // cachePolicy is how long one source's answers stay fresh.
@@ -69,6 +73,13 @@ var cachePolicies = map[cacheSource]cachePolicy{
 	// badge is never far wrong. A channel with nothing in it is re-checked
 	// sooner, because that is what a newly subscribed channel looks like.
 	sourceChannel: {withData: 5 * time.Minute, empty: 1 * time.Minute},
+	// Longer than a channel's, because the thing being cached barely moves: a
+	// video's duration never changes, and the set it belongs to changes only
+	// when the playlist gains or loses one. That case does not wait for this
+	// window at all — a playlist whose downloaded entries no longer match the
+	// row is recomputed on the spot — so the window only governs how often the
+	// archive's own watched flags are re-read.
+	sourcePlaylist: {withData: 30 * time.Minute, empty: 5 * time.Minute},
 }
 
 // cacheEntry is one row, still encoded.
@@ -219,5 +230,7 @@ func (s *Server) runCacheJob(ctx context.Context, job cacheJob) {
 		s.fetchVotes(ctx, job.key)
 	case sourceChannel:
 		s.fetchChannelAggregate(ctx, job.key)
+	case sourcePlaylist:
+		s.fetchPlaylistAggregate(ctx, job.key)
 	}
 }
