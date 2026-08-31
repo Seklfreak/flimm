@@ -130,6 +130,7 @@ export function feed(over: Partial<Feed> = {}): Feed {
     channel_count: 6,
     playlist_ids: [],
     playlist_count: 0,
+    series_watch_channel_ids: [],
     unseen_count: 7,
     sort: "newest",
     hide_seen: true,

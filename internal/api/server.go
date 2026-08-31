@@ -256,6 +256,8 @@ func (s *Server) Router() http.Handler {
 			r.Put("/feeds/{id}", s.updateFeed)
 			r.Delete("/feeds/{id}", s.deleteFeed)
 			r.Get("/feeds/{id}/videos", s.listFeedVideos)
+			r.Get("/feeds/{id}/new-series", s.listNewSeries)
+			r.Post("/feeds/{id}/new-series/{playlistID}/dismiss", s.dismissNewSeries)
 			r.Post("/feeds/{id}/mark-seen", s.markFeedSeen)
 
 			r.Get("/channels", s.listChannels)

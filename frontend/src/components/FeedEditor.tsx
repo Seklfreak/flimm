@@ -30,6 +30,8 @@ export function FeedEditor({ feed, onClose }: { feed?: Feed; onClose: () => void
   const [selected, setSelected] = useState<Set<string>>(() => new Set(feed?.channel_ids ?? []));
   // Playlist sources — single series picked from a channel's disclosure row.
   const [selectedSeries, setSelectedSeries] = useState<Set<string>>(() => new Set(feed?.playlist_ids ?? []));
+  // Channels whose *new* series this feed announces.
+  const [watched, setWatched] = useState<Set<string>>(() => new Set(feed?.series_watch_channel_ids ?? []));
   const [sort, setSort] = useState<FeedSort>(isEverything ? (prefs?.everything_sort ?? "newest") : (feed?.sort ?? "newest"));
   const [hideSeen, setHideSeen] = useState(isEverything ? (prefs?.everything_hide_seen ?? true) : (feed?.hide_seen ?? true));
   const [shorts, setShorts] = useState(isEverything ? (prefs?.everything_include_shorts ?? false) : (feed?.include_shorts ?? false));
@@ -74,6 +76,7 @@ export function FeedEditor({ feed, onClose }: { feed?: Feed; onClose: () => void
         name: name.trim(),
         channel_ids: [...selected],
         playlist_ids: [...selectedSeries],
+        series_watch_channel_ids: [...watched],
         sort,
         hide_seen: hideSeen,
         include_shorts: shorts,
@@ -168,6 +171,15 @@ export function FeedEditor({ feed, onClose }: { feed?: Feed; onClose: () => void
                     currentFeedId={feed?.id}
                     selectedSeries={selectedSeries}
                     onToggleSeries={toggleSeries}
+                    watched={watched.has(c.id)}
+                    onToggleWatch={() =>
+                      setWatched((s) => {
+                        const n = new Set(s);
+                        if (n.has(c.id)) n.delete(c.id);
+                        else n.add(c.id);
+                        return n;
+                      })
+                    }
                   />
                 ))
               )}
@@ -243,6 +255,8 @@ function ChannelPickRow({
   currentFeedId,
   selectedSeries,
   onToggleSeries,
+  watched,
+  onToggleWatch,
 }: {
   channel: ChannelSummary;
   selected: boolean;
@@ -250,6 +264,8 @@ function ChannelPickRow({
   currentFeedId?: string;
   selectedSeries: Set<string>;
   onToggleSeries: (id: string) => void;
+  watched: boolean;
+  onToggleWatch: () => void;
 }) {
   const [showSeries, setShowSeries] = useState(false);
   // Fetched only once the disclosure is opened, so the picker costs nothing
@@ -291,6 +307,13 @@ function ChannelPickRow({
       </div>
       {showSeries && (
         <div className="mb-1 ml-[13px] flex flex-col border-l-[1.5px] border-hair pl-4">
+          <label className="flex items-center justify-between gap-3 px-2 py-2">
+            <span className="flex min-w-0 flex-col gap-px">
+              <span className="text-[13px] font-bold">Announce new series here</span>
+              <span className="meta text-[12px]">A playlist the archive indexes later shows once in this feed</span>
+            </span>
+            <Toggle on={watched} onChange={onToggleWatch} label="Announce new series here" />
+          </label>
           {series.isLoading && <Spinner label="Loading series…" />}
           {!series.isLoading && (series.data ?? []).length === 0 && (
             <p className="meta py-2 text-[12px]">No series archived for this channel.</p>

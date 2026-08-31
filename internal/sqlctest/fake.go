@@ -49,22 +49,29 @@ type FakeQuerier struct {
 	ListPinnedChannelsFn          func(context.Context, uuid.UUID) ([]sqlc.PinnedChannel, error)
 	PinChannelFn                  func(context.Context, sqlc.PinChannelParams) error
 	UnpinChannelFn                func(context.Context, sqlc.UnpinChannelParams) error
-	ListPinnedPlaylistsFn         func(context.Context, uuid.UUID) ([]sqlc.PlaylistSetting, error)
-	ListPlaylistSettingsFn        func(context.Context, uuid.UUID) ([]sqlc.PlaylistSetting, error)
-	ListWatchEventsForVideosFn    func(context.Context, sqlc.ListWatchEventsForVideosParams) ([]sqlc.WatchEvent, error)
-	PruneEmptyPlaylistSettingsFn  func(context.Context, uuid.UUID) error
-	SetPlaylistMusicFn            func(context.Context, sqlc.SetPlaylistMusicParams) error
-	SetPlaylistPinnedFn           func(context.Context, sqlc.SetPlaylistPinnedParams) error
-	NextFeedChannelPositionFn     func(context.Context, uuid.UUID) (int32, error)
-	NextFeedPositionFn            func(context.Context, uuid.UUID) (int32, error)
-	ResetPositionFn               func(context.Context, sqlc.ResetPositionParams) error
-	SetFeedPositionFn             func(context.Context, sqlc.SetFeedPositionParams) error
-	SetWatchedFn                  func(context.Context, sqlc.SetWatchedParams) (sqlc.WatchEvent, error)
-	UnpinFeedsFn                  func(context.Context, uuid.UUID) error
-	UpdateFeedFn                  func(context.Context, sqlc.UpdateFeedParams) (sqlc.Feed, error)
-	UpsertPrefsFn                 func(context.Context, sqlc.UpsertPrefsParams) error
-	UpsertProgressFn              func(context.Context, sqlc.UpsertProgressParams) (sqlc.WatchEvent, error)
-	UpsertUserFn                  func(context.Context, sqlc.UpsertUserParams) (sqlc.User, error)
+
+	AddSeriesWatchFn             func(context.Context, sqlc.AddSeriesWatchParams) error
+	DeleteSeriesWatchesFn        func(context.Context, uuid.UUID) error
+	ListSeriesWatchesFn          func(context.Context, uuid.UUID) ([]string, error)
+	ListSeriesWatchesForUserFn   func(context.Context, uuid.UUID) ([]sqlc.ListSeriesWatchesForUserRow, error)
+	MarkSeriesSeenFn             func(context.Context, sqlc.MarkSeriesSeenParams) error
+	ListSeriesSeenFn             func(context.Context, sqlc.ListSeriesSeenParams) ([]string, error)
+	ListPinnedPlaylistsFn        func(context.Context, uuid.UUID) ([]sqlc.PlaylistSetting, error)
+	ListPlaylistSettingsFn       func(context.Context, uuid.UUID) ([]sqlc.PlaylistSetting, error)
+	ListWatchEventsForVideosFn   func(context.Context, sqlc.ListWatchEventsForVideosParams) ([]sqlc.WatchEvent, error)
+	PruneEmptyPlaylistSettingsFn func(context.Context, uuid.UUID) error
+	SetPlaylistMusicFn           func(context.Context, sqlc.SetPlaylistMusicParams) error
+	SetPlaylistPinnedFn          func(context.Context, sqlc.SetPlaylistPinnedParams) error
+	NextFeedChannelPositionFn    func(context.Context, uuid.UUID) (int32, error)
+	NextFeedPositionFn           func(context.Context, uuid.UUID) (int32, error)
+	ResetPositionFn              func(context.Context, sqlc.ResetPositionParams) error
+	SetFeedPositionFn            func(context.Context, sqlc.SetFeedPositionParams) error
+	SetWatchedFn                 func(context.Context, sqlc.SetWatchedParams) (sqlc.WatchEvent, error)
+	UnpinFeedsFn                 func(context.Context, uuid.UUID) error
+	UpdateFeedFn                 func(context.Context, sqlc.UpdateFeedParams) (sqlc.Feed, error)
+	UpsertPrefsFn                func(context.Context, sqlc.UpsertPrefsParams) error
+	UpsertProgressFn             func(context.Context, sqlc.UpsertProgressParams) (sqlc.WatchEvent, error)
+	UpsertUserFn                 func(context.Context, sqlc.UpsertUserParams) (sqlc.User, error)
 }
 
 func (f *FakeQuerier) AddFeedChannel(ctx context.Context, arg sqlc.AddFeedChannelParams) error {
@@ -274,6 +281,30 @@ func (f *FakeQuerier) PinChannel(ctx context.Context, arg sqlc.PinChannelParams)
 
 func (f *FakeQuerier) UnpinChannel(ctx context.Context, arg sqlc.UnpinChannelParams) error {
 	return f.UnpinChannelFn(ctx, arg)
+}
+
+func (f *FakeQuerier) AddSeriesWatch(ctx context.Context, arg sqlc.AddSeriesWatchParams) error {
+	return f.AddSeriesWatchFn(ctx, arg)
+}
+
+func (f *FakeQuerier) DeleteSeriesWatches(ctx context.Context, feedID uuid.UUID) error {
+	return f.DeleteSeriesWatchesFn(ctx, feedID)
+}
+
+func (f *FakeQuerier) ListSeriesWatches(ctx context.Context, feedID uuid.UUID) ([]string, error) {
+	return f.ListSeriesWatchesFn(ctx, feedID)
+}
+
+func (f *FakeQuerier) ListSeriesWatchesForUser(ctx context.Context, userID uuid.UUID) ([]sqlc.ListSeriesWatchesForUserRow, error) {
+	return f.ListSeriesWatchesForUserFn(ctx, userID)
+}
+
+func (f *FakeQuerier) MarkSeriesSeen(ctx context.Context, arg sqlc.MarkSeriesSeenParams) error {
+	return f.MarkSeriesSeenFn(ctx, arg)
+}
+
+func (f *FakeQuerier) ListSeriesSeen(ctx context.Context, arg sqlc.ListSeriesSeenParams) ([]string, error) {
+	return f.ListSeriesSeenFn(ctx, arg)
 }
 
 func (f *FakeQuerier) ListPinnedPlaylists(ctx context.Context, userID uuid.UUID) ([]sqlc.PlaylistSetting, error) {

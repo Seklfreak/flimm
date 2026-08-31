@@ -167,6 +167,7 @@ enum Fixtures {
       "channel_count": 6,
       "playlist_ids": ["PL-9"],
       "playlist_count": 1,
+      "series_watch_channel_ids": ["UC-watch"],
       "unseen_count": 7,
       "sort": "newest",
       "hide_seen": true,

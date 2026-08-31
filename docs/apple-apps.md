@@ -339,7 +339,9 @@ What is there:
   - **Read-only feeds.** No feed editor: naming a feed and picking its
     channels (or series) wants a keyboard and a long list. The admin
     "index this channel's series" control is also absent here for the same
-    reason — it lives on the web and iPhone/iPad channel pages. The screens say "Edit feeds on
+    reason — it lives on the web and iPhone/iPad channel pages. New-series
+    announcements are the same kind of decision (subscribe or dismiss), so
+    they too stay on the web and phone; the TV just shows the feed's videos. The screens say "Edit feeds on
     your phone" where the button would otherwise be, rather than leaving
     someone hunting for it.
 - `.github/workflows/apple.yaml` — lint, package tests and unsigned iOS and

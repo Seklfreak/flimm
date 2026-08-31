@@ -15,6 +15,8 @@ struct FeedsView: View {
     @State private var pager: Pager<VideoSummary>?
     @State private var searchText = ""
     @State private var isMarkingSeen = false
+    /// New-series announcements for this feed's watched channels.
+    @State private var newSeries: [PlaylistSummary] = []
 
     /// Which feed and which view are ``NavigationModel``'s: the iPad sidebar
     /// sets the first, and both have to outlive a size-class flip.
@@ -50,10 +52,73 @@ struct FeedsView: View {
                     .background(Palette.background)
             }
         }
-        .task(id: contextKey) { await rebuildPager() }
+        .task(id: contextKey) {
+            await rebuildPager()
+            await loadNewSeries()
+        }
         .reloadsWhenPlayerCloses(request: player.request, isStale: isPagerStale) {
             await rebuildPager()
         }
+    }
+
+    /// "This channel started a new series" — announced once, until the
+    /// viewer subscribes it into this feed or dismisses it.
+    private var newSeriesStrip: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("New series")
+                .font(.headline)
+                .padding(.horizontal, 16)
+            ForEach(newSeries) { playlist in
+                HStack(spacing: 12) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(playlist.name)
+                            .font(.subheadline.weight(.bold))
+                            .lineLimit(2)
+                        Text([playlist.channel?.name, Fmt.plural(playlist.videoCount, "video")].compactMap { $0 }.joined(separator: " · "))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer(minLength: 8)
+                    Button("Add") { Task { await subscribe(playlist) } }
+                        .buttonStyle(.borderedProminent)
+                        .font(.caption.weight(.semibold))
+                    Button("No thanks") { Task { await dismissSeries(playlist) } }
+                        .buttonStyle(.bordered)
+                        .font(.caption.weight(.semibold))
+                }
+                .padding(12)
+                .background(Palette.raised, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .padding(.horizontal, 16)
+            }
+        }
+        .padding(.bottom, 6)
+    }
+
+    private func loadNewSeries() async {
+        guard let feed, !feed.isEverything else {
+            newSeries = []
+            return
+        }
+        newSeries = (try? await app.client.newSeries(feed.id)) ?? []
+    }
+
+    /// Subscribing keeps the playlist's other feed memberships and adds this
+    /// feed; the server acknowledges the announcement as a side effect.
+    private func subscribe(_ playlist: PlaylistSummary) async {
+        guard let feed else { return }
+        var ids = Set(playlist.feeds.map(\.id).filter { $0 != Feed.everythingID })
+        ids.insert(feed.id)
+        try? await app.client.setPlaylistFeeds(playlist.id, feedIds: Array(ids))
+        app.pagers.removeAll()
+        await app.refreshFeeds()
+        await loadNewSeries()
+        await rebuildPager()
+    }
+
+    private func dismissSeries(_ playlist: PlaylistSummary) async {
+        guard let feed else { return }
+        try? await app.client.dismissNewSeries(feed.id, playlistId: playlist.id)
+        withAnimation { newSeries.removeAll { $0.id == playlist.id } }
     }
 
     /// Identity of "what this screen is showing" — a change means a new query.
@@ -77,6 +142,9 @@ struct FeedsView: View {
             } else if pager.items.isEmpty {
                 emptyState
             } else {
+                if !newSeries.isEmpty {
+                    newSeriesStrip
+                }
                 VideoList(pager: pager, context: .feed(feed?.id ?? Feed.everythingID))
             }
         } else if let error = app.loadError, app.feeds.isEmpty {

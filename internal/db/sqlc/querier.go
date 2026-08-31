@@ -13,6 +13,7 @@ import (
 type Querier interface {
 	AddFeedChannel(ctx context.Context, arg AddFeedChannelParams) error
 	AddFeedPlaylist(ctx context.Context, arg AddFeedPlaylistParams) error
+	AddSeriesWatch(ctx context.Context, arg AddSeriesWatchParams) error
 	CountHistory(ctx context.Context, arg CountHistoryParams) (int64, error)
 	CreateFeed(ctx context.Context, arg CreateFeedParams) (Feed, error)
 	// Removes a channel from every feed the user owns (before re-adding it to the
@@ -24,6 +25,7 @@ type Querier interface {
 	// Removes a playlist from every feed the user owns (before re-adding it to
 	// the selected ones).
 	DeletePlaylistFromUserFeeds(ctx context.Context, arg DeletePlaylistFromUserFeedsParams) error
+	DeleteSeriesWatches(ctx context.Context, feedID uuid.UUID) error
 	// Idempotent: dismissing an already-dismissed video keeps the original time,
 	// so a double tap does not look like a fresh decision.
 	DismissVideo(ctx context.Context, arg DismissVideoParams) error
@@ -54,7 +56,12 @@ type Querier interface {
 	ListPinnedChannels(ctx context.Context, userID uuid.UUID) ([]PinnedChannel, error)
 	ListPinnedPlaylists(ctx context.Context, userID uuid.UUID) ([]PlaylistSetting, error)
 	ListPlaylistSettings(ctx context.Context, userID uuid.UUID) ([]PlaylistSetting, error)
+	// Every playlist the user already knows for the given channels.
+	ListSeriesSeen(ctx context.Context, arg ListSeriesSeenParams) ([]string, error)
+	ListSeriesWatches(ctx context.Context, feedID uuid.UUID) ([]string, error)
+	ListSeriesWatchesForUser(ctx context.Context, userID uuid.UUID) ([]ListSeriesWatchesForUserRow, error)
 	ListWatchEventsForVideos(ctx context.Context, arg ListWatchEventsForVideosParams) ([]WatchEvent, error)
+	MarkSeriesSeen(ctx context.Context, arg MarkSeriesSeenParams) error
 	NextFeedChannelPosition(ctx context.Context, feedID uuid.UUID) (int32, error)
 	NextFeedPlaylistPosition(ctx context.Context, feedID uuid.UUID) (int32, error)
 	NextFeedPosition(ctx context.Context, userID uuid.UUID) (int32, error)

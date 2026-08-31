@@ -31,6 +31,9 @@ public struct Feed: Codable, Sendable, Hashable, Identifiable {
     /// videos are the union of both kinds.
     public let playlistIds: [String]
     public let playlistCount: Int
+    /// Channels watched for *new* series, announced via the feed's
+    /// new-series list until subscribed or dismissed.
+    public let seriesWatchChannelIds: [String]
     public let unseenCount: Int
     public let sort: FeedSort
     public let hideSeen: Bool
@@ -53,6 +56,7 @@ public struct Feed: Codable, Sendable, Hashable, Identifiable {
         channelCount: Int = 0,
         playlistIds: [String] = [],
         playlistCount: Int = 0,
+        seriesWatchChannelIds: [String] = [],
         unseenCount: Int = 0,
         sort: FeedSort = .newest,
         hideSeen: Bool = true,
@@ -69,6 +73,7 @@ public struct Feed: Codable, Sendable, Hashable, Identifiable {
         self.channelCount = channelCount
         self.playlistIds = playlistIds
         self.playlistCount = playlistCount
+        self.seriesWatchChannelIds = seriesWatchChannelIds
         self.unseenCount = unseenCount
         self.sort = sort
         self.hideSeen = hideSeen
@@ -88,6 +93,7 @@ public struct Feed: Codable, Sendable, Hashable, Identifiable {
         channelCount = try c.decode(.channelCount, or: 0)
         playlistIds = try c.decode(.playlistIds, or: [])
         playlistCount = try c.decode(.playlistCount, or: 0)
+        seriesWatchChannelIds = try c.decode(.seriesWatchChannelIds, or: [])
         unseenCount = try c.decode(.unseenCount, or: 0)
         sort = try c.decode(.sort, or: FeedSort.newest)
         hideSeen = try c.decode(.hideSeen, or: true)
@@ -109,6 +115,8 @@ public struct FeedInput: Codable, Sendable, Hashable {
     /// a save is a full update (the server treats an *absent* field, not an
     /// empty one, as "keep").
     public var playlistIds: [String]
+    /// Channels watched for new series. Same always-sent contract.
+    public var seriesWatchChannelIds: [String]
     public var sort: FeedSort
     public var hideSeen: Bool
     public var includeShorts: Bool
@@ -120,6 +128,7 @@ public struct FeedInput: Codable, Sendable, Hashable {
         name: String,
         channelIds: [String] = [],
         playlistIds: [String] = [],
+        seriesWatchChannelIds: [String] = [],
         sort: FeedSort = .newest,
         hideSeen: Bool = true,
         includeShorts: Bool = false,
@@ -129,6 +138,7 @@ public struct FeedInput: Codable, Sendable, Hashable {
         self.name = name
         self.channelIds = channelIds
         self.playlistIds = playlistIds
+        self.seriesWatchChannelIds = seriesWatchChannelIds
         self.sort = sort
         self.hideSeen = hideSeen
         self.includeShorts = includeShorts
@@ -141,6 +151,7 @@ public struct FeedInput: Codable, Sendable, Hashable {
             name: feed.name,
             channelIds: feed.channelIds,
             playlistIds: feed.playlistIds,
+            seriesWatchChannelIds: feed.seriesWatchChannelIds,
             sort: feed.sort,
             hideSeen: feed.hideSeen,
             includeShorts: feed.includeShorts,

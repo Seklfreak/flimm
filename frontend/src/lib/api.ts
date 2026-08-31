@@ -257,6 +257,8 @@ export interface Feed {
   /** Playlist sources: single series next to whole channels; the feed is the union. */
   playlist_ids: string[];
   playlist_count: number;
+  /** Channels watched for *new* series — announced via GET /feeds/{id}/new-series. */
+  series_watch_channel_ids: string[];
   unseen_count: number;
   sort: FeedSort;
   hide_seen: boolean;
@@ -274,6 +276,7 @@ export interface FeedInput {
   name: string;
   channel_ids: string[];
   playlist_ids: string[];
+  series_watch_channel_ids: string[];
   sort: FeedSort;
   hide_seen: boolean;
   include_shorts: boolean;
@@ -480,6 +483,9 @@ export const api = {
   feedVideos: (id: string, view: FeedView | undefined, at: PageAt) =>
     req<Page<VideoSummary>>(`/feeds/${id}/videos${qs({ view, ...pageAt(at) })}`),
   markFeedSeen: (id: string) => req<void>(`/feeds/${id}/mark-seen`, { method: "POST" }),
+  newSeries: (id: string) => req<PlaylistSummary[]>(`/feeds/${id}/new-series`),
+  dismissNewSeries: (id: string, playlistId: string) =>
+    req<void>(`/feeds/${id}/new-series/${playlistId}/dismiss`, { method: "POST" }),
 
   channels: (opts: { q?: string; sort?: ChannelSort; unfeeded?: boolean; page: number; page_size?: number }) =>
     req<Page<ChannelSummary>>(

@@ -352,6 +352,11 @@ func (s *Server) setPlaylistFeeds(w http.ResponseWriter, r *http.Request) {
 		s.writeDBError(w, "set playlist feeds", err)
 		return
 	}
+	if len(feedIDs) > 0 {
+		// Becoming a source anywhere is the "yes" to a new-series
+		// announcement; it must not keep announcing.
+		s.ackSeries(r.Context(), uid, []string{id})
+	}
 	refs, err := s.playlistFeedRefs(r.Context(), uid)
 	if err != nil {
 		s.writeDBError(w, "list feed playlists", err)

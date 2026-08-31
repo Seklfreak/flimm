@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
-import { EVERYTHING_ID, type FeedView, type VideoSummary } from "@/lib/api";
-import { useDismissVideo, useFeed, useFeedVideos, useUndismissVideo } from "@/lib/queries";
+import { useQueryClient } from "@tanstack/react-query";
+import { api, EVERYTHING_ID, type FeedView, type PlaylistSummary, type VideoSummary } from "@/lib/api";
+import { invalidateFeedish, useDismissVideo, useFeed, useFeedVideos, useNewSeries, useUndismissVideo } from "@/lib/queries";
 import { plural } from "@/lib/format";
 import { PageHeader } from "@/components/Layout";
 import { EmptyState, ErrorState, InfiniteSentinel, Segmented, Spinner } from "@/components/ui";
@@ -23,6 +24,7 @@ export default function FeedPage({ editing = false }: { editing?: boolean }) {
   const [view, setView] = useState<FeedView | undefined>(undefined);
   const effectiveView: FeedView = view ?? (feed.data ? (feed.data.hide_seen ? "unseen" : "all") : "unseen");
   const videos = useFeedVideos(id, view);
+  const newSeries = useNewSeries(id, id !== EVERYTHING_ID);
   const closeEditor = useCallback(() => navigate(`/feeds/${id}`, { replace: true }), [navigate, id]);
 
   // A feed never returns a dismissed video (docs/api.md "dismissed"), so
@@ -112,6 +114,7 @@ export default function FeedPage({ editing = false }: { editing?: boolean }) {
         actions={<Segmented value={effectiveView} onChange={setView} options={VIEWS} />}
       />
       <div className="px-5 md:px-10">
+        {(newSeries.data ?? []).length > 0 && <NewSeriesStrip feedId={id} items={newSeries.data ?? []} />}
         {videos.isLoading ? (
           <Spinner label="Loading videos…" />
         ) : videos.isError ? (
@@ -150,6 +153,63 @@ export default function FeedPage({ editing = false }: { editing?: boolean }) {
         )}
       </div>
       {editing && f && <FeedEditor feed={f} onClose={closeEditor} />}
+    </div>
+  );
+}
+
+/**
+ * "This channel started a new series" — announced once for the feed's watched
+ * channels, until the viewer subscribes it into this feed or dismisses it
+ * (docs/api.md `/new-series`).
+ */
+function NewSeriesStrip({ feedId, items }: { feedId: string; items: PlaylistSummary[] }) {
+  const qc = useQueryClient();
+  const [busy, setBusy] = useState<string | null>(null);
+  const refresh = () => {
+    void qc.invalidateQueries({ queryKey: ["feeds", feedId, "new-series"] });
+    invalidateFeedish(qc);
+  };
+  const subscribe = async (p: PlaylistSummary) => {
+    setBusy(p.id);
+    try {
+      // Keep the playlist's other memberships; add this feed.
+      const ids = new Set(p.feeds.map((f) => f.id).filter((f) => f !== EVERYTHING_ID));
+      ids.add(feedId);
+      await api.setPlaylistFeeds(p.id, [...ids]);
+      refresh();
+    } finally {
+      setBusy(null);
+    }
+  };
+  const dismiss = async (p: PlaylistSummary) => {
+    setBusy(p.id);
+    try {
+      await api.dismissNewSeries(feedId, p.id);
+      refresh();
+    } finally {
+      setBusy(null);
+    }
+  };
+  return (
+    <div className="mb-5 flex flex-col gap-2.5">
+      <span className="sec">New series</span>
+      {items.map((p) => (
+        <div key={p.id} className="flex flex-wrap items-center gap-3 rounded-[14px] border border-hair bg-raised/60 px-4 py-3">
+          <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+            <span className="truncate text-[15px] font-extrabold">{p.name}</span>
+            <span className="meta text-[12px]">
+              {p.channel?.name ? `${p.channel.name} · ` : ""}
+              {plural(p.video_count, "video")}
+            </span>
+          </span>
+          <button className="btn pri" disabled={busy === p.id} onClick={() => void subscribe(p)}>
+            Add to this feed
+          </button>
+          <button className="btn" disabled={busy === p.id} onClick={() => void dismiss(p)}>
+            No thanks
+          </button>
+        </div>
+      ))}
     </div>
   );
 }

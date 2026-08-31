@@ -51,6 +51,17 @@ extension APIClient {
         try await discard(.post, "/feeds/\(esc(id))/mark-seen")
     }
 
+    /// New-series announcements for the feed's watched channels: playlists
+    /// the archive indexed that the viewer has not subscribed or dismissed.
+    public func newSeries(_ feedId: String) async throws -> [PlaylistSummary] {
+        try await get("/feeds/\(esc(feedId))/new-series")
+    }
+
+    /// "Not a series I want" — never announced again, in any feed.
+    public func dismissNewSeries(_ feedId: String, playlistId: String) async throws {
+        try await discard(.post, "/feeds/\(esc(feedId))/new-series/\(esc(playlistId))/dismiss")
+    }
+
     // MARK: - Channels
 
     public func channels(

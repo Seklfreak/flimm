@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"slices"
+	"sync"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -21,12 +22,15 @@ type feedBody struct {
 	// whole channels. Nil on PUT means "leave them as they are", so a client
 	// built before playlist sources existed cannot wipe them with a full
 	// update; an explicit empty list clears them.
-	PlaylistIDs   []string `json:"playlist_ids"`
-	Sort          string   `json:"sort"`
-	HideSeen      *bool    `json:"hide_seen"`
-	IncludeShorts *bool    `json:"include_shorts"`
-	SubtitlesOnly *bool    `json:"subtitles_only"`
-	Pinned        *bool    `json:"pinned"`
+	PlaylistIDs []string `json:"playlist_ids"`
+	// SeriesWatchChannelIDs: channels whose *new* series are announced in
+	// this feed. Same nil-on-PUT-means-unchanged contract as PlaylistIDs.
+	SeriesWatchChannelIDs []string `json:"series_watch_channel_ids"`
+	Sort                  string   `json:"sort"`
+	HideSeen              *bool    `json:"hide_seen"`
+	IncludeShorts         *bool    `json:"include_shorts"`
+	SubtitlesOnly         *bool    `json:"subtitles_only"`
+	Pinned                *bool    `json:"pinned"`
 }
 
 func boolOr(p *bool, def bool) bool {
@@ -119,16 +123,17 @@ func (s *Server) everythingFeed(ctx context.Context, uid uuid.UUID, position int
 		return FeedDTO{}, err
 	}
 	return FeedDTO{
-		ID:            everythingFeedID,
-		Name:          "Everything",
-		ChannelIDs:    []string{},
-		ChannelCount:  channelCount,
-		PlaylistIDs:   []string{},
-		UnseenCount:   unseen,
-		Sort:          prefs.EverythingSort,
-		HideSeen:      prefs.EverythingHideSeen,
-		IncludeShorts: prefs.EverythingIncludeShorts,
-		Position:      position,
+		ID:                    everythingFeedID,
+		Name:                  "Everything",
+		ChannelIDs:            []string{},
+		ChannelCount:          channelCount,
+		PlaylistIDs:           []string{},
+		SeriesWatchChannelIDs: []string{},
+		UnseenCount:           unseen,
+		Sort:                  prefs.EverythingSort,
+		HideSeen:              prefs.EverythingHideSeen,
+		IncludeShorts:         prefs.EverythingIncludeShorts,
+		Position:              position,
 	}, nil
 }
 
@@ -149,13 +154,22 @@ func (s *Server) listFeeds(w http.ResponseWriter, r *http.Request) {
 		s.writeDBError(w, "list feed playlists", err)
 		return
 	}
+	watchRows, err := s.q.ListSeriesWatchesForUser(r.Context(), uid)
+	if err != nil {
+		s.writeDBError(w, "list series watches", err)
+		return
+	}
+	watches := map[uuid.UUID][]string{}
+	for _, row := range watchRows {
+		watches[row.FeedID] = append(watches[row.FeedID], row.ChannelID)
+	}
 	out := make([]FeedDTO, len(feeds)+1)
 	err = parallel(r.Context(), feeds, func(ctx context.Context, i int, f sqlc.Feed) error {
 		unseen, err := s.unseenForFeed(ctx, orEmptyIDs(channels[f.ID]), playlists[f.ID])
 		if err != nil {
 			return err
 		}
-		out[i] = feedDTO(f, channels[f.ID], playlists[f.ID], unseen)
+		out[i] = feedDTO(f, channels[f.ID], playlists[f.ID], watches[f.ID], unseen)
 		return nil
 	})
 	if err != nil {
@@ -192,8 +206,17 @@ func (s *Server) createFeed(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid sort")
 		return
 	}
+	// The snapshot of a watched channel's *current* playlists happens before
+	// the transaction: it reads TubeArchivist, and only playlists indexed
+	// after the watch should ever announce.
+	watchIDs := dedupe(req.SeriesWatchChannelIDs)
+	baseline, err := s.seriesBaseline(r.Context(), watchIDs)
+	if err != nil {
+		s.writeTAError(w, "snapshot series", err)
+		return
+	}
 	var feed sqlc.Feed
-	err := s.withTx(r.Context(), func(q sqlc.Querier) error {
+	err = s.withTx(r.Context(), func(q sqlc.Querier) error {
 		pos, err := q.NextFeedPosition(r.Context(), uid)
 		if err != nil {
 			return err
@@ -219,19 +242,23 @@ func (s *Server) createFeed(w http.ResponseWriter, r *http.Request) {
 		if err := setFeedChannels(r.Context(), q, feed.ID, req.ChannelIDs); err != nil {
 			return err
 		}
-		return setFeedPlaylists(r.Context(), q, feed.ID, req.PlaylistIDs)
+		if err := setFeedPlaylists(r.Context(), q, feed.ID, req.PlaylistIDs); err != nil {
+			return err
+		}
+		return setSeriesWatches(r.Context(), q, uid, feed.ID, watchIDs, baseline)
 	})
 	if err != nil {
 		s.writeDBError(w, "create feed", err)
 		return
 	}
+	s.ackSeries(r.Context(), uid, dedupe(req.PlaylistIDs))
 	chans, pls := dedupe(req.ChannelIDs), dedupe(req.PlaylistIDs)
 	unseen, err := s.unseenForFeed(r.Context(), chans, pls)
 	if err != nil {
 		s.writeTAError(w, "feed unseen count", err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, feedDTO(feed, chans, pls, unseen))
+	writeJSON(w, http.StatusCreated, feedDTO(feed, chans, pls, watchIDs, unseen))
 }
 
 func dedupe(ids []string) []string {
@@ -269,6 +296,63 @@ func setFeedPlaylists(ctx context.Context, q sqlc.Querier, feedID uuid.UUID, ids
 		}
 	}
 	return nil
+}
+
+// seriesBaseline is every playlist TubeArchivist currently holds for the
+// given channels — what a fresh watch marks as already seen.
+func (s *Server) seriesBaseline(ctx context.Context, channels []string) (map[string][]string, error) {
+	out := make(map[string][]string, len(channels))
+	var mu sync.Mutex
+	err := parallel(ctx, channels, func(ctx context.Context, _ int, ch string) error {
+		lists, err := s.ta.ListPlaylists(ctx, "regular", ch)
+		if err != nil {
+			return err
+		}
+		ids := make([]string, 0, len(lists))
+		for _, p := range lists {
+			ids = append(ids, p.PlaylistID)
+		}
+		mu.Lock()
+		out[ch] = ids
+		mu.Unlock()
+		return nil
+	})
+	return out, err
+}
+
+// setSeriesWatches replaces a feed's watched channels. `baseline` carries the
+// snapshot for channels that are newly watched; channels the user already
+// watched keep their seen-state (MarkSeriesSeen is an upsert, so re-marking
+// is harmless and pending announcements survive an unrelated feed edit only
+// when their channel's baseline isn't in the map).
+func setSeriesWatches(ctx context.Context, q sqlc.Querier, uid, feedID uuid.UUID, ids []string, baseline map[string][]string) error {
+	if err := q.DeleteSeriesWatches(ctx, feedID); err != nil {
+		return err
+	}
+	for _, ch := range ids {
+		if err := q.AddSeriesWatch(ctx, sqlc.AddSeriesWatchParams{FeedID: feedID, ChannelID: ch}); err != nil {
+			return err
+		}
+		for _, pid := range baseline[ch] {
+			if err := q.MarkSeriesSeen(ctx, sqlc.MarkSeriesSeenParams{UserID: uid, ChannelID: ch, PlaylistID: pid}); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// ackSeries marks playlists as known the moment they become a feed source
+// anywhere — a subscribed series must not keep announcing. Best-effort: a
+// playlist TA no longer knows just cannot announce anyway.
+func (s *Server) ackSeries(ctx context.Context, uid uuid.UUID, playlistIDs []string) {
+	for _, pid := range playlistIDs {
+		p, err := s.ta.GetPlaylist(ctx, pid)
+		if err != nil {
+			continue
+		}
+		_ = s.q.MarkSeriesSeen(ctx, sqlc.MarkSeriesSeenParams{UserID: uid, ChannelID: p.PlaylistChannelID, PlaylistID: pid})
+	}
 }
 
 // loadFeed resolves a feed id for the user — the feed row plus its channel
@@ -315,12 +399,17 @@ func (s *Server) getFeed(w http.ResponseWriter, r *http.Request) {
 		s.writeDBError(w, "get feed", err)
 		return
 	}
+	watches, err := s.q.ListSeriesWatches(r.Context(), feed.ID)
+	if err != nil {
+		s.writeDBError(w, "list series watches", err)
+		return
+	}
 	unseen, err := s.unseenForFeed(r.Context(), chans, pls)
 	if err != nil {
 		s.writeTAError(w, "feed unseen count", err)
 		return
 	}
-	writeJSON(w, http.StatusOK, feedDTO(feed, chans, pls, unseen))
+	writeJSON(w, http.StatusOK, feedDTO(feed, chans, pls, watches, unseen))
 }
 
 func (s *Server) updateFeed(w http.ResponseWriter, r *http.Request) {
@@ -363,6 +452,32 @@ func (s *Server) updateFeed(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "not found")
 		return
 	}
+	// Baseline snapshots for newly watched channels, read outside the tx.
+	var updWatchIDs []string
+	updBaseline := map[string][]string{}
+	if req.SeriesWatchChannelIDs != nil {
+		updWatchIDs = dedupe(req.SeriesWatchChannelIDs)
+		existing, err := s.q.ListSeriesWatches(r.Context(), fid)
+		if err != nil {
+			s.writeDBError(w, "list series watches", err)
+			return
+		}
+		known := map[string]bool{}
+		for _, ch := range existing {
+			known[ch] = true
+		}
+		var added []string
+		for _, ch := range updWatchIDs {
+			if !known[ch] {
+				added = append(added, ch)
+			}
+		}
+		updBaseline, err = s.seriesBaseline(r.Context(), added)
+		if err != nil {
+			s.writeTAError(w, "snapshot series", err)
+			return
+		}
+	}
 	var feed sqlc.Feed
 	err = s.withTx(r.Context(), func(q sqlc.Querier) error {
 		cur, err := q.GetFeed(r.Context(), sqlc.GetFeedParams{ID: fid, UserID: uid})
@@ -397,13 +512,21 @@ func (s *Server) updateFeed(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		if req.PlaylistIDs != nil {
-			return setFeedPlaylists(r.Context(), q, fid, req.PlaylistIDs)
+			if err := setFeedPlaylists(r.Context(), q, fid, req.PlaylistIDs); err != nil {
+				return err
+			}
+		}
+		if req.SeriesWatchChannelIDs != nil {
+			return setSeriesWatches(r.Context(), q, uid, fid, updWatchIDs, updBaseline)
 		}
 		return nil
 	})
 	if err != nil {
 		s.writeDBError(w, "update feed", err)
 		return
+	}
+	if req.PlaylistIDs != nil {
+		s.ackSeries(r.Context(), uid, dedupe(req.PlaylistIDs))
 	}
 	chans, err := s.q.ListFeedChannels(r.Context(), fid)
 	if err != nil {
@@ -415,13 +538,18 @@ func (s *Server) updateFeed(w http.ResponseWriter, r *http.Request) {
 		s.writeDBError(w, "list feed playlists", err)
 		return
 	}
+	watches, err := s.q.ListSeriesWatches(r.Context(), fid)
+	if err != nil {
+		s.writeDBError(w, "list series watches", err)
+		return
+	}
 	chans, pls = orEmptyIDs(chans), orEmptyIDs(pls)
 	unseen, err := s.unseenForFeed(r.Context(), chans, pls)
 	if err != nil {
 		s.writeTAError(w, "feed unseen count", err)
 		return
 	}
-	writeJSON(w, http.StatusOK, feedDTO(feed, chans, pls, unseen))
+	writeJSON(w, http.StatusOK, feedDTO(feed, chans, pls, watches, unseen))
 }
 
 func (s *Server) deleteFeed(w http.ResponseWriter, r *http.Request) {
@@ -620,6 +748,97 @@ func (s *Server) markFeedSeen(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := s.markAllSeen(r.Context(), uid, items); err != nil {
 		s.writeTAError(w, "mark seen", err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// listNewSeries is the feed's announcements: playlists TubeArchivist has
+// indexed for the feed's watched channels that the user has not seen yet —
+// not baselined at watch creation, not dismissed, not subscribed anywhere.
+func (s *Server) listNewSeries(w http.ResponseWriter, r *http.Request) {
+	uid := currentUserID(r.Context())
+	fid, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, http.StatusNotFound, "not found")
+		return
+	}
+	if _, err := s.q.GetFeed(r.Context(), sqlc.GetFeedParams{ID: fid, UserID: uid}); err != nil {
+		s.writeDBError(w, "get feed", err)
+		return
+	}
+	channels, err := s.q.ListSeriesWatches(r.Context(), fid)
+	if err != nil {
+		s.writeDBError(w, "list series watches", err)
+		return
+	}
+	out := []PlaylistSummary{}
+	if len(channels) == 0 {
+		writeJSON(w, http.StatusOK, out)
+		return
+	}
+	seenIDs, err := s.q.ListSeriesSeen(r.Context(), sqlc.ListSeriesSeenParams{UserID: uid, ChannelIds: channels})
+	if err != nil {
+		s.writeDBError(w, "list series seen", err)
+		return
+	}
+	seen := make(map[string]bool, len(seenIDs))
+	for _, id := range seenIDs {
+		seen[id] = true
+	}
+	var mu sync.Mutex
+	var fresh []ta.Playlist
+	err = parallel(r.Context(), channels, func(ctx context.Context, _ int, ch string) error {
+		lists, err := s.ta.ListPlaylists(ctx, "regular", ch)
+		if err != nil {
+			return err
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		for _, p := range lists {
+			if !seen[p.PlaylistID] {
+				fresh = append(fresh, p)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		s.writeTAError(w, "list new series", err)
+		return
+	}
+	sums, err := s.playlistSummaries(r.Context(), uid, fresh)
+	if err != nil {
+		s.writeTAError(w, "playlist summaries", err)
+		return
+	}
+	if err := s.attachPlaylistFeeds(r.Context(), uid, sums); err != nil {
+		s.writeDBError(w, "list feed playlists", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, sums)
+}
+
+// dismissNewSeries: "not a series I want" — the announcement never comes
+// back, in any feed.
+func (s *Server) dismissNewSeries(w http.ResponseWriter, r *http.Request) {
+	uid := currentUserID(r.Context())
+	fid, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, http.StatusNotFound, "not found")
+		return
+	}
+	if _, err := s.q.GetFeed(r.Context(), sqlc.GetFeedParams{ID: fid, UserID: uid}); err != nil {
+		s.writeDBError(w, "get feed", err)
+		return
+	}
+	pid := chi.URLParam(r, "playlistID")
+	p, err := s.ta.GetPlaylist(r.Context(), pid)
+	if err != nil {
+		s.writeTAError(w, "get playlist", err)
+		return
+	}
+	if err := s.q.MarkSeriesSeen(r.Context(), sqlc.MarkSeriesSeenParams{UserID: uid, ChannelID: p.PlaylistChannelID, PlaylistID: pid}); err != nil {
+		s.writeDBError(w, "mark series seen", err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

@@ -209,21 +209,26 @@ type ChannelDetail struct {
 const everythingFeedID = "everything"
 
 type FeedDTO struct {
-	ID            string    `json:"id"`
-	Name          string    `json:"name"`
-	ChannelIDs    []string  `json:"channel_ids"`
-	ChannelCount  int       `json:"channel_count"`
-	PlaylistIDs   []string  `json:"playlist_ids"`
-	PlaylistCount int       `json:"playlist_count"`
-	UnseenCount   int       `json:"unseen_count"`
-	Sort          string    `json:"sort"`
-	HideSeen      bool      `json:"hide_seen"`
-	IncludeShorts bool      `json:"include_shorts"`
-	SubtitlesOnly bool      `json:"subtitles_only"`
-	Pinned        bool      `json:"pinned"`
-	Position      int       `json:"position"`
-	CreatedAt     time.Time `json:"created_at"`
-	UpdatedAt     time.Time `json:"updated_at"`
+	ID            string   `json:"id"`
+	Name          string   `json:"name"`
+	ChannelIDs    []string `json:"channel_ids"`
+	ChannelCount  int      `json:"channel_count"`
+	PlaylistIDs   []string `json:"playlist_ids"`
+	PlaylistCount int      `json:"playlist_count"`
+	// SeriesWatchChannelIDs are channels this feed *watches* for new series:
+	// a playlist TubeArchivist indexes for one of them later is announced
+	// once in this feed (GET /feeds/{id}/new-series) until subscribed or
+	// dismissed.
+	SeriesWatchChannelIDs []string  `json:"series_watch_channel_ids"`
+	UnseenCount           int       `json:"unseen_count"`
+	Sort                  string    `json:"sort"`
+	HideSeen              bool      `json:"hide_seen"`
+	IncludeShorts         bool      `json:"include_shorts"`
+	SubtitlesOnly         bool      `json:"subtitles_only"`
+	Pinned                bool      `json:"pinned"`
+	Position              int       `json:"position"`
+	CreatedAt             time.Time `json:"created_at"`
+	UpdatedAt             time.Time `json:"updated_at"`
 }
 
 // ---- playlist ----
@@ -674,28 +679,32 @@ func summaryFromEvent(ev sqlc.WatchEvent) VideoSummary {
 	return out
 }
 
-func feedDTO(f sqlc.Feed, channelIDs, playlistIDs []string, unseen int) FeedDTO {
+func feedDTO(f sqlc.Feed, channelIDs, playlistIDs, watchIDs []string, unseen int) FeedDTO {
 	if channelIDs == nil {
 		channelIDs = []string{}
 	}
 	if playlistIDs == nil {
 		playlistIDs = []string{}
 	}
+	if watchIDs == nil {
+		watchIDs = []string{}
+	}
 	return FeedDTO{
-		ID:            f.ID.String(),
-		Name:          f.Name,
-		ChannelIDs:    channelIDs,
-		ChannelCount:  len(channelIDs),
-		PlaylistIDs:   playlistIDs,
-		PlaylistCount: len(playlistIDs),
-		UnseenCount:   unseen,
-		Sort:          f.Sort,
-		HideSeen:      f.HideSeen,
-		IncludeShorts: f.IncludeShorts,
-		SubtitlesOnly: f.SubtitlesOnly,
-		Pinned:        f.Pinned,
-		Position:      int(f.Position),
-		CreatedAt:     ts(f.CreatedAt),
-		UpdatedAt:     ts(f.UpdatedAt),
+		ID:                    f.ID.String(),
+		Name:                  f.Name,
+		ChannelIDs:            channelIDs,
+		ChannelCount:          len(channelIDs),
+		PlaylistIDs:           playlistIDs,
+		PlaylistCount:         len(playlistIDs),
+		SeriesWatchChannelIDs: watchIDs,
+		UnseenCount:           unseen,
+		Sort:                  f.Sort,
+		HideSeen:              f.HideSeen,
+		IncludeShorts:         f.IncludeShorts,
+		SubtitlesOnly:         f.SubtitlesOnly,
+		Pinned:                f.Pinned,
+		Position:              int(f.Position),
+		CreatedAt:             ts(f.CreatedAt),
+		UpdatedAt:             ts(f.UpdatedAt),
 	}
 }

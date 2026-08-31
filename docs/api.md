@@ -260,6 +260,7 @@ that is later deleted in TubeArchivist simply drops out of
   "channel_count": 6,
   "playlist_ids": ["PL…"],             // playlist sources: single series next to whole channels
   "playlist_count": 1,
+  "series_watch_channel_ids": ["UC…"], // channels watched for *new* series (see /new-series)
   "unseen_count": 7,
   "sort": "newest|oldest|shortest|longest",
   "hide_seen": true,
@@ -275,9 +276,12 @@ that is later deleted in TubeArchivist simply drops out of
 
 A feed's videos are the **union of its sources** — whole channels
 (`channel_ids`) and single playlists (`playlist_ids`, a channel's series),
-deduplicated. On `POST`/`PUT`, `playlist_ids` left out entirely means "keep
-them as they are" (so a client built before playlist sources existed cannot
-wipe them with a full `PUT`); an explicit empty list clears them.
+deduplicated. A feed can also **watch** channels (`series_watch_channel_ids`)
+without carrying their videos: new playlists TubeArchivist indexes for a
+watched channel are announced in the feed (see `/new-series`) until acted on.
+On `POST`/`PUT`, `playlist_ids` and `series_watch_channel_ids` left out
+entirely mean "keep them as they are" (so a client built before they existed
+cannot wipe them with a full `PUT`); an explicit empty list clears them.
 
 `unseen_count` is TubeArchivist's unwatched total for the feed's sources. It
 is a **hint, not the list's length**: TA knows nothing about the feed's own
@@ -442,6 +446,8 @@ its default — send the whole map back, which is what the settings screens do.
 | PUT | `/feeds/{id}` | full update (`playlist_ids` absent = unchanged); `pinned:true` unpins the others |
 | DELETE | `/feeds/{id}` | 204; never touches channels/videos |
 | POST | `/feeds/reorder` | `{ "ids": [...] }` |
+| GET | `/feeds/{id}/new-series` | PlaylistSummary[]: playlists TA has indexed for the feed's watched channels that the user hasn't handled — announced until subscribed (made a playlist source anywhere) or dismissed. Creating a watch baselines the channel's *current* playlists, so only later-indexed ones announce |
+| POST | `/feeds/{id}/new-series/{playlistId}/dismiss` | never announce this series again, in any feed; 204 |
 | GET | `/feeds/{id}/videos` | query `view=unseen\|all` (default: feed's `hide_seen` → unseen else all), paged. **`view=unseen` opens with the videos the viewer is part-way through**, most recently played first, then the rest of the unseen feed; each appears once, and paging carries across the join. `view=continue` is accepted for clients built before that and answers with those in-progress videos alone |
 | POST | `/feeds/{id}/mark-seen` | marks every currently unseen video in the feed watched; 204 |
 

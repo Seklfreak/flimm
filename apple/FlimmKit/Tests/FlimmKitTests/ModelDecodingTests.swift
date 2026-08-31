@@ -254,6 +254,7 @@ final class ModelDecodingTests: XCTestCase {
 
         XCTAssertEqual(feed.playlistIds, ["PL-9"])
         XCTAssertEqual(feed.playlistCount, 1)
+        XCTAssertEqual(feed.seriesWatchChannelIds, ["UC-watch"])
 
         let everything = try decode(Feed.self, Fixtures.everythingFeed)
         XCTAssertTrue(everything.isEverything)
@@ -271,6 +272,7 @@ final class ModelDecodingTests: XCTestCase {
         XCTAssertEqual(object["name"] as? String, "Home")
         XCTAssertEqual(object["channel_ids"] as? [String], ["UC-chan"])
         XCTAssertEqual(object["playlist_ids"] as? [String], ["PL-9"])
+        XCTAssertEqual(object["series_watch_channel_ids"] as? [String], ["UC-watch"])
         XCTAssertEqual(object["hide_seen"] as? Bool, true)
         XCTAssertEqual(object["subtitles_only"] as? Bool, false)
         XCTAssertEqual(object["pinned"] as? Bool, true)

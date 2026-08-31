@@ -416,3 +416,99 @@ func TestUpdateFeedPlaylistsAbsentMeansUnchanged(t *testing.T) {
 		t.Error("PUT with an explicit empty playlist_ids did not clear them")
 	}
 }
+
+// A watched channel announces only series indexed *after* the watch: the
+// existing ones are baselined away at creation, a dismissal never returns,
+// and subscribing the series anywhere acknowledges it too.
+func TestSeriesWatchAnnouncesOnlyNewPlaylists(t *testing.T) {
+	client := ta.NewFake()
+	client.Channels["C"] = &ta.Channel{ChannelID: "C", ChannelName: "Gronkh-ish"}
+	client.Playlists["PL-old"] = &ta.Playlist{PlaylistID: "PL-old", PlaylistName: "Old series", PlaylistType: "regular", PlaylistChannelID: "C"}
+
+	feedID := uuid.New()
+	es := newEventStore()
+	q := es.querier()
+	q.NextFeedPositionFn = func(context.Context, uuid.UUID) (int32, error) { return 0, nil }
+	q.CreateFeedFn = func(_ context.Context, arg sqlc.CreateFeedParams) (sqlc.Feed, error) {
+		return sqlc.Feed{ID: feedID, Name: arg.Name, Sort: arg.Sort}, nil
+	}
+	q.GetFeedFn = func(_ context.Context, arg sqlc.GetFeedParams) (sqlc.Feed, error) {
+		if arg.ID != feedID {
+			return sqlc.Feed{}, errNoRows
+		}
+		return sqlc.Feed{ID: feedID, Name: "Watchers"}, nil
+	}
+	q.DeleteFeedChannelsFn = func(context.Context, uuid.UUID) error { return nil }
+	q.AddFeedChannelFn = func(context.Context, sqlc.AddFeedChannelParams) error { return nil }
+	q.DeleteFeedPlaylistsFn = func(context.Context, uuid.UUID) error { return nil }
+	q.AddFeedPlaylistFn = func(context.Context, sqlc.AddFeedPlaylistParams) error { return nil }
+
+	var watches []string
+	q.DeleteSeriesWatchesFn = func(context.Context, uuid.UUID) error { watches = nil; return nil }
+	q.AddSeriesWatchFn = func(_ context.Context, arg sqlc.AddSeriesWatchParams) error {
+		watches = append(watches, arg.ChannelID)
+		return nil
+	}
+	q.ListSeriesWatchesFn = func(context.Context, uuid.UUID) ([]string, error) { return watches, nil }
+	seen := map[string]bool{}
+	q.MarkSeriesSeenFn = func(_ context.Context, arg sqlc.MarkSeriesSeenParams) error {
+		seen[arg.PlaylistID] = true
+		return nil
+	}
+	q.ListSeriesSeenFn = func(context.Context, sqlc.ListSeriesSeenParams) ([]string, error) {
+		var out []string
+		for id := range seen {
+			out = append(out, id)
+		}
+		return out, nil
+	}
+	h := newTestServer(client, q).Router()
+
+	rec := do(t, h, http.MethodPost, "/api/v1/feeds", `{"name":"Watchers","series_watch_channel_ids":["C"]}`)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create = %d: %s", rec.Code, rec.Body.String())
+	}
+	if f := decode[FeedDTO](t, rec); len(f.SeriesWatchChannelIDs) != 1 || f.SeriesWatchChannelIDs[0] != "C" {
+		t.Fatalf("watches = %v", f.SeriesWatchChannelIDs)
+	}
+	if !seen["PL-old"] {
+		t.Fatal("existing playlist was not baselined at watch creation")
+	}
+
+	// Nothing new yet: the existing series must not announce.
+	if got := decode[[]PlaylistSummary](t, do(t, h, http.MethodGet, "/api/v1/feeds/"+feedID.String()+"/new-series", "")); len(got) != 0 {
+		t.Fatalf("announcements = %v, want none", got)
+	}
+
+	// A newly indexed playlist announces…
+	client.Playlists["PL-new"] = &ta.Playlist{PlaylistID: "PL-new", PlaylistName: "Fresh series", PlaylistType: "regular", PlaylistChannelID: "C"}
+	got := decode[[]PlaylistSummary](t, do(t, h, http.MethodGet, "/api/v1/feeds/"+feedID.String()+"/new-series", ""))
+	if len(got) != 1 || got[0].ID != "PL-new" {
+		t.Fatalf("announcements = %+v, want PL-new", got)
+	}
+
+	// …until dismissed.
+	if rec := do(t, h, http.MethodPost, "/api/v1/feeds/"+feedID.String()+"/new-series/PL-new/dismiss", ""); rec.Code != http.StatusNoContent {
+		t.Fatalf("dismiss = %d", rec.Code)
+	}
+	if got := decode[[]PlaylistSummary](t, do(t, h, http.MethodGet, "/api/v1/feeds/"+feedID.String()+"/new-series", "")); len(got) != 0 {
+		t.Fatalf("after dismiss = %v, want none", got)
+	}
+
+	// Subscribing another fresh one anywhere acknowledges it the same way.
+	client.Playlists["PL-sub"] = &ta.Playlist{PlaylistID: "PL-sub", PlaylistName: "Kept series", PlaylistType: "regular", PlaylistChannelID: "C"}
+	q.DeletePlaylistFromUserFeedsFn = func(context.Context, sqlc.DeletePlaylistFromUserFeedsParams) error { return nil }
+	q.NextFeedPlaylistPositionFn = func(context.Context, uuid.UUID) (int32, error) { return 0, nil }
+	q.ListFeedPlaylistsForUserFn = func(context.Context, uuid.UUID) ([]sqlc.ListFeedPlaylistsForUserRow, error) { return nil, nil }
+	if rec := do(t, h, http.MethodPut, "/api/v1/playlists/PL-sub/feeds", `{"feed_ids":["`+feedID.String()+`"]}`); rec.Code != http.StatusOK {
+		t.Fatalf("subscribe = %d: %s", rec.Code, rec.Body.String())
+	}
+	if got := decode[[]PlaylistSummary](t, do(t, h, http.MethodGet, "/api/v1/feeds/"+feedID.String()+"/new-series", "")); len(got) != 0 {
+		t.Fatalf("after subscribe = %v, want none", got)
+	}
+
+	// Another user's feed id is a 404, not a peek at announcements.
+	if rec := do(t, h, http.MethodGet, "/api/v1/feeds/"+uuid.NewString()+"/new-series", ""); rec.Code != http.StatusNotFound {
+		t.Errorf("foreign feed = %d, want 404", rec.Code)
+	}
+}

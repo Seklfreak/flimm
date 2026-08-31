@@ -28,6 +28,12 @@ browsing and are separate from the channel directory:
   already in), a series picker behind each channel (its archived playlists,
   fetched only when opened; redundant while the whole channel is selected) and
   the options above. Deleting a feed never deletes channels or videos.
+- A feed can also **watch a channel for new series** without carrying its
+  videos: when the archive indexes a playlist the viewer has never seen, the
+  feed announces it once — a card above the videos — until the viewer
+  subscribes the series (it becomes a playlist source) or dismisses it.
+  Watching starts from *now*: the channel's existing playlists are baselined
+  away, so only genuinely new series announce.
 - Playlist pages carry the same *In feeds: …* control a channel page does, so
   a series found while browsing can be put in a feed on the spot. Being a
   feed source does **not** put a channel playlist on the Playlists page —
