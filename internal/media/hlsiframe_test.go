@@ -65,6 +65,7 @@ func TestAByteRangeFromThePlaylistDecodesToAPicture(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	//nolint:gosec // G703: `frame` is a name inside this test's own t.TempDir()
 	if err := os.WriteFile(frame, append(initBytes, segment[:length]...), 0o600); err != nil {
 		t.Fatal(err)
 	}
