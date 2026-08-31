@@ -161,10 +161,18 @@ struct VideoRow: View {
     }
 
     private var defaultSubtitle: String {
+        var parts = [video.channel.name]
         if !video.watched && video.position > 0 {
-            return "\(video.channel.name) · \(Fmt.duration(video.position)) / \(Fmt.duration(video.duration))"
+            parts.append("\(Fmt.duration(video.position)) / \(Fmt.duration(video.duration))")
+        } else {
+            parts.append(Fmt.duration(video.duration))
         }
-        return "\(video.channel.name) · \(Fmt.duration(video.duration))"
+        // When the video was published — a playlist spanning years is
+        // unreadable without it.
+        if video.published != nil {
+            parts.append(Fmt.relativeDay(video.published))
+        }
+        return parts.joined(separator: " · ")
     }
 }
 

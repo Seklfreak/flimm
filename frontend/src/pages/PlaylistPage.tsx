@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams } from "react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { invalidateFeedish, usePlaylist, useSetPlaylistMusic, useSetPlaylistPinned, useSetWatched } from "@/lib/queries";
-import { ccLabel, fmtDuration, fmtDurationLong, plural } from "@/lib/format";
+import { ccLabel, fmtDuration, fmtDurationLong, plural, relativeDay } from "@/lib/format";
 import { CheckIcon, EmptyState, ErrorState, HeadphonesIcon, PinIcon, Spinner } from "@/components/ui";
 import { InFeedsControl } from "@/components/InFeedsControl";
 import { VideoRow } from "@/components/VideoRow";
@@ -222,7 +222,7 @@ export default function PlaylistPage() {
                 }
                 meta={
                   <>
-                    {v.channel.name} · {ccLabel(v.subtitle_langs, v.has_auto_subtitles)}
+                    {v.channel.name} · {relativeDay(v.published)} · {ccLabel(v.subtitle_langs, v.has_auto_subtitles)}
                     {inProgress && ` · stopped at ${fmtDuration(v.position)}`}
                   </>
                 }

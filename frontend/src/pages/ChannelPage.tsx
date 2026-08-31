@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link, useParams } from "react-router";
+import { Link, useParams, useSearchParams } from "react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { api, type PlaylistSummary } from "@/lib/api";
 import { invalidateFeedish, invalidateWatchState, useChannel, useChannelPlaylists, useChannelVideos, useMe } from "@/lib/queries";
@@ -14,7 +14,14 @@ type Tab = "all" | "unseen" | "playlists";
 export default function ChannelPage() {
   const { id = "" } = useParams();
   const channel = useChannel(id);
-  const [tab, setTab] = useState<Tab>("all");
+  // The tab lives in the URL (?tab=unseen|playlists) so the browser's back
+  // button steps back through tabs and a tab can be linked to; the default
+  // "all" stays out of the address bar.
+  const [params, setParams] = useSearchParams();
+  const rawTab = params.get("tab");
+  const tab: Tab = rawTab === "unseen" || rawTab === "playlists" ? rawTab : "all";
+  const setTab = (next: Tab) =>
+    setParams(next === "all" ? {} : { tab: next });
   const videos = useChannelVideos(id, tab === "unseen" ? "unseen" : "all");
   const playlists = useChannelPlaylists(id, tab === "playlists");
   const qc = useQueryClient();
