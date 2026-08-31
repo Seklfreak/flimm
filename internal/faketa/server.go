@@ -331,10 +331,19 @@ func (s *Server) subscribeChannels(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	for _, d := range body.Data {
+		found := false
 		for i := range s.catalogue.Channels {
 			if s.catalogue.Channels[i].ChannelID == d.ChannelID {
 				s.catalogue.Channels[i].ChannelSubscribed = d.Subscribed
+				found = true
 			}
+		}
+		if !found && d.Subscribed {
+			// TA's subscribe task creates channels it does not know.
+			s.catalogue.Channels = append(s.catalogue.Channels, ta.Channel{
+				ChannelID: d.ChannelID, ChannelName: d.ChannelID,
+				ChannelSubscribed: true, ChannelActive: true,
+			})
 		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"message": "subscription processed"})

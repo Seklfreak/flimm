@@ -150,3 +150,31 @@ func TestSetChannelSubscribedIsAdminOnly(t *testing.T) {
 		t.Errorf("non-admin = %d, want 403", w.Code)
 	}
 }
+
+// Subscribing a brand-new channel hands TA the raw URL/handle/id; TA's own
+// task resolves and creates it. Admin-only, like every archive-side write.
+func TestSubscribeNewChannel(t *testing.T) {
+	client := ta.NewFake()
+	s := newTestServer(client, newEventStore().querier())
+
+	if rec := do(t, s.Router(), http.MethodPost, "/api/v1/channels", `{"channel":"https://www.youtube.com/@Gronkh"}`); rec.Code != http.StatusNoContent {
+		t.Fatalf("subscribe = %d: %s", rec.Code, rec.Body.String())
+	}
+	if !slices.Contains(client.Calls, "subscribe:https://www.youtube.com/@Gronkh:true") {
+		t.Errorf("TA never received the subscribe: %v", client.Calls)
+	}
+	if rec := do(t, s.Router(), http.MethodPost, "/api/v1/channels", `{"channel":"  "}`); rec.Code != http.StatusBadRequest {
+		t.Errorf("blank = %d, want 400", rec.Code)
+	}
+
+	rctx := chi.NewRouteContext()
+	ctx := context.WithValue(context.Background(), chi.RouteCtxKey, rctx)
+	ctx = context.WithValue(ctx, userIDKey, DevUserID)
+	ctx = context.WithValue(ctx, isAdminKey, false)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/channels", strings.NewReader(`{"channel":"UCX"}`)).WithContext(ctx)
+	w := httptest.NewRecorder()
+	s.subscribeNewChannel(w, req)
+	if w.Code != http.StatusForbidden {
+		t.Errorf("non-admin = %d, want 403", w.Code)
+	}
+}

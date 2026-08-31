@@ -136,6 +136,14 @@ extension APIClient {
         try await discard(.put, "/channels/\(esc(id))/subscribed", body: Body(subscribed: subscribed))
     }
 
+    /// Admin only: subscribe a channel the archive may not know yet — a URL,
+    /// @handle or UC… id. TubeArchivist resolves and creates it in a
+    /// background task; the channel appears in the directory once it lands.
+    public func subscribeNewChannel(_ channel: String) async throws {
+        struct Body: Encodable { let channel: String }
+        try await discard(.post, "/channels", body: Body(channel: channel))
+    }
+
     // MARK: - Playlists
 
     /// Unpaged, in pin order. Only playlists that still resolve in

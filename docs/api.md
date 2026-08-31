@@ -455,6 +455,7 @@ its default — send the whole map back, which is what the settings screens do.
 | Method | Path | Notes |
 |---|---|---|
 | GET | `/channels` | query `q`, `sort=name\|videos\|unseen\|last_upload`, `unfeeded=true`; paged ChannelSummary |
+| POST | `/channels` | **admin only** (403 otherwise): `{ "channel": "<URL, @handle or UC… id>" }` — subscribe a channel the archive may not know yet. TubeArchivist resolves and creates it in a background task; 204, and the channel appears in the directory once the task lands |
 | GET | `/channels/pinned` | ChannelSummary[] the user pinned to the sidebar, in pin order; unpaged |
 | PUT | `/channels/{id}/pinned` | `{ "pinned": true\|false }` → 204. Pinning appends to the end; 404 for a channel TA does not know |
 | GET | `/channels/{id}` | ChannelSummary + `description` |

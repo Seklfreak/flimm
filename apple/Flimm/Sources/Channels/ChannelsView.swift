@@ -10,6 +10,9 @@ struct ChannelsView: View {
     @State private var searchText = ""
     @State private var sort: ChannelSort = .name
     @State private var unfeededOnly = false
+    @State private var showAddChannel = false
+    @State private var newChannel = ""
+    @State private var addRequested = false
 
     /// The pinned section leads the directory, but never a search or filter:
     /// those are questions about the whole archive, not the pins.
@@ -59,9 +62,39 @@ struct ChannelsView: View {
         .navigationTitle("Channels")
         .onAppear { Analytics.screen(.channels) }
         .searchable(text: $searchText, isPresented: nav.searchPresented(for: .channels), prompt: "Search channels")
+        .alert("Add channel", isPresented: $showAddChannel) {
+            TextField("URL, @handle or UC… id", text: $newChannel)
+                .autocorrectionDisabled()
+                .textInputAutocapitalization(.never)
+            Button("Subscribe") {
+                let value = newChannel.trimmingCharacters(in: .whitespaces)
+                newChannel = ""
+                guard !value.isEmpty else { return }
+                Task {
+                    try? await app.client.subscribeNewChannel(value)
+                    addRequested = true
+                }
+            }
+            Button("Cancel", role: .cancel) { newChannel = "" }
+        } message: {
+            Text("The archive resolves and downloads in the background; the channel appears in the directory once that lands.")
+        }
+        .alert("Asked the archive to subscribe", isPresented: $addRequested) {
+            Button("OK") {}
+        } message: {
+            Text("TubeArchivist is resolving the channel; it appears in the directory once processed.")
+        }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
+                    if app.me?.isAdmin == true {
+                        Button {
+                            showAddChannel = true
+                        } label: {
+                            Label("Add channel…", systemImage: "plus")
+                        }
+                        Divider()
+                    }
                     Picker("Sort", selection: $sort) {
                         Text("Name").tag(ChannelSort.name)
                         Text("Most videos").tag(ChannelSort.videos)

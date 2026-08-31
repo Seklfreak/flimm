@@ -327,14 +327,40 @@ func (s *Server) setChannelSubscribed(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "subscribed is required")
 		return
 	}
-	// Only channels the archive already knows: adding a brand-new channel is
-	// a bigger decision (it starts downloads) than this toggle implies.
+	// Only channels the archive already knows; a brand-new channel goes
+	// through subscribeNewChannel, which is a deliberate separate action.
 	if _, err := s.ta.GetChannel(r.Context(), id); err != nil {
 		s.writeTAError(w, "get channel", err)
 		return
 	}
 	if err := s.ta.SetChannelSubscribed(r.Context(), id, *req.Subscribed); err != nil {
 		s.writeTAError(w, "set channel subscribed", err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// subscribeNewChannel asks TubeArchivist to subscribe a channel it may not
+// know yet — a URL, @handle or UC… id; TA's own task resolves it, creates
+// the channel and downloads from the next rescan on. Admin-only for the same
+// reason as the toggle, and 202 because the resolution is TA's background
+// work: the channel appears in the directory once the task lands. 204 like
+// every other side-effect endpoint here (a 202 with an empty body trips
+// JSON-parsing clients).
+func (s *Server) subscribeNewChannel(w http.ResponseWriter, r *http.Request) {
+	if !isAdmin(r.Context()) {
+		writeError(w, http.StatusForbidden, "admin only")
+		return
+	}
+	var req struct {
+		Channel string `json:"channel"`
+	}
+	if err := decodeBody(r, &req); err != nil || strings.TrimSpace(req.Channel) == "" {
+		writeError(w, http.StatusBadRequest, "channel is required")
+		return
+	}
+	if err := s.ta.SetChannelSubscribed(r.Context(), strings.TrimSpace(req.Channel), true); err != nil {
+		s.writeTAError(w, "subscribe channel", err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

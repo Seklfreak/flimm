@@ -52,8 +52,10 @@ playlist: it joins the sidebar (web) or a *Pinned* section leading the
 directory (iPhone, iPad, Apple TV), with its unseen count, and unpinning never
 touches anything but the pin. An admin can also flip the archive's own
 **subscription** from the channel page — whether TubeArchivist keeps
-downloading the channel's new videos — without visiting TA's UI; it is
-instance-wide state, which is why it is admin-gated like series indexing.
+downloading the channel's new videos — and subscribe a **brand-new channel**
+from the directory (URL, @handle or id; the archive resolves it in the
+background), all without visiting TA's UI. Both are instance-wide state,
+which is why they are admin-gated like series indexing.
 
 ## Player, resume and seen state
 

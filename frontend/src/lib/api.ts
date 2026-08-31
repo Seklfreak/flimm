@@ -506,6 +506,8 @@ export const api = {
   /** Admin only: flips TubeArchivist's own subscription — whether the archive keeps downloading the channel's new videos. */
   setChannelSubscribed: (id: string, subscribed: boolean) =>
     req<void>(`/channels/${id}/subscribed`, json("PUT", { subscribed })),
+  /** Admin only: subscribe a channel the archive may not know yet — URL, @handle or UC… id; TA resolves it in a background task. */
+  subscribeNewChannel: (channel: string) => req<void>("/channels", json("POST", { channel })),
 
   video: (id: string) => req<Video>(`/videos/${id}`),
   upNext: (id: string, ctx: PlayContext, page: number, before?: boolean) =>

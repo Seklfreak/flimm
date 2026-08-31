@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { Link } from "react-router";
-import { EVERYTHING_ID, type ChannelSort, type ChannelSummary } from "@/lib/api";
-import { useChannels } from "@/lib/queries";
+import { useQueryClient } from "@tanstack/react-query";
+import { api, EVERYTHING_ID, type ChannelSort, type ChannelSummary } from "@/lib/api";
+import { useChannels, useMe } from "@/lib/queries";
 import { plural, relativeDay } from "@/lib/format";
 import { PageHeader } from "@/components/Layout";
 import { Avatar, EmptyState, ErrorState, InfiniteSentinel, SearchBox, Spinner } from "@/components/ui";
@@ -11,6 +12,8 @@ type Mode = "recent" | "az" | "unfeeded";
 export default function ChannelsPage() {
   const [q, setQ] = useState("");
   const [mode, setMode] = useState<Mode>("recent");
+  const me = useMe();
+  const [adding, setAdding] = useState(false);
   const sort: ChannelSort = mode === "az" ? "name" : "last_upload";
   const channels = useChannels(q.trim(), sort, mode === "unfeeded");
   const items = channels.data?.pages.flatMap((p) => p.items) ?? [];
@@ -35,10 +38,17 @@ export default function ChannelsPage() {
                 {label}
               </button>
             ))}
+            {me.data?.is_admin && (
+              <button className="btn pri ml-2" onClick={() => setAdding(true)}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M12 5v14M5 12h14" /></svg>
+                Add channel
+              </button>
+            )}
           </>
         }
       />
       <div className="px-5 md:px-10">
+        {adding && <AddChannelForm onDone={() => setAdding(false)} />}
         {channels.isLoading ? (
           <Spinner label="Loading channels…" />
         ) : channels.isError ? (
@@ -81,5 +91,61 @@ function ChannelCard({ channel }: { channel: ChannelSummary }) {
       </span>
       {channel.unseen_count > 0 && <span className="badge whitespace-nowrap">{channel.unseen_count} unseen</span>}
     </Link>
+  );
+}
+
+/**
+ * Admin only: hand TubeArchivist a channel it may not know yet — a URL,
+ * @handle or UC… id. TA resolves and creates it in a background task, so the
+ * channel appears in the directory once that lands, not on submit.
+ */
+function AddChannelForm({ onDone }: { onDone: () => void }) {
+  const [value, setValue] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [requested, setRequested] = useState(false);
+  const qc = useQueryClient();
+  const submit = async () => {
+    if (!value.trim() || busy) return;
+    setBusy(true);
+    try {
+      await api.subscribeNewChannel(value.trim());
+      setRequested(true);
+      void qc.invalidateQueries({ queryKey: ["channels"] });
+    } finally {
+      setBusy(false);
+    }
+  };
+  if (requested) {
+    return (
+      <div className="mb-4 flex flex-wrap items-center gap-3 rounded-[14px] border border-hair bg-raised/60 px-4 py-3">
+        <span className="meta">
+          Asked the archive to subscribe. TubeArchivist resolves and downloads in the background — the channel appears in the directory once that lands.
+        </span>
+        <button className="btn" onClick={onDone}>OK</button>
+      </div>
+    );
+  }
+  return (
+    <form
+      className="mb-4 flex flex-wrap items-center gap-2 rounded-[14px] border border-hair bg-raised/60 px-4 py-3"
+      onSubmit={(e) => {
+        e.preventDefault();
+        void submit();
+      }}
+    >
+      <input
+        className="input min-w-[280px] flex-1"
+        value={value}
+        autoFocus
+        onChange={(e) => setValue(e.target.value)}
+        placeholder="Channel URL, @handle or UC… id"
+      />
+      <button className="btn pri" type="submit" disabled={busy || !value.trim()}>
+        {busy ? "Subscribing…" : "Subscribe"}
+      </button>
+      <button className="btn" type="button" onClick={onDone}>
+        Cancel
+      </button>
+    </form>
   );
 }

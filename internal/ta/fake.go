@@ -336,10 +336,15 @@ func (f *Fake) SetChannelSubscribed(_ context.Context, channelID string, subscri
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	c, ok := f.Channels[channelID]
-	if !ok {
+	switch {
+	case ok:
+		c.ChannelSubscribed = subscribed
+	case subscribed:
+		// TA's subscribe task creates channels it does not know yet.
+		f.Channels[channelID] = &Channel{ChannelID: channelID, ChannelName: channelID, ChannelSubscribed: true, ChannelActive: true}
+	default:
 		return ErrNotFound
 	}
-	c.ChannelSubscribed = subscribed
 	f.Calls = append(f.Calls, fmt.Sprintf("subscribe:%s:%t", channelID, subscribed))
 	return nil
 }
