@@ -138,6 +138,9 @@ struct UpNextList: View {
     /// Set right after "Not interested" drops a row — what the undo banner
     /// acts on. Same shape as ``VideoList``'s, for the same reason.
     @State private var pendingUndo: PendingDismiss?
+    /// Whether the "Previous" half is unfolded. Sticky across steps — someone
+    /// reading history is still reading it on the next video.
+    @State private var showPrevious = false
 
     private struct PendingDismiss: Identifiable {
         let video: VideoSummary
@@ -162,6 +165,33 @@ struct UpNextList: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+            if model.hasContext {
+                Button {
+                    withAnimation { showPrevious.toggle() }
+                } label: {
+                    Label("Previous", systemImage: showPrevious ? "chevron.down" : "chevron.right")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                if showPrevious {
+                    if model.previous.isEmpty {
+                        Text("Nothing before this one.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ForEach(model.previous) { video in
+                            Button {
+                                Task { await model.go(to: video.id) }
+                            } label: {
+                                row(video)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    Divider()
+                }
+            }
             if model.upNext.isEmpty {
                 Text("Nothing more in this context.")
                     .font(.footnote)
@@ -184,6 +214,11 @@ struct UpNextList: View {
                     }
                 }
             }
+        }
+        // Loads on unfold, and again after a step to another video (which
+        // resets the model's list); a no-op while already loaded.
+        .task(id: showPrevious ? model.upNext.first?.id ?? "start" : nil) {
+            if showPrevious { await model.loadPrevious() }
         }
     }
 

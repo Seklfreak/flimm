@@ -53,3 +53,33 @@ func TestUpNextPagesThroughALongPlaylist(t *testing.T) {
 		t.Error("the video being watched appeared in its own up-next list")
 	}
 }
+
+// ?before=true is the other half of the panel: what already played in this
+// context, closest first, and honestly empty when nothing did.
+func TestUpNextBeforeListsPreviousVideosClosestFirst(t *testing.T) {
+	client := ta.NewFake()
+	entries := make([]ta.PlaylistEntry, 0, 5)
+	for i := range 5 {
+		id := fmt.Sprintf("v%02d", i)
+		client.Videos[id] = &ta.Video{YoutubeID: id, Title: id, Player: ta.Player{Duration: 600}, Playlist: []string{"PL1"}}
+		entries = append(entries, ta.PlaylistEntry{YoutubeID: id, Idx: i, Downloaded: true})
+	}
+	client.Playlists["PL1"] = &ta.Playlist{PlaylistID: "PL1", PlaylistName: "Short", PlaylistType: "custom", PlaylistEntries: entries}
+	h := newTestServer(client, newEventStore().querier()).Router()
+
+	page := decode[Page[VideoSummary]](t, do(t, h, http.MethodGet, "/api/v1/videos/v03/up-next?playlist=PL1&before=true", ""))
+	if got := ids(page.Items); len(got) != 3 || got[0] != "v02" || got[2] != "v00" {
+		t.Errorf("before = %v, want [v02 v01 v00] (closest first)", got)
+	}
+
+	// The first video has nothing before it — and no similar-videos fallback,
+	// which would masquerade as history.
+	if page := decode[Page[VideoSummary]](t, do(t, h, http.MethodGet, "/api/v1/videos/v00/up-next?playlist=PL1&before=true", "")); len(page.Items) != 0 {
+		t.Errorf("before the first video = %v, want nothing", ids(page.Items))
+	}
+
+	// Without a context there is no history to unfold either.
+	if page := decode[Page[VideoSummary]](t, do(t, h, http.MethodGet, "/api/v1/videos/v03/up-next?before=true", "")); len(page.Items) != 0 {
+		t.Errorf("no context = %v, want nothing", ids(page.Items))
+	}
+}

@@ -1,3 +1,7 @@
+// swiftlint:disable file_length
+// A watching session is one object on purpose: everything here guards the
+// same private playback state, and splitting the file means loosening the
+// access that keeps that state coherent.
 import FlimmKit
 import Foundation
 import Observation
@@ -19,6 +23,12 @@ final class WatchModel {
     private(set) var video: Video?
     private(set) var nav: Nav?
     private(set) var chapters: [Chapter] = []
+    /// The backwards half of the up-next panel: what already played before
+    /// this video in its context, closest first. Loaded only when the
+    /// panel's "Previous" section is unfolded.
+    private(set) var previous: [VideoSummary] = []
+    private var previousLoaded = false
+
     private(set) var upNext: [VideoSummary] = [] {
         // A load, a dismissal or an undo: the lock screen has to agree.
         didSet { nowPlaying.register(hasNext: canGoNext || !upNext.isEmpty, hasPrevious: canGoPrevious) }
@@ -272,6 +282,9 @@ final class WatchModel {
         chapters = loadedChapters
         nav = loadedNav
         upNext = loadedNext
+        // A new video means new history; the section refills when reopened.
+        previous = []
+        previousLoaded = false
         await loadSubtitles(detail)
         await loadArtwork(detail)
     }
@@ -289,6 +302,14 @@ final class WatchModel {
 
     private func fetchUpNext() async -> [VideoSummary] {
         (try? await client.upNext(videoId, context: context))?.items ?? []
+    }
+
+    /// Fills ``previous`` on demand — the section is folded away by default,
+    /// and a video whose history nobody unfolds costs no request.
+    func loadPrevious() async {
+        guard hasContext, !previousLoaded else { return }
+        previousLoaded = true
+        previous = (try? await client.upNext(videoId, context: context, before: true))?.items ?? []
     }
 
     private func loadSubtitles(_ detail: Video) async {

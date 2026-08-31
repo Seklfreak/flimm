@@ -33,6 +33,18 @@ function saveCollapsed(collapsed: boolean): void {
 /** A video taken out of the list, held at its old position so Undo can put it back. */
 type Removed = { video: VideoSummary; index: number };
 
+/** The backwards half of the panel — everything before the current video in
+ *  its context, closest first. `undefined` when the video has no context. */
+export type PreviousProps = {
+  items: VideoSummary[];
+  isLoading: boolean;
+  hasNextPage: boolean;
+  isFetchingNextPage: boolean;
+  fetchNextPage: () => void;
+  open: boolean;
+  onToggle: () => void;
+};
+
 export function UpNextPanel({
   items,
   title,
@@ -40,6 +52,7 @@ export function UpNextPanel({
   hasNextPage,
   isFetchingNextPage,
   fetchNextPage,
+  previous,
   ctx,
   autoplay,
   onAutoplay,
@@ -50,6 +63,7 @@ export function UpNextPanel({
   hasNextPage: boolean;
   isFetchingNextPage: boolean;
   fetchNextPage: () => void;
+  previous?: PreviousProps;
   ctx?: Record<string, string | undefined>;
   autoplay: boolean;
   onAutoplay: (patch: Partial<Prefs>) => void;
@@ -133,6 +147,44 @@ export function UpNextPanel({
           </button>
         </div>
       </div>
+      {previous && (
+        <div className="flex flex-col gap-3">
+          <button
+            type="button"
+            className="flex items-center gap-1.5 self-start text-[13px] font-bold text-muted-2 hover:text-ink"
+            aria-expanded={previous.open}
+            onClick={previous.onToggle}
+          >
+            <ChevronIcon direction={previous.open ? "down" : "right"} size={12} />
+            Previous
+          </button>
+          {previous.open &&
+            (previous.isLoading ? (
+              <Spinner />
+            ) : previous.items.length === 0 ? (
+              <p className="meta">Nothing before this one.</p>
+            ) : (
+              <>
+                {previous.items.map((v) => (
+                  <Link key={v.id} to={watchHref(v, ctx)} className="flex min-w-0 items-center gap-3 text-ink no-underline hover:text-ink">
+                    <div className="w-32 flex-none">
+                      <Thumb video={v} compact className="!rounded-[10px]" />
+                    </div>
+                    <span className="flex min-w-0 flex-col gap-[3px]">
+                      <span className="text-[14px] font-extrabold leading-[1.25] line-clamp-2">{v.title}</span>
+                      <span className="meta text-[12px]">
+                        {v.channel.name} · {fmtDuration(v.duration)}
+                      </span>
+                    </span>
+                  </Link>
+                ))}
+                <InfiniteSentinel enabled={previous.hasNextPage && !previous.isFetchingNextPage} onVisible={previous.fetchNextPage} />
+                {previous.isFetchingNextPage && <Spinner />}
+              </>
+            ))}
+          <div className="border-t border-hair" />
+        </div>
+      )}
       {isLoading ? (
         <Spinner />
       ) : visible.length === 0 && removed.length === 0 ? (

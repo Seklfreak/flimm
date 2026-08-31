@@ -453,7 +453,7 @@ its default — send the whole map back, which is what the settings screens do.
 | Method | Path | Notes |
 |---|---|---|
 | GET | `/videos/{id}` | Video detail |
-| GET | `/videos/{id}/up-next` | query `feed=<id>` or `playlist=<id>` or `channel=<id>`; **paged** VideoSummary of everything following the video in that context, falling back to `similar` when nothing follows. Paged so a long playlist scrolls rather than being truncated |
+| GET | `/videos/{id}/up-next` | query `feed=<id>` or `playlist=<id>` or `channel=<id>`; **paged** VideoSummary of everything following the video in that context, falling back to `similar` when nothing follows. Paged so a long playlist scrolls rather than being truncated. `before=true` flips it: everything *preceding* the video, closest first, and empty (no fallback) when nothing does — the panel's "Previous" section |
 | GET | `/videos/{id}/nav` | same context query; `{ "index", "total", "previous", "next" }` for stepping through the list in both directions |
 | GET | `/videos/{id}/similar` | VideoSummary[] (TA similar) |
 | GET | `/videos/{id}/comments` | the archived comments, **paged by thread** — `Page<Comment>`, a comment's replies riding along with it. Normalised from what TubeArchivist indexed; see [Comments](#comments) |

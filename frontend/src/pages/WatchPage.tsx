@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, EVERYTHING_ID } from "@/lib/api";
-import { invalidateWatchState, keys, useChapters, useComments, useFeeds, usePrefs, useSetWatched, useUpdatePrefs, useUpNext, useVideo } from "@/lib/queries";
+import { invalidateWatchState, keys, useChapters, useComments, useFeeds, usePrefs, usePreviousInContext, useSetWatched, useUpdatePrefs, useUpNext, useVideo } from "@/lib/queries";
 import { compactCount, fmtDuration, plural, relativeDay } from "@/lib/format";
 import { Avatar, CheckIcon, ErrorState, Spinner, ThumbIcon } from "@/components/ui";
 import { watchHref } from "@/components/VideoCard";
@@ -56,10 +56,16 @@ export default function WatchPage() {
   const feeds = useFeeds();
   const upNext = useUpNext(id, ctx);
   const upNextItems = useMemo(() => (upNext.data?.pages ?? []).flatMap((p) => p.items), [upNext.data]);
+  // The backwards half of the panel, fetched only once it is unfolded. The
+  // fold survives stepping to the next video — someone reading history is
+  // still reading it there.
+  const [prevOpen, setPrevOpen] = useState(false);
   // Neighbours in the playlist/feed/channel the video was opened from. Only
   // requested when there is such a context; without one there is nothing to
   // step through and the player hides the buttons.
   const hasContext = Boolean(ctx.feed || ctx.playlist || ctx.channel);
+  const previous = usePreviousInContext(id, ctx, hasContext && prevOpen);
+  const previousItems = useMemo(() => (previous.data?.pages ?? []).flatMap((p) => p.items), [previous.data]);
   const nav = useQuery({
     queryKey: keys.nav(id, ctx),
     queryFn: () => api.nav(id, ctx),
@@ -233,6 +239,19 @@ export default function WatchPage() {
         hasNextPage={!!upNext.hasNextPage}
         isFetchingNextPage={upNext.isFetchingNextPage}
         fetchNextPage={() => void upNext.fetchNextPage()}
+        previous={
+          hasContext
+            ? {
+                items: previousItems,
+                isLoading: prevOpen && previous.isLoading,
+                hasNextPage: !!previous.hasNextPage,
+                isFetchingNextPage: previous.isFetchingNextPage,
+                fetchNextPage: () => void previous.fetchNextPage(),
+                open: prevOpen,
+                onToggle: () => setPrevOpen((o) => !o),
+              }
+            : undefined
+        }
         ctx={ctx}
         autoplay={!!prefs?.autoplay}
         onAutoplay={onPrefs}

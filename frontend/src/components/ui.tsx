@@ -122,7 +122,7 @@ export function CloseIcon({ size = 16 }: { size?: number }) {
 }
 
 /** A plain chevron; `direction` is where it points. */
-export function ChevronIcon({ size = 16, direction = "right" }: { size?: number; direction?: "left" | "right" }) {
+export function ChevronIcon({ size = 16, direction = "right" }: { size?: number; direction?: "left" | "right" | "up" | "down" }) {
   return (
     <svg
       width={size}
@@ -131,7 +131,15 @@ export function ChevronIcon({ size = 16, direction = "right" }: { size?: number;
       fill="none"
       stroke="currentColor"
       strokeWidth="2.5"
-      style={direction === "left" ? { transform: "scaleX(-1)" } : undefined}
+      style={
+        direction === "left"
+          ? { transform: "scaleX(-1)" }
+          : direction === "down"
+            ? { transform: "rotate(90deg)" }
+            : direction === "up"
+              ? { transform: "rotate(-90deg)" }
+              : undefined
+      }
     >
       <path d="M9 5l7 7-7 7" />
     </svg>

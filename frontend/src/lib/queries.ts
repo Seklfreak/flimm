@@ -125,6 +125,18 @@ export function useUpNext(id: string, ctx: Record<string, string | undefined>) {
   });
 }
 
+// The other direction: what already played before this video in its context,
+// closest first. Fetched only once the panel's "Previous" section is opened.
+export function usePreviousInContext(id: string, ctx: Record<string, string | undefined>, enabled: boolean) {
+  return useInfiniteQuery({
+    queryKey: [...keys.upNext(id, ctx), "before"],
+    queryFn: ({ pageParam }) => api.upNext(id, ctx, pageParam, true),
+    enabled,
+    staleTime: 60_000,
+    ...pageParams<VideoSummary>(),
+  });
+}
+
 /**
  * A video's archived comments, paged.
  *

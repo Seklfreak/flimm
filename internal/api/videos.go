@@ -603,6 +603,14 @@ func (s *Server) upNext(w http.ResponseWriter, r *http.Request) {
 		s.writeTAError(w, "up next", err)
 		return
 	}
+	// ?before=true flips the slice: what already played in this context,
+	// closest first, so a panel can unfold history above the queue. No
+	// similar-videos fallback — before the first video there is honestly
+	// nothing, and suggestions would masquerade as history.
+	if r.URL.Query().Get("before") == "true" {
+		writeJSON(w, http.StatusOK, slicePage(beforeID(items, id), parsePaging(r)))
+		return
+	}
 	next := afterID(items, id)
 	if len(next) == 0 {
 		// No context, or the current video is last: suggest something rather
@@ -619,6 +627,28 @@ func (s *Server) upNext(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeJSON(w, http.StatusOK, slicePage(next, parsePaging(r)))
+}
+
+// beforeID returns every item preceding id, closest first — page 0 starts
+// with the video that played right before this one. When id isn't in the
+// list there is no "before" to speak of, so the answer is empty rather than
+// a guess.
+func beforeID(items []VideoSummary, id string) []VideoSummary {
+	out := []VideoSummary{}
+	idx := -1
+	for i, it := range items {
+		if it.ID == id {
+			idx = i
+			break
+		}
+	}
+	if idx <= 0 {
+		return out
+	}
+	for i := idx - 1; i >= 0; i-- {
+		out = append(out, items[i])
+	}
+	return out
 }
 
 // afterID returns every item following id; when id isn't in the list (already

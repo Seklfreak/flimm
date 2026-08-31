@@ -12,14 +12,18 @@ extension APIClient {
 
     /// Everything following the video in the playback context, falling back to
     /// `similar` when nothing does. Paged so a long playlist scrolls rather
-    /// than being truncated.
+    /// than being truncated. `before: true` flips it: everything *preceding*
+    /// the video, closest first, empty when nothing does — the panel's
+    /// "Previous" section.
     public func upNext(
         _ id: String,
         context: PlaybackContext = .none,
+        before: Bool = false,
         page: Int = 0,
         pageSize: Int = Page<VideoSummary>.defaultSize
     ) async throws -> Page<VideoSummary> {
         var query = QueryBuilder(context.queryItems)
+        query.flag("before", before)
         query.page(page, size: pageSize)
         return try await get("/videos/\(esc(id))/up-next", query: query.items)
     }

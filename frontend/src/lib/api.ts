@@ -493,8 +493,8 @@ export const api = {
   indexChannelPlaylists: (id: string) => req<void>(`/channels/${id}/index-playlists`, { method: "POST" }),
 
   video: (id: string) => req<Video>(`/videos/${id}`),
-  upNext: (id: string, ctx: PlayContext, page: number) =>
-    req<Page<VideoSummary>>(`/videos/${id}/up-next${qs({ ...ctx, page, page_size: PAGE_SIZE })}`),
+  upNext: (id: string, ctx: PlayContext, page: number, before?: boolean) =>
+    req<Page<VideoSummary>>(`/videos/${id}/up-next${qs({ ...ctx, before: before ? "true" : undefined, page, page_size: PAGE_SIZE })}`),
   nav: (id: string, ctx: PlayContext) => req<NavResponse>(`/videos/${id}/nav${qs(ctx)}`),
   chapters: (id: string) => req<ChaptersResponse>(`/videos/${id}/chapters`),
   // Asking is what starts the analysis pass; the answer turns up on a later
