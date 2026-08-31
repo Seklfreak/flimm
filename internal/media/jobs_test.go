@@ -431,3 +431,13 @@ func TestCloseCancelsRunningJobs(t *testing.T) {
 		t.Errorf("StartDir after Close = %q, want %q", got, StateFailed)
 	}
 }
+
+// Closing the cache abandons whatever it was deriving. That is the process
+// going away, not a defect in the job, so the error it hands back has to be
+// recognisable as a cancellation — the same test the observability layer uses
+// to keep a shutdown out of the error reports.
+func TestErrClosedIsACancellation(t *testing.T) {
+	if !errors.Is(ErrClosed, context.Canceled) {
+		t.Errorf("ErrClosed = %v, want it to wrap context.Canceled", ErrClosed)
+	}
+}

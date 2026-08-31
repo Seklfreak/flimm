@@ -34,8 +34,11 @@ const (
 // come back.
 var ErrNotReady = errors.New("media cache: entry not ready yet")
 
-// ErrClosed is returned once the cache is shutting down.
-var ErrClosed = errors.New("media cache: closed")
+// ErrClosed is returned once the cache is shutting down. It wraps
+// context.Canceled deliberately: a derivation abandoned because the process is
+// going away is the same class of non-event as a request whose client walked
+// off, and the Sentry handler drops both on exactly that test.
+var ErrClosed = fmt.Errorf("media cache: closed: %w", context.Canceled)
 
 // doneMarker is written into a directory entry when its job completes. It is
 // what makes "done" survive a restart: the in-memory job table does not, and

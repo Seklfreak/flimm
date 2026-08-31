@@ -84,6 +84,11 @@ func runFFmpeg(ctx context.Context, ffmpegPath string, source SourceFunc, codec 
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
+		// Same rule as runFFmpegOutput: a run killed because its context ended
+		// reports the context's error, not the SIGKILL it died of.
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return fmt.Errorf("ffmpeg -c:a %s: %w", codec, ctxErr)
+		}
 		msg := strings.TrimSpace(stderr.String())
 		if len(msg) > 500 {
 			msg = msg[:500]

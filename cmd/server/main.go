@@ -229,7 +229,16 @@ func main() {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
 		if err := httpServer.Shutdown(shutdownCtx); err != nil {
-			log.Error("shutdown", "err", err)
+			// /media holds a connection open for as long as the player reads,
+			// so reaching the deadline with streams still attached is how a
+			// shutdown ordinarily ends rather than a fault — the process exits
+			// a moment later and players reconnect, which is what they do
+			// across a deploy anyway. Only an unexpected failure is an error.
+			if errors.Is(err, context.DeadlineExceeded) {
+				log.Info("shutdown: deadline passed with streams still open")
+			} else {
+				log.Error("shutdown", "err", err)
+			}
 		}
 	}
 	if mediaCache != nil {

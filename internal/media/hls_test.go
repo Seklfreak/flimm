@@ -3,6 +3,7 @@ package media
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -1118,5 +1119,69 @@ func assertHEVCTagged(t *testing.T, segment, init string) {
 	}
 	if !strings.Contains(got, "hvc1") {
 		t.Errorf("rendition is not tagged hvc1 (AVFoundation will refuse it): %q", got)
+	}
+}
+
+// A derivation the process cancels on its way out is not an ffmpeg fault, but
+// SIGKILL reaches Go as an *exec.ExitError reading only "signal: killed" —
+// which says nothing about why it died. Reporting the context's own error
+// instead is what lets the observability layer tell a shutdown apart from a
+// broken transcode, and what stopped every deploy filing one Sentry issue per
+// rendition that happened to be in flight.
+func TestRunFFmpegOutputReportsCancellationAsCancellation(t *testing.T) {
+	sleep, lookErr := exec.LookPath("sleep")
+	if lookErr != nil {
+		t.Skip("no sleep binary to stand in for a long ffmpeg run")
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		cancel()
+	}()
+
+	_, err := runFFmpegOutput(ctx, sleep, t.TempDir(), []string{"10"}, nil)
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("err = %v, want it to wrap context.Canceled", err)
+	}
+}
+
+// The deadline case must NOT be laundered into the same non-event: a run that
+// outlived transcodeTimeout is a transcode that is genuinely stuck, and the
+// only signal that it happened is the report.
+func TestRunFFmpegOutputKeepsDeadlineExceededDistinct(t *testing.T) {
+	sleep, lookErr := exec.LookPath("sleep")
+	if lookErr != nil {
+		t.Skip("no sleep binary to stand in for a long ffmpeg run")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+
+	_, err := runFFmpegOutput(ctx, sleep, t.TempDir(), []string{"10"}, nil)
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Errorf("err = %v, want it to wrap context.DeadlineExceeded", err)
+	}
+	if errors.Is(err, context.Canceled) {
+		t.Errorf("err = %v, want it kept apart from a cancellation", err)
+	}
+}
+
+// A run that fails on its own merits still has to carry ffmpeg's account of
+// what went wrong; a filter that swallows real failures is worse than none.
+func TestRunFFmpegOutputKeepsRealFailures(t *testing.T) {
+	sh, lookErr := exec.LookPath("sh")
+	if lookErr != nil {
+		t.Skip("no sh binary to stand in for a failing ffmpeg run")
+	}
+
+	_, err := runFFmpegOutput(context.Background(), sh, t.TempDir(),
+		[]string{"-c", "echo 'Invalid data found when processing input' >&2; exit 1"}, nil)
+	if err == nil {
+		t.Fatal("err = nil, want the failure reported")
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		t.Errorf("err = %v, want it reported as a real failure", err)
+	}
+	if !strings.Contains(err.Error(), "Invalid data found") {
+		t.Errorf("err = %v, want ffmpeg's stderr kept", err)
 	}
 }

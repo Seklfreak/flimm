@@ -558,6 +558,16 @@ func runFFmpegOutput(ctx context.Context, ffmpegPath, dir string, args []string,
 		log.Debug("ffmpeg", "entry", filepath.Base(dir), "stderr", out)
 	}
 	if runErr != nil {
+		// A run the context ended is not an ffmpeg fault. Shutdown cancels
+		// every derivation at once and the SIGKILL that follows arrives as an
+		// *exec.ExitError ("signal: killed") that says nothing about why —
+		// which is how an ordinary deploy filled Sentry with one report per
+		// rendition. Wrapping the context's own error keeps the cause honest:
+		// a cancelled run is dropped as the non-event it is, while a run that
+		// outlived transcodeTimeout still reports as a real fault.
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return out, fmt.Errorf("ffmpeg: %w", ctxErr)
+		}
 		msg := out
 		if len(msg) > 500 {
 			msg = msg[:500]
