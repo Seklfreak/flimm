@@ -691,6 +691,24 @@ at a few lookups a second. The other two are read when a single video is opened,
 so the first open pays and every later one is free — sweeping them would be
 thousands of requests to warm data that is read once per video.
 
+### Channel counts
+
+Two numbers are shown for every channel — how many videos it holds and how many
+are unseen — and TubeArchivist can only answer them one channel at a time
+(`stats/channel` is archive-wide). They are cached in the same table as the
+[external lookups](#external-lookups), under the same rule, with a window of
+minutes rather than hours: an unseen count moves as its owner watches, and the
+archive is in the same cluster, so refreshing is cheap. A channel holding
+nothing is re-checked sooner, because that is what a newly subscribed channel
+looks like.
+
+Nothing sweeps them. A channel nobody looks at does not need a current count.
+
+`GET /channels` also **pages before it counts**. Ordering by name — the default
+— needs nothing fetched to decide, so only the channels on the page are counted.
+`?sort=videos|unseen|last_upload` cannot be decided that way and still counts
+every channel, which is the one order that costs what the whole list costs.
+
 ### Watch stats
 
 `GET /stats` is the whole of a viewer's history read sideways. Everything in it

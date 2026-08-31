@@ -37,6 +37,10 @@ const (
 	sourceDeArrow      cacheSource = "dearrow"
 	sourceSponsorBlock cacheSource = "sponsorblock"
 	sourceRYD          cacheSource = "ryd"
+	// sourceChannel is the deployment's own archive rather than a third party:
+	// per-channel counts that TubeArchivist can only answer one channel at a
+	// time. See channelcache.go.
+	sourceChannel cacheSource = "channel"
 )
 
 // cachePolicy is how long one source's answers stay fresh.
@@ -59,6 +63,12 @@ var cachePolicies = map[cacheSource]cachePolicy{
 	sourceSponsorBlock: {withData: 12 * time.Hour, empty: 3 * 24 * time.Hour},
 	// Vote counts drift slowly and nothing depends on them being exact.
 	sourceRYD: {withData: 24 * time.Hour, empty: 7 * 24 * time.Hour},
+	// Minutes, not hours: an unseen count moves as its owner watches, and it is
+	// cheap to refresh — the archive is in the same cluster. Long enough that a
+	// page of a hundred channels is not a hundred queries, short enough that a
+	// badge is never far wrong. A channel with nothing in it is re-checked
+	// sooner, because that is what a newly subscribed channel looks like.
+	sourceChannel: {withData: 5 * time.Minute, empty: 1 * time.Minute},
 }
 
 // cacheEntry is one row, still encoded.
@@ -207,5 +217,7 @@ func (s *Server) runCacheJob(ctx context.Context, job cacheJob) {
 		s.fetchSponsorSegments(ctx, job.key)
 	case sourceRYD:
 		s.fetchVotes(ctx, job.key)
+	case sourceChannel:
+		s.fetchChannelAggregate(ctx, job.key)
 	}
 }

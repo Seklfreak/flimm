@@ -2,6 +2,20 @@
 
 ## Done
 
+- **429 queries for one page of channels** (2026-08-31) — the new traces named
+  it immediately: a single request to `GET /api/v1/channels` made **429** calls
+  to TubeArchivist. Two per channel, for a video count and an unseen count, and
+  every channel in the archive was counted before the list was cut to a page of
+  thirty. The `/feeds` sidebar had the same shape at twenty-two calls, on every
+  page load.
+
+  Two fixes. The counts now live in the same cache as the third-party lookups,
+  with a window of minutes — they were already cached in memory, which helps
+  within a process and not at all across a deploy, and a deploy is exactly when
+  a cold page fans out to hundreds of calls at once. And the list pages before
+  it counts, so the default order costs a page rather than an archive; ordering
+  *by* a count still counts everything, because it cannot be decided otherwise.
+
 - **One cache for every third party** (2026-08-31) — SponsorBlock and Return
   YouTube Dislike had the same problem DeArrow did, on the same host: a lookup
   inside the request, behind a cache that lived in memory and died on every

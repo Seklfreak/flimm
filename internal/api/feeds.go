@@ -5,14 +5,12 @@ import (
 	"errors"
 	"net/http"
 	"slices"
-	"sync/atomic"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
 	"github.com/Seklfreak/flimm/internal/db/sqlc"
-	"github.com/Seklfreak/flimm/internal/ta"
 )
 
 type feedBody struct {
@@ -47,25 +45,6 @@ func (s *Server) feedChannelMap(ctx context.Context, uid uuid.UUID) (map[uuid.UU
 
 // unseenForChannels sums TA's per-channel unwatched counts; nil channels =
 // the whole library.
-func (s *Server) unseenForChannels(ctx context.Context, channelIDs []string) (int, error) {
-	if channelIDs == nil {
-		p, err := s.ta.ListVideos(ctx, ta.VideoQuery{Watch: "unwatched", PageSize: 1})
-		if err != nil {
-			return 0, err
-		}
-		return p.Paginate.TotalHits, nil
-	}
-	var total atomic.Int64
-	err := parallel(ctx, channelIDs, func(ctx context.Context, _ int, ch string) error {
-		n, err := s.ta.UnseenCount(ctx, ch)
-		if err != nil {
-			return err
-		}
-		total.Add(int64(n))
-		return nil
-	})
-	return int(total.Load()), err
-}
 
 func (s *Server) everythingFeed(ctx context.Context, uid uuid.UUID, position int) (FeedDTO, error) {
 	raw, err := s.q.GetPrefs(ctx, uid)

@@ -28,32 +28,27 @@ func (s *Server) channelFeedRefs(ctx context.Context, uid uuid.UUID) (map[string
 
 // enrichChannel fills counts and last upload from TA (cached there).
 func (s *Server) enrichChannel(ctx context.Context, c ta.Channel, feeds []FeedRef) (*ChannelSummary, error) {
-	stats, err := s.ta.ChannelStats(ctx, c.ChannelID)
-	if err != nil {
-		return nil, err
-	}
-	unseen, err := s.ta.UnseenCount(ctx, c.ChannelID)
-	if err != nil {
-		return nil, err
-	}
+	counts := s.channelAggregates(ctx, []string{c.ChannelID})
+	out := channelSummaryOf(c, feeds, counts[c.ChannelID])
+	return &out, nil
+}
+
+// channelSummaryOf is the DTO for one channel and its counts.
+func channelSummaryOf(c ta.Channel, feeds []FeedRef, counts channelAggregate) ChannelSummary {
 	if feeds == nil {
 		feeds = []FeedRef{}
 	}
-	out := &ChannelSummary{
+	return ChannelSummary{
 		ID:          c.ChannelID,
 		Name:        c.ChannelName,
 		ThumbURL:    channelThumbURL(c.ChannelID),
 		BannerURL:   channelBannerURL(c.ChannelID),
-		VideoCount:  stats.VideoCount,
-		UnseenCount: unseen,
+		VideoCount:  counts.VideoCount,
+		UnseenCount: counts.Unseen,
+		LastUpload:  counts.lastUpload(),
 		Subscribed:  c.ChannelSubscribed,
 		Feeds:       feeds,
 	}
-	if !stats.LastUpload.IsZero() {
-		t := stats.LastUpload
-		out.LastUpload = &t
-	}
-	return out, nil
 }
 
 func (s *Server) channelSummary(ctx context.Context, uid uuid.UUID, c ta.Channel) (*ChannelSummary, error) {
@@ -89,21 +84,57 @@ func (s *Server) listChannels(w http.ResponseWriter, r *http.Request) {
 		}
 		picked = append(picked, c)
 	}
-	items := make([]ChannelSummary, len(picked))
-	err = parallel(r.Context(), picked, func(ctx context.Context, i int, c ta.Channel) error {
-		cs, err := s.enrichChannel(ctx, c, refs[c.ChannelID])
-		if err != nil {
-			return err
-		}
-		items[i] = *cs
-		return nil
-	})
-	if err != nil {
-		s.writeTAError(w, "channel stats", err)
+	// Counts are only needed for the channels that will be *shown*, unless the
+	// order depends on them. Enriching everything first is what made one request
+	// to this route cost 429 queries: the archive has hundreds of channels and a
+	// page holds thirty.
+	sort := q.Get("sort")
+	paging := parsePaging(r)
+	if !sortNeedsCounts(sort) {
+		sortChannelsByName(picked)
+		window := slicePage(picked, paging)
+		items := s.summarise(r.Context(), window.Items, refs)
+		writeJSON(w, http.StatusOK, Page[ChannelSummary]{
+			Items: items, Page: paging.Page, PageSize: paging.Size, Total: window.Total,
+		})
 		return
 	}
-	sortChannels(items, q.Get("sort"))
-	writeJSON(w, http.StatusOK, slicePage(items, parsePaging(r)))
+	items := s.summarise(r.Context(), picked, refs)
+	sortChannels(items, sort)
+	writeJSON(w, http.StatusOK, slicePage(items, paging))
+}
+
+// sortNeedsCounts reports whether an order can only be decided once every
+// channel's counts are known.
+func sortNeedsCounts(key string) bool {
+	switch key {
+	case "videos", "unseen", "last_upload":
+		return true
+	}
+	return false
+}
+
+// sortChannelsByName is the default order, and the one that needs nothing
+// fetched to decide it.
+func sortChannelsByName(channels []ta.Channel) {
+	sort.SliceStable(channels, func(i, j int) bool {
+		return strings.ToLower(channels[i].ChannelName) < strings.ToLower(channels[j].ChannelName)
+	})
+}
+
+// summarise turns channels into summaries, reading every channel's counts in
+// one pass (see channelAggregates).
+func (s *Server) summarise(ctx context.Context, channels []ta.Channel, refs map[string][]FeedRef) []ChannelSummary {
+	ids := make([]string, 0, len(channels))
+	for _, c := range channels {
+		ids = append(ids, c.ChannelID)
+	}
+	counts := s.channelAggregates(ctx, ids)
+	items := make([]ChannelSummary, len(channels))
+	for i, c := range channels {
+		items[i] = channelSummaryOf(c, refs[c.ChannelID], counts[c.ChannelID])
+	}
+	return items
 }
 
 func sortChannels(items []ChannelSummary, key string) {
