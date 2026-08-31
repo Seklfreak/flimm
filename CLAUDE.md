@@ -150,7 +150,12 @@ TA_URL=http://localhost:8001 TA_TOKEN=dev SPONSORBLOCK_URL= \
   -data <hex of {"baseURL":…,"config":…}>`), and the TV app opens a video
   directly in **Debug** builds when `FLIMM_PLAY_VIDEO=<id>` is in its
   environment (`SIMCTL_CHILD_FLIMM_PLAY_VIDEO=… xcrun simctl launch …`), which
-  is the only way to reach a screen that exists during playback. The same door
+  is the only way to reach a screen that exists during playback — on the phone
+  and iPad too (`dev.winktech.flimm`). `FLIMM_PLAY_FEED=<id>` /
+  `FLIMM_PLAY_PLAYLIST=<id>` open it *in* that context, which is what reaches
+  the states that depend on one: the **end of a list**, where up next turns
+  into suggestions and autoplay has to stop, is otherwise untestable without
+  tapping. The same door
   opens a tab (`FLIMM_OPEN_TAB`), a feed (`FLIMM_OPEN_FEED=<name>`) and puts
   the remote's focus on a feed chip (`FLIMM_FOCUS_FEED=<name>`) — **focus is
   invisible to a screenshot otherwise**, and a state nobody can see is a state

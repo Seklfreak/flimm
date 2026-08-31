@@ -57,6 +57,10 @@ export default function WatchPage() {
   const feeds = useFeeds();
   const upNext = useUpNext(id, ctx);
   const upNextItems = useMemo(() => (upNext.data?.pages ?? []).flatMap((p) => p.items), [upNext.data]);
+  // The context ran out and these are guesses. Autoplay must not walk into
+  // them and the end card must not offer one as "up next"; the panel says
+  // what they are. See `suggestions` in docs/api.md.
+  const areSuggestions = !!upNext.data?.pages[0]?.suggestions;
 
   // Neighbours in the playlist/feed/channel the video was opened from. Only
   // requested when there is such a context; without one there is nothing to
@@ -95,7 +99,7 @@ export default function WatchPage() {
     invalidateWatchState(qc, id);
   }, [qc, id]);
   const onSeekChapter = useCallback((t: number) => playerRef.current?.seek(t), []);
-  const next = upNextItems[0];
+  const next = areSuggestions ? undefined : upNextItems[0];
   const playNext = useCallback(() => {
     if (next) navigate(watchHref(next, ctx));
   }, [next, navigate, ctx]);
@@ -238,6 +242,7 @@ export default function WatchPage() {
       <UpNextPanel
         items={upNextItems}
         title={contextName ? `Up next in ${contextName}` : "Up next"}
+        suggestions={areSuggestions}
         isLoading={upNext.isLoading}
         hasNextPage={!!upNext.hasNextPage}
         isFetchingNextPage={upNext.isFetchingNextPage}

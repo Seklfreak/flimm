@@ -142,10 +142,11 @@ What is there:
     bar. The asset carries the bearer header; chapters become an
     `AVNavigationMarkersGroup` on the item, SponsorBlock range segments become
     `interstitialTimeRanges` (and are skipped outright on the
-    `skip_sponsors` preference), autoplay follows `up-next`, and shuffle is a
-    new seed starting at `nav.first`. When an ending is *not* taken by
-    autoplay (``PlaybackEnd``), the overlay says "Finished" and names what is
-    up next — a statement, not a menu: a focusable card in
+    `skip_sponsors` preference), autoplay follows `up-next` — but never into
+    a page marked `suggestions`, which is what the end of a list answers —
+    and shuffle is a new seed starting at `nav.first`. When an ending is *not*
+    taken by autoplay (``PlaybackEnd``), the overlay says "Finished" and names
+    what is up next — a statement, not a menu: a focusable card in
     `contentOverlayView` would take focus from the transport bar that already
     holds previous/next. The phone's card carries its own Replay and Up-next
     buttons, because those controls are Flimm's there. **Skipping stays AVKit's**

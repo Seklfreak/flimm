@@ -28,6 +28,11 @@ final class TVWatchModel {
     private(set) var nav: Nav?
     private(set) var chapters: [Chapter] = []
     private(set) var upNext: [VideoSummary] = []
+    /// ``upNext`` holds similar videos rather than the rest of the list: the
+    /// context ran out. Offered, never queued — see ``UpNextPage``. The TV has
+    /// no up-next list to show them in, so here the flag only keeps autoplay
+    /// and the end card from walking into a guess.
+    private(set) var upNextAreSuggestions = false
     private(set) var cues: [SubtitleCue] = []
     private(set) var activeCue: String?
     private(set) var loadError: String?
@@ -120,9 +125,9 @@ final class TVWatchModel {
         return CodecGate.archivePlays(video, on: .current)
     }
     var hasContext: Bool { context.source != nil }
-    var canGoNext: Bool { nav?.next != nil || !upNext.isEmpty }
+    var canGoNext: Bool { nav?.next != nil || (!upNextAreSuggestions && !upNext.isEmpty) }
     /// What the end card names as coming next — what ``goNext()`` would play.
-    var nextUp: VideoSummary? { nav?.next ?? upNext.first }
+    var nextUp: VideoSummary? { nav?.next ?? (upNextAreSuggestions ? nil : upNext.first) }
     var canGoPrevious: Bool { nav?.previous != nil }
     var currentTime: Double { player.currentTime().seconds.isFinite ? player.currentTime().seconds : 0 }
     /// What the heartbeat reports. An item that has not reported ready has no
@@ -302,7 +307,8 @@ final class TVWatchModel {
         let (loadedChapters, loadedNav, loadedNext) = await (chapterList, navigation, next)
         chapters = loadedChapters
         nav = loadedNav
-        upNext = loadedNext
+        upNext = loadedNext.items
+        upNextAreSuggestions = loadedNext.suggestions
         interstitials = TVPlayerMarkers.interstitials(for: detail.sponsorblock)
         itemGeneration += 1
         await loadSubtitles(detail)
@@ -320,8 +326,8 @@ final class TVWatchModel {
         return try? await client.nav(videoId, context: context)
     }
 
-    private func fetchUpNext() async -> [VideoSummary] {
-        (try? await client.upNext(videoId, context: context))?.items ?? []
+    private func fetchUpNext() async -> UpNextPage {
+        (try? await client.upNext(videoId, context: context)) ?? UpNextPage(page: Page(items: []))
     }
 
     private func loadSubtitles(_ detail: Video) async {
@@ -421,7 +427,7 @@ final class TVWatchModel {
     func goNext() async {
         if let next = nav?.next {
             await go(to: next.id)
-        } else if let next = upNext.first {
+        } else if !upNextAreSuggestions, let next = upNext.first {
             await go(to: next.id)
         }
     }

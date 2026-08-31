@@ -156,7 +156,9 @@ struct UpNextList: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text(model.hasContext ? "Up next" : "Similar videos")
+                // A context that has run out is offering guesses, and says so
+                // rather than keeping the queue's name over them.
+                Text(model.hasContext && !model.upNextAreSuggestions ? "Up next" : "Similar videos")
                     .font(.headline)
                 Spacer()
                 Toggle("Autoplay", isOn: autoplayBinding)
@@ -210,6 +212,11 @@ struct UpNextList: View {
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             } else {
+                if model.hasContext, model.upNextAreSuggestions {
+                    Text("That was the last one — these are suggestions.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
                 ForEach(model.upNext) { video in
                     Button {
                         Task { await model.go(to: video.id) }
@@ -217,6 +224,7 @@ struct UpNextList: View {
                         row(video)
                     }
                     .buttonStyle(.plain)
+                    .opacity(video.watched ? 0.45 : 1)
                     .contextMenu {
                         DismissMenuItem(video: video, onChange: handleDismiss)
                     }

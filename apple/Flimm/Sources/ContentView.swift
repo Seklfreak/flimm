@@ -73,11 +73,22 @@ struct ContentView: View {
     ///
     ///     SIMCTL_CHILD_FLIMM_PLAY_VIDEO=<video id> xcrun simctl launch <device> dev.winktech.flimm
     ///
+    /// `FLIMM_PLAY_FEED` / `FLIMM_PLAY_PLAYLIST` open it *in* that context,
+    /// which is the only way to reach the states that depend on one — the end
+    /// of a list most of all, where up next turns into suggestions.
+    ///
     /// Debug builds only; the TV app has the same door (see `TVRootView`).
     private func openDebugVideo() {
         #if DEBUG
-        guard let id = ProcessInfo.processInfo.environment["FLIMM_PLAY_VIDEO"], !id.isEmpty else { return }
-        player.play(id)
+        let env = ProcessInfo.processInfo.environment
+        guard let id = env["FLIMM_PLAY_VIDEO"], !id.isEmpty else { return }
+        var context = PlaybackContext.none
+        if let feed = env["FLIMM_PLAY_FEED"], !feed.isEmpty {
+            context = PlaybackContext(source: .feed(feed))
+        } else if let playlist = env["FLIMM_PLAY_PLAYLIST"], !playlist.isEmpty {
+            context = PlaybackContext(source: .playlist(playlist))
+        }
+        player.play(id, context: context)
         #endif
     }
 }

@@ -76,6 +76,14 @@ export interface PlayContext {
 }
 
 /** Where a video sits in the list the player is stepping through. */
+/** A page of up-next videos that says whether it is the queue or a guess.
+ *  `suggestions` is set only once the context has run out; the items are then
+ *  similar videos, which no client may autoplay into or show under the
+ *  context's own name. */
+export interface UpNextPage extends Page<VideoSummary> {
+  suggestions?: boolean;
+}
+
 export interface NavResponse {
   /** -1 when the video isn't in the context list. */
   index: number;
@@ -511,7 +519,7 @@ export const api = {
 
   video: (id: string) => req<Video>(`/videos/${id}`),
   upNext: (id: string, ctx: PlayContext, page: number, before?: boolean) =>
-    req<Page<VideoSummary>>(`/videos/${id}/up-next${qs({ ...ctx, before: before ? "true" : undefined, page, page_size: PAGE_SIZE })}`),
+    req<UpNextPage>(`/videos/${id}/up-next${qs({ ...ctx, before: before ? "true" : undefined, page, page_size: PAGE_SIZE })}`),
   nav: (id: string, ctx: PlayContext) => req<NavResponse>(`/videos/${id}/nav${qs(ctx)}`),
   chapters: (id: string) => req<ChaptersResponse>(`/videos/${id}/chapters`),
   // Asking is what starts the analysis pass; the answer turns up on a later

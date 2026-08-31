@@ -613,20 +613,52 @@ func (s *Server) upNext(w http.ResponseWriter, r *http.Request) {
 	}
 	next := afterID(items, id)
 	if len(next) == 0 {
-		// No context, or the current video is last: suggest something rather
-		// than ending on an empty panel. Similar videos are a flat list with
-		// nothing after them, so they only ever fill the first page.
-		vids, err := s.ta.SimilarVideos(r.Context(), id)
+		// No context, or the current video is last. Offering something is
+		// still better than an empty panel, but it is offered *as* a
+		// suggestion: `suggestions` tells the client these are guesses, not
+		// the rest of the list, so nothing autoplays into them and no panel
+		// presents them under the playlist's name. Similar videos are a flat
+		// list with nothing after them, so they only ever fill the first page.
+		suggestions, err := s.suggestionsFor(r.Context(), uid, id)
 		if err != nil {
 			s.writeTAError(w, "up next", err)
 			return
 		}
-		if next, err = s.overlay(r.Context(), uid, vids); err != nil {
-			s.writeDBError(w, "load watch state", err)
-			return
-		}
+		writeJSON(w, http.StatusOK, upNextPage{Page: slicePage(suggestions, parsePaging(r)), Suggestions: true})
+		return
 	}
-	writeJSON(w, http.StatusOK, slicePage(next, parsePaging(r)))
+	writeJSON(w, http.StatusOK, upNextPage{Page: slicePage(next, parsePaging(r))})
+}
+
+// upNextPage is a page of videos that says whether it is the queue or a
+// guess. The flag is omitted for a real queue, so an older client reading
+// only `items` sees exactly what it saw before.
+type upNextPage struct {
+	Page[VideoSummary]
+	Suggestions bool `json:"suggestions,omitempty"`
+}
+
+// suggestionsFor is what to offer once a context has run out: TubeArchivist's
+// similar videos, minus the ones the viewer has already watched or taken out
+// of their feeds. Neither is a suggestion — offering back the five episodes
+// somebody just finished is how "up next" stopped meaning anything.
+func (s *Server) suggestionsFor(ctx context.Context, uid uuid.UUID, id string) ([]VideoSummary, error) {
+	vids, err := s.ta.SimilarVideos(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	items, err := s.overlay(ctx, uid, vids)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]VideoSummary, 0, len(items))
+	for _, it := range items {
+		if it.Watched || it.Dismissed {
+			continue
+		}
+		out = append(out, it)
+	}
+	return out, nil
 }
 
 // beforeID returns every item preceding id, closest first — page 0 starts

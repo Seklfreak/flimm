@@ -4,7 +4,11 @@ import (
 	"fmt"
 	"net/http"
 	"testing"
+	"time"
 
+	"github.com/jackc/pgx/v5/pgtype"
+
+	"github.com/Seklfreak/flimm/internal/db/sqlc"
 	"github.com/Seklfreak/flimm/internal/ta"
 )
 
@@ -81,5 +85,50 @@ func TestUpNextBeforeListsPreviousVideosClosestFirst(t *testing.T) {
 	// Without a context there is no history to unfold either.
 	if page := decode[Page[VideoSummary]](t, do(t, h, http.MethodGet, "/api/v1/videos/v03/up-next?before=true", "")); len(page.Items) != 0 {
 		t.Errorf("no context = %v, want nothing", ids(page.Items))
+	}
+}
+
+// The end of a playlist is the end: what follows is offered as suggestions,
+// said out loud so nothing autoplays into it or presents it under the
+// playlist's name — and a video already watched is no suggestion at all.
+func TestUpNextMarksSuggestionsAtTheEndOfAPlaylist(t *testing.T) {
+	client := ta.NewFake()
+	for _, id := range []string{"v0", "v1"} {
+		client.Videos[id] = &ta.Video{YoutubeID: id, Title: id, Player: ta.Player{Duration: 600}, Playlist: []string{"PL1"}}
+	}
+	client.Playlists["PL1"] = &ta.Playlist{
+		PlaylistID: "PL1", PlaylistName: "Two", PlaylistType: "custom",
+		PlaylistEntries: []ta.PlaylistEntry{{YoutubeID: "v0", Idx: 0, Downloaded: true}, {YoutubeID: "v1", Idx: 1, Downloaded: true}},
+	}
+	// Two suggestions, one of them already watched.
+	client.Videos["seen"] = &ta.Video{YoutubeID: "seen", Title: "Seen", Player: ta.Player{Duration: 600}}
+	client.Videos["fresh"] = &ta.Video{YoutubeID: "fresh", Title: "Fresh", Player: ta.Player{Duration: 600}}
+	client.SimilarFn = func(string) ([]ta.Video, error) {
+		return []ta.Video{*client.Videos["seen"], *client.Videos["fresh"]}, nil
+	}
+	es := newEventStore()
+	es.events["seen"] = sqlc.WatchEvent{
+		VideoID: "seen", Position: 600, Duration: 600,
+		CompletedAt:  pgtype.Timestamptz{Time: time.Now(), Valid: true},
+		LastPlayedAt: pgtype.Timestamptz{Time: time.Now(), Valid: true},
+	}
+	h := newTestServer(client, es.querier()).Router()
+
+	// Mid-playlist: the real queue, and no flag.
+	mid := decode[upNextPage](t, do(t, h, http.MethodGet, "/api/v1/videos/v0/up-next?playlist=PL1", ""))
+	if mid.Suggestions {
+		t.Error("the rest of a playlist was marked as suggestions")
+	}
+	if len(mid.Items) != 1 || mid.Items[0].ID != "v1" {
+		t.Fatalf("queue = %+v, want [v1]", mid.Items)
+	}
+
+	// The last video: suggestions, marked, with the watched one dropped.
+	end := decode[upNextPage](t, do(t, h, http.MethodGet, "/api/v1/videos/v1/up-next?playlist=PL1", ""))
+	if !end.Suggestions {
+		t.Error("suggestions at the end of a playlist were passed off as the queue")
+	}
+	if len(end.Items) != 1 || end.Items[0].ID != "fresh" {
+		t.Fatalf("suggestions = %+v, want [fresh] (the watched one dropped)", end.Items)
 	}
 }

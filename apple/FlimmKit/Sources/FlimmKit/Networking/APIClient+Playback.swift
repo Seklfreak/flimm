@@ -10,18 +10,20 @@ extension APIClient {
         try await get("/videos/\(esc(id))")
     }
 
-    /// Everything following the video in the playback context, falling back to
-    /// `similar` when nothing does. Paged so a long playlist scrolls rather
-    /// than being truncated. `before: true` flips it: everything *preceding*
-    /// the video, closest first, empty when nothing does — the panel's
-    /// "Previous" section.
+    /// Everything following the video in the playback context. Paged so a long
+    /// playlist scrolls rather than being truncated. `before: true` flips it:
+    /// everything *preceding* the video, closest first, empty when nothing
+    /// does — the panel's "Previous" section.
+    ///
+    /// When nothing follows, the answer is similar videos with
+    /// ``UpNextPage/suggestions`` set: offered, never queued.
     public func upNext(
         _ id: String,
         context: PlaybackContext = .none,
         before: Bool = false,
         page: Int = 0,
         pageSize: Int = Page<VideoSummary>.defaultSize
-    ) async throws -> Page<VideoSummary> {
+    ) async throws -> UpNextPage {
         var query = QueryBuilder(context.queryItems)
         query.flag("before", before)
         query.page(page, size: pageSize)

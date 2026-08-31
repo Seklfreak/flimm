@@ -55,9 +55,14 @@ export function UpNextPanel({
   ctx,
   autoplay,
   onAutoplay,
+  suggestions,
 }: {
   items: VideoSummary[];
   title: string;
+  /** The context ran out and `items` are similar videos, not the rest of the
+   *  list. They get their own heading and never the context's name — a guess
+   *  presented as a queue is what made "up next" stop meaning anything. */
+  suggestions?: boolean;
   isLoading: boolean;
   hasNextPage: boolean;
   isFetchingNextPage: boolean;
@@ -189,6 +194,14 @@ export function UpNextPanel({
           </span>
         </div>
       )}
+      {suggestions && (visible.length > 0 || removed.length > 0) && (
+        /* Said before the rows, not after: by the time a viewer has read a
+           title they have already taken it for the next episode. */
+        <div className="flex flex-col gap-1 pt-1">
+          <span className="text-[14px] font-extrabold">Similar videos</span>
+          <span className="meta text-[12px]">That was the last one — these are suggestions.</span>
+        </div>
+      )}
       {isLoading ? (
         <Spinner />
       ) : visible.length === 0 && removed.length === 0 ? (
@@ -204,7 +217,10 @@ export function UpNextPanel({
             </div>
           ) : (
             <div key={slot.video.id} className="group flex items-center gap-3">
-              <Link to={watchHref(slot.video, ctx)} className="flex min-w-0 flex-1 items-center gap-3 text-ink no-underline hover:text-ink">
+              <Link
+                to={watchHref(slot.video, ctx)}
+                className={`flex min-w-0 flex-1 items-center gap-3 text-ink no-underline hover:text-ink ${slot.video.watched ? "opacity-45" : ""}`}
+              >
                 <div className="w-32 flex-none">
                   <Thumb video={slot.video} compact className="!rounded-[10px]" />
                 </div>

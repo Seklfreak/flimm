@@ -106,3 +106,40 @@ describe("slots", () => {
     expect(laid).toHaveLength(1);
   });
 });
+
+describe("suggestions at the end of a context", () => {
+  function renderSuggestions(suggestions: boolean) {
+    return renderWithProviders(
+      <UpNextPanel
+        items={[video({ id: "x", title: "Something else", watched: true }), video({ id: "y", title: "Another thing" })]}
+        title="Up next in How to Make an Atomic Bomb"
+        suggestions={suggestions}
+        isLoading={false}
+        hasNextPage={false}
+        isFetchingNextPage={false}
+        fetchNextPage={() => {}}
+        autoplay={false}
+        onAutoplay={() => {}}
+      />,
+    );
+  }
+
+  it("says they are suggestions rather than the rest of the playlist", () => {
+    renderSuggestions(true);
+    expect(screen.getByText("Similar videos")).toBeTruthy();
+    expect(screen.getByText("That was the last one — these are suggestions.")).toBeTruthy();
+  });
+
+  it("keeps quiet about it while the queue is real", () => {
+    renderSuggestions(false);
+    expect(screen.queryByText("Similar videos")).toBeNull();
+  });
+
+  it("dims a watched row the way the previous list does", () => {
+    renderSuggestions(true);
+    const watchedRow = screen.getByText("Something else").closest("a");
+    const freshRow = screen.getByText("Another thing").closest("a");
+    expect(watchedRow?.className).toContain("opacity-45");
+    expect(freshRow?.className).not.toContain("opacity-45");
+  });
+});

@@ -30,9 +30,13 @@ final class WatchModel {
     private(set) var hasMorePrevious = false
     private var previousPage = 0
 
+    /// ``upNext`` holds similar videos rather than the rest of the list: the
+    /// context ran out. They are offered, never queued — see ``UpNextPage``.
+    private(set) var upNextAreSuggestions = false
+
     private(set) var upNext: [VideoSummary] = [] {
         // A load, a dismissal or an undo: the lock screen has to agree.
-        didSet { nowPlaying.register(hasNext: canGoNext || !upNext.isEmpty, hasPrevious: canGoPrevious) }
+        didSet { nowPlaying.register(hasNext: hasNext, hasPrevious: canGoPrevious) }
     }
     private(set) var cues: [SubtitleCue] = []
     private(set) var activeCue: String?
@@ -287,7 +291,8 @@ final class WatchModel {
         let (loadedChapters, loadedNav, loadedNext, loadedPrev) = await (chapterList, navigation, next, prev)
         chapters = loadedChapters
         nav = loadedNav
-        upNext = loadedNext
+        upNext = loadedNext.items
+        upNextAreSuggestions = loadedNext.suggestions
         previous = loadedPrev?.items ?? []
         hasMorePrevious = loadedPrev?.hasMore ?? false
         previousPage = 1
@@ -306,8 +311,8 @@ final class WatchModel {
         return try? await client.nav(videoId, context: context)
     }
 
-    private func fetchUpNext() async -> [VideoSummary] {
-        (try? await client.upNext(videoId, context: context))?.items ?? []
+    private func fetchUpNext() async -> UpNextPage {
+        (try? await client.upNext(videoId, context: context)) ?? UpNextPage(page: Page(items: []))
     }
 
     private func loadSubtitles(_ detail: Video) async {
@@ -449,7 +454,7 @@ final class WatchModel {
     func goNext() async {
         if let next = nav?.next {
             await go(to: next.id)
-        } else if let next = upNext.first {
+        } else if !upNextAreSuggestions, let next = upNext.first {
             await go(to: next.id)
         }
     }
@@ -588,11 +593,12 @@ final class WatchModel {
 
 extension WatchModel {
     /// Everything ``goNext()`` will actually play, which is what decides
-    /// whether an ending advances or stops on the end card.
-    var hasNext: Bool { nav?.next != nil || !upNext.isEmpty }
+    /// whether an ending advances or stops on the end card. Suggestions are
+    /// not a queue, so they are not "next".
+    var hasNext: Bool { nav?.next != nil || (!upNextAreSuggestions && !upNext.isEmpty) }
 
     /// What the end card offers to play, when there is anything.
-    var nextUp: VideoSummary? { nav?.next ?? upNext.first }
+    var nextUp: VideoSummary? { nav?.next ?? (upNextAreSuggestions ? nil : upNext.first) }
 
     /// Watch it again. A plain rewind, not ``startOver()``: the video *was*
     /// watched, and clearing that would put it back in the feeds it has just
@@ -611,7 +617,7 @@ extension WatchModel {
 extension WatchModel {
     private func fetchPrevious(page: Int) async -> Page<VideoSummary>? {
         guard hasContext else { return nil }
-        return try? await client.upNext(videoId, context: context, before: true, page: page)
+        return try? await client.upNext(videoId, context: context, before: true, page: page).page
     }
 
     /// Pages further back once "Show earlier" outruns what is loaded.

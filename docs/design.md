@@ -69,6 +69,16 @@ which is why they are admin-gated like series indexing.
   still show it, marked, which is where a viewer puts one back. Every client
   offers an undo without navigating away, because the action is one tap from a
   card and easy to hit by accident.
+- **A context that has run out says so, and its suggestions say what they
+  are.** At the end of a playlist or feed the server still offers TA's similar
+  videos, but marked (`suggestions` in `docs/api.md`) and with anything
+  already watched or dismissed taken out. No client autoplays into them, the
+  end card does not offer one as "up next", and the panel heads them "Similar
+  videos" instead of keeping the playlist's name over them: the whole point of
+  a queue is that it is the list you chose, and five episodes you just watched
+  offered back under that heading is what "up next" stopped meaning anything
+  looks like. A watched video that does appear in a list is dimmed the same
+  way wherever it appears, queue or history.
 - **A video that ends says so.** Autoplay advances only when there is
   something to advance to; any other ending — autoplay off, or the end of the
   list — leaves the player sitting on its last frame, which is exactly what a

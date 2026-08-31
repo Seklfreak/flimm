@@ -75,11 +75,23 @@ struct TVRootView: View {
     ///     xcrun simctl launch --console <device> dev.winktech.flimm.tv
     ///     # with SIMCTL_CHILD_FLIMM_PLAY_VIDEO=<video id> in the environment
     ///
+    /// `FLIMM_PLAY_FEED` / `FLIMM_PLAY_PLAYLIST` open it *in* that context —
+    /// the only way to reach what depends on one, the end of a list most of
+    /// all, where up next turns into suggestions and autoplay has to stop.
+    /// The phone has the same pair (see `ContentView`).
+    ///
     /// Debug builds only; a shipped app has no such door.
     private func openDebugVideo() {
         #if DEBUG
-        guard let id = ProcessInfo.processInfo.environment["FLIMM_PLAY_VIDEO"], !id.isEmpty else { return }
-        player.play(id)
+        let env = ProcessInfo.processInfo.environment
+        guard let id = env["FLIMM_PLAY_VIDEO"], !id.isEmpty else { return }
+        var context = PlaybackContext.none
+        if let feed = env["FLIMM_PLAY_FEED"], !feed.isEmpty {
+            context = PlaybackContext(source: .feed(feed))
+        } else if let playlist = env["FLIMM_PLAY_PLAYLIST"], !playlist.isEmpty {
+            context = PlaybackContext(source: .playlist(playlist))
+        }
+        player.play(id, context: context)
         #endif
     }
 }
