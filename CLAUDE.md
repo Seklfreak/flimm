@@ -170,7 +170,11 @@ so plainly rather than implying it was seen.
 ## Before committing
 
 - Backend: `golangci-lint run ./... && go build ./... && go test ./...`
-  (config in `.golangci.yml`; it includes govet).
+  (config in `.golangci.yml`; it includes govet). **Check the version first:**
+  CI pins one in `.github/workflows/test.yaml` and each release adds rules — an
+  older local binary reports "0 issues" on code CI then rejects, which is a red
+  main you did not see coming. `golangci-lint --version`, and if it is behind,
+  run the pinned one the way CI installs it.
 - Frontend: `cd frontend && npm run lint && npm run build`.
 - Apple: `cd apple && xcodegen generate && swiftlint --strict`, then
   `cd FlimmKit && swift test` (check swift's own exit status, not a grep's),
