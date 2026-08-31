@@ -1,5 +1,30 @@
 import { useEffect, useRef } from "react";
-import { api, sendProgressBeacon } from "@/lib/api";
+import { useQueryClient, type QueryClient } from "@tanstack/react-query";
+import { api, sendProgressBeacon, type HistoryEntry, type Page } from "@/lib/api";
+import { keys } from "@/lib/queries";
+
+// Keep the sidebar's continue-watching rail honest while playback runs: each
+// heartbeat patches the cached entry in place (position, freshness order)
+// instead of waiting for a refetch the always-mounted sidebar never triggers.
+// A video not on the rail yet appears on the next server read — the query is
+// invalidated so that read happens.
+function patchInProgressRail(qc: QueryClient, id: string, position: number) {
+  const cached = qc.getQueryData<Page<HistoryEntry>>(keys.inProgress);
+  if (!cached) return;
+  const index = cached.items.findIndex((e) => e.video.id === id);
+  if (index < 0) {
+    void qc.invalidateQueries({ queryKey: keys.inProgress });
+    return;
+  }
+  const entry = cached.items[index];
+  const updated: HistoryEntry = {
+    ...entry,
+    played_at: new Date().toISOString(),
+    video: { ...entry.video, position, progress: entry.video.duration > 0 ? position / entry.video.duration : entry.video.progress },
+  };
+  const items = [updated, ...cached.items.slice(0, index), ...cached.items.slice(index + 1)];
+  qc.setQueryData<Page<HistoryEntry>>(keys.inProgress, { ...cached, items });
+}
 
 // POST /videos/:id/progress every 10 s while playing, on pause/seek, and on
 // unload (keepalive fetch). Reports `watched` flips back via onWatched.
@@ -15,6 +40,7 @@ export function useProgressHeartbeat(
   onWatched?: () => void,
   playlistId?: string,
 ) {
+  const qc = useQueryClient();
   const lastSent = useRef(-1);
   const onWatchedRef = useRef(onWatched);
   onWatchedRef.current = onWatched;
@@ -30,6 +56,7 @@ export function useProgressHeartbeat(
       if (!force && pos === lastSent.current) return;
       if (pos <= 0 && !force) return;
       lastSent.current = pos;
+      patchInProgressRail(qc, id, pos);
       api
         .progress(id, pos, playlistIdRef.current)
         .then((r) => {
@@ -53,7 +80,10 @@ export function useProgressHeartbeat(
     };
     const onSeeked = () => send(true);
     const onUnload = () => {
-      if (video.currentTime > 0) sendProgressBeacon(id, video.currentTime, playlistIdRef.current);
+      if (video.currentTime > 0) {
+        patchInProgressRail(qc, id, Math.floor(video.currentTime));
+        sendProgressBeacon(id, video.currentTime, playlistIdRef.current);
+      }
     };
     const onVisibility = () => {
       if (document.visibilityState === "hidden") onUnload();
@@ -74,8 +104,14 @@ export function useProgressHeartbeat(
       video.removeEventListener("ended", onPause);
       window.removeEventListener("pagehide", onUnload);
       document.removeEventListener("visibilitychange", onVisibility);
-      // Leaving the page (route change) — flush the position.
-      if (video.currentTime > 0) sendProgressBeacon(id, video.currentTime, playlistIdRef.current);
+      // Leaving the page (route change) — flush the position, patch the rail
+      // in place, and let the server's ordering (and any completion drop)
+      // land once the beacon has: the refetch waits a beat for it.
+      if (video.currentTime > 0) {
+        patchInProgressRail(qc, id, Math.floor(video.currentTime));
+        sendProgressBeacon(id, video.currentTime, playlistIdRef.current);
+      }
+      window.setTimeout(() => void qc.invalidateQueries({ queryKey: keys.inProgress }), 1_500);
     };
-  }, [video, id]);
+  }, [video, id, qc]);
 }
