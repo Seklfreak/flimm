@@ -28,6 +28,7 @@ export default function ChannelPage() {
   const [marking, setMarking] = useState(false);
   const me = useMe();
   const setPinned = useSetChannelPinned();
+  const [subscribing, setSubscribing] = useState(false);
   // "requested" survives until the page is left: TubeArchivist discovers the
   // playlists in a background task, so there is nothing to await here.
   const [indexRequested, setIndexRequested] = useState(false);
@@ -68,6 +69,27 @@ export default function ChannelPage() {
           </div>
           {c && (
             <div className="flex items-center gap-2">
+              {me.data?.is_admin && (
+                <button
+                  className={`seg ${c.subscribed ? "on" : ""}`}
+                  aria-pressed={c.subscribed}
+                  title={
+                    c.subscribed
+                      ? "The archive downloads this channel's new videos — click to unsubscribe"
+                      : "Subscribe: the archive will download this channel's new videos"
+                  }
+                  disabled={subscribing}
+                  onClick={() => {
+                    setSubscribing(true);
+                    api
+                      .setChannelSubscribed(c.id, !c.subscribed)
+                      .then(() => qc.invalidateQueries({ queryKey: ["channels"] }))
+                      .finally(() => setSubscribing(false));
+                  }}
+                >
+                  {c.subscribed ? "Subscribed ✓" : "Subscribe"}
+                </button>
+              )}
               <button
                 className={`seg ${c.pinned ? "on" : ""}`}
                 aria-pressed={c.pinned}

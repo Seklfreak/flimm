@@ -329,6 +329,21 @@ func (f *Fake) ChannelStats(ctx context.Context, channelID string) (*ChannelStat
 	return s, nil
 }
 
+func (f *Fake) SetChannelSubscribed(_ context.Context, channelID string, subscribed bool) error {
+	if f.Err != nil {
+		return f.Err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	c, ok := f.Channels[channelID]
+	if !ok {
+		return ErrNotFound
+	}
+	c.ChannelSubscribed = subscribed
+	f.Calls = append(f.Calls, fmt.Sprintf("subscribe:%s:%t", channelID, subscribed))
+	return nil
+}
+
 func (f *Fake) IndexChannelPlaylists(_ context.Context, channelID string) error {
 	if f.Err != nil {
 		return f.Err

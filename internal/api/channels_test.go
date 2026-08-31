@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/go-chi/chi/v5"
@@ -117,5 +118,35 @@ func TestPinAndUnpinChannel(t *testing.T) {
 	}
 	if got := decode[[]ChannelSummary](t, do(t, h, http.MethodGet, "/api/v1/channels/pinned", "")); len(got) != 0 {
 		t.Errorf("still pinned after unpin: %+v", got)
+	}
+}
+
+// The archive's own subscription is instance-wide TA state, so flipping it
+// is admin-only, refused for channels TA does not know, and lands in TA.
+func TestSetChannelSubscribedIsAdminOnly(t *testing.T) {
+	client := ta.NewFake()
+	client.Channels["UC1"] = &ta.Channel{ChannelID: "UC1", ChannelName: "One", ChannelSubscribed: true}
+	s := newTestServer(client, newEventStore().querier())
+
+	if rec := do(t, s.Router(), http.MethodPut, "/api/v1/channels/UC1/subscribed", `{"subscribed":false}`); rec.Code != http.StatusNoContent {
+		t.Fatalf("unsubscribe = %d: %s", rec.Code, rec.Body.String())
+	}
+	if client.Channels["UC1"].ChannelSubscribed {
+		t.Error("TA still shows the channel subscribed")
+	}
+	if rec := do(t, s.Router(), http.MethodPut, "/api/v1/channels/nope/subscribed", `{"subscribed":true}`); rec.Code != http.StatusNotFound {
+		t.Errorf("unknown channel = %d, want 404", rec.Code)
+	}
+
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("id", "UC1")
+	ctx := context.WithValue(context.Background(), chi.RouteCtxKey, rctx)
+	ctx = context.WithValue(ctx, userIDKey, DevUserID)
+	ctx = context.WithValue(ctx, isAdminKey, false)
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/channels/UC1/subscribed", strings.NewReader(`{"subscribed":true}`)).WithContext(ctx)
+	w := httptest.NewRecorder()
+	s.setChannelSubscribed(w, req)
+	if w.Code != http.StatusForbidden {
+		t.Errorf("non-admin = %d, want 403", w.Code)
 	}
 }

@@ -462,6 +462,7 @@ its default — send the whole map back, which is what the settings screens do.
 | GET | `/channels/{id}/playlists` | PlaylistSummary[] |
 | PUT | `/channels/{id}/feeds` | `{ "feed_ids": [...] }` — the "In feeds:" control |
 | POST | `/channels/{id}/mark-seen` | 204 |
+| PUT | `/channels/{id}/subscribed` | **admin only** (403 otherwise): `{ "subscribed": true\|false }` flips TubeArchivist's own subscription — whether the archive keeps downloading the channel's new videos; 204. Only channels TA already knows (404 otherwise) |
 | POST | `/channels/{id}/index-playlists` | **admin only** (`ADMIN_EMAILS`; 403 otherwise): asks TubeArchivist to index the channel's own playlists — the prerequisite for series feed sources. Sets the channel's `index_playlists` overwrite (instance-wide TA state) and queues TA's discovery task, which also stamps membership onto already-downloaded videos; 204, and the playlists appear once the task lands |
 
 ### Videos
@@ -1219,6 +1220,7 @@ height of every video up front.
 | progress | `POST/DELETE /api/video/{id}/progress/` |
 | watched | `POST /api/watched/ { id, is_watched }` (also accepts channel/playlist ids) |
 | index channel playlists (admin) | `POST /api/channel/{id}/` with `channel_overwrites: { index_playlists: true }` — TA stores the overwrite and queues its discovery task |
+| channel subscribe toggle (admin) | `POST /api/channel/` with `{ data: [{ channel_id, channel_subscribed }] }` |
 | channels | `GET /api/channel/`, `/api/channel/{id}/`, `/aggs/`, `/nav/`, `/api/channel/search/?q=` |
 | playlists | `GET /api/playlist/?type=custom\|regular&channel=`, `POST /api/playlist/custom/`, `POST /api/playlist/custom/{id}/`, `DELETE /api/playlist/{id}/` |
 | search | `GET /api/search/?query=` (prefixes `video:`, `channel:`, `playlist:`, `full:` + `lang:`) |

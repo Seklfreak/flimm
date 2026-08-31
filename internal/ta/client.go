@@ -50,6 +50,11 @@ type Client interface {
 	// ChannelStats is the channel's video count and newest upload (cached).
 	ChannelStats(ctx context.Context, channelID string) (*ChannelStats, error)
 
+	// SetChannelSubscribed flips TA's own subscription for the channel —
+	// whether the archive keeps downloading its new videos. Instance-wide TA
+	// state, so the caller is expected to gate it behind admin.
+	SetChannelSubscribed(ctx context.Context, channelID string, subscribed bool) error
+
 	// IndexChannelPlaylists asks TA to index all of the channel's own
 	// playlists (sets the channel's index_playlists overwrite, which also
 	// queues the discovery task). Instance-wide TA state, so the caller is
@@ -511,6 +516,21 @@ func (c *HTTP) ChannelStats(ctx context.Context, channelID string) (*ChannelStat
 
 // ListPlaylists lists playlists of a kind (custom|regular|"" for all),
 // optionally restricted to a channel.
+// SetChannelSubscribed posts TA's subscribe toggle. Subscribing queues a
+// background task in TA; unsubscribing lands directly. The channel cache is
+// dropped so the flip shows on the next read rather than up to a minute
+// later.
+func (c *HTTP) SetChannelSubscribed(ctx context.Context, channelID string, subscribed bool) error {
+	body := map[string]any{"data": []map[string]any{{"channel_id": channelID, "channel_subscribed": subscribed}}}
+	if err := c.do(ctx, http.MethodPost, "/api/channel/", nil, body, nil); err != nil {
+		return err
+	}
+	c.mu.Lock()
+	c.channels = nil
+	c.mu.Unlock()
+	return nil
+}
+
 // IndexChannelPlaylists flips the channel's index_playlists overwrite; TA
 // both stores it and queues its playlist-discovery task, which retroactively
 // stamps membership onto already-indexed videos.

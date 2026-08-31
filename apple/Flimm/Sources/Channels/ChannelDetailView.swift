@@ -92,6 +92,12 @@ struct ChannelDetailView: View {
                     Label("Shuffle", systemImage: "shuffle")
                 }
                 .disabled(pager?.items.isEmpty != false)
+                if app.me?.isAdmin == true, let summary = channel?.summary {
+                    Toggle("Subscribed in the archive", isOn: Binding(
+                        get: { summary.subscribed },
+                        set: { value in Task { await setSubscribed(value) } }
+                    ))
+                }
                 if playlists.isEmpty, app.me?.isAdmin == true, !seriesIndexRequested {
                     Button {
                         seriesIndexRequested = true
@@ -224,6 +230,11 @@ struct ChannelDetailView: View {
         app.pagers.insert(next, for: key)
         pager = next
         await next.reload()
+    }
+
+    private func setSubscribed(_ value: Bool) async {
+        try? await app.client.setChannelSubscribed(channelId, subscribed: value)
+        await load()
     }
 
     private func setPinned(_ value: Bool) async {

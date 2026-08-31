@@ -311,6 +311,35 @@ func (s *Server) setChannelPinned(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// setChannelSubscribed flips TubeArchivist's own subscription — whether the
+// archive keeps downloading the channel's new videos. Admin-only: it is
+// instance-wide TA state that drives downloads and storage.
+func (s *Server) setChannelSubscribed(w http.ResponseWriter, r *http.Request) {
+	if !isAdmin(r.Context()) {
+		writeError(w, http.StatusForbidden, "admin only")
+		return
+	}
+	id := chi.URLParam(r, "id")
+	var req struct {
+		Subscribed *bool `json:"subscribed"`
+	}
+	if err := decodeBody(r, &req); err != nil || req.Subscribed == nil {
+		writeError(w, http.StatusBadRequest, "subscribed is required")
+		return
+	}
+	// Only channels the archive already knows: adding a brand-new channel is
+	// a bigger decision (it starts downloads) than this toggle implies.
+	if _, err := s.ta.GetChannel(r.Context(), id); err != nil {
+		s.writeTAError(w, "get channel", err)
+		return
+	}
+	if err := s.ta.SetChannelSubscribed(r.Context(), id, *req.Subscribed); err != nil {
+		s.writeTAError(w, "set channel subscribed", err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // indexChannelPlaylists asks TubeArchivist to index the channel's own
 // playlists — the archive-side prerequisite for series feeds. Admin-only:
 // the overwrite it flips is instance-wide TA state, shared by every user of

@@ -129,6 +129,13 @@ extension APIClient {
         try await discard(.post, "/channels/\(esc(id))/index-playlists")
     }
 
+    /// Admin only: flips TubeArchivist's own subscription — whether the
+    /// archive keeps downloading the channel's new videos.
+    public func setChannelSubscribed(_ id: String, subscribed: Bool) async throws {
+        struct Body: Encodable { let subscribed: Bool }
+        try await discard(.put, "/channels/\(esc(id))/subscribed", body: Body(subscribed: subscribed))
+    }
+
     // MARK: - Playlists
 
     /// Unpaged, in pin order. Only playlists that still resolve in

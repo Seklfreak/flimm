@@ -503,6 +503,9 @@ export const api = {
   markChannelSeen: (id: string) => req<void>(`/channels/${id}/mark-seen`, { method: "POST" }),
   /** Admin only: asks TubeArchivist to index the channel's playlists (the prerequisite for series feed sources). The discovery runs as a TA task. */
   indexChannelPlaylists: (id: string) => req<void>(`/channels/${id}/index-playlists`, { method: "POST" }),
+  /** Admin only: flips TubeArchivist's own subscription — whether the archive keeps downloading the channel's new videos. */
+  setChannelSubscribed: (id: string, subscribed: boolean) =>
+    req<void>(`/channels/${id}/subscribed`, json("PUT", { subscribed })),
 
   video: (id: string) => req<Video>(`/videos/${id}`),
   upNext: (id: string, ctx: PlayContext, page: number, before?: boolean) =>

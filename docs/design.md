@@ -50,7 +50,10 @@ videos and playlists and has an *In feeds: …* control to add or remove it from
 feeds without leaving the page. A channel can be **pinned**, exactly like a
 playlist: it joins the sidebar (web) or a *Pinned* section leading the
 directory (iPhone, iPad, Apple TV), with its unseen count, and unpinning never
-touches anything but the pin.
+touches anything but the pin. An admin can also flip the archive's own
+**subscription** from the channel page — whether TubeArchivist keeps
+downloading the channel's new videos — without visiting TA's UI; it is
+instance-wide state, which is why it is admin-gated like series indexing.
 
 ## Player, resume and seen state
 

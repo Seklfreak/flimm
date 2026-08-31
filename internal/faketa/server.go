@@ -65,6 +65,7 @@ func (s *Server) Handler() http.Handler {
 	// without it GET /feeds 404s against the fake.
 	mux.HandleFunc("GET /api/stats/channel/", s.channelStats)
 	mux.HandleFunc("POST /api/channel/{id}/", s.updateChannel)
+	mux.HandleFunc("POST /api/channel/", s.subscribeChannels)
 	mux.HandleFunc("GET /api/playlist/", s.listPlaylists)
 	mux.HandleFunc("POST /api/playlist/custom/", s.createPlaylist)
 	mux.HandleFunc("POST /api/playlist/custom/{id}/", s.playlistAction)
@@ -314,6 +315,29 @@ func (s *Server) getChannel(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) channelStats(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"doc_count": len(s.catalogue.Channels)})
+}
+
+// subscribeChannels is TA's subscribe toggle: {"data":[{"channel_id",
+// "channel_subscribed"}]}. The fake flips the flag on channels it knows.
+func (s *Server) subscribeChannels(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Data []struct {
+			ChannelID  string `json:"channel_id"`
+			Subscribed bool   `json:"channel_subscribed"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "bad body", http.StatusBadRequest)
+		return
+	}
+	for _, d := range body.Data {
+		for i := range s.catalogue.Channels {
+			if s.catalogue.Channels[i].ChannelID == d.ChannelID {
+				s.catalogue.Channels[i].ChannelSubscribed = d.Subscribed
+			}
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"message": "subscription processed"})
 }
 
 // updateChannel accepts the channel_overwrites write behind Flimm's admin
