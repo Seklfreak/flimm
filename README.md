@@ -71,9 +71,8 @@ One container image: a Go backend with the React frontend embedded.
 - **OIDC login** with any provider; media streams through the backend so
   TubeArchivist itself never has to be exposed.
 
-See [docs/design.md](docs/design.md) for the product model,
-[docs/apple-apps.md](docs/apple-apps.md) for the native clients, and
-[docs/roadmap.md](docs/roadmap.md) for what's next.
+See [docs/design.md](docs/design.md) for the product model and
+[docs/apple-apps.md](docs/apple-apps.md) for the native clients.
 
 ## Architecture
 
@@ -110,7 +109,7 @@ live from TubeArchivist with a server-side API token, and reverse-proxies video
 | `cmd/server`, `internal/` | the Go backend — `/api/v1`, the `/media` proxy, the TubeArchivist client, migrations |
 | `frontend/` | the React web app, embedded into the binary |
 | `apple/` | the native iPhone/iPad and Apple TV apps and `FlimmKit`, the Swift package they share — see [docs/apple-apps.md](docs/apple-apps.md) and [apple/README.md](apple/README.md) |
-| `docs/` | [api.md](docs/api.md) (the normative contract), design, deploy, roadmap |
+| `docs/` | [api.md](docs/api.md) (the normative contract), design, deploy, apple-apps |
 
 The API contract and every client live in one repository on purpose: they
 change together.
