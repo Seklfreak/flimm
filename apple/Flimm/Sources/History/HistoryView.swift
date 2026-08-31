@@ -30,6 +30,7 @@ struct HistoryView: View {
                             ForEach(group.entries) { entry in
                                 VideoRow(
                                     video: entry.video,
+                                    context: entry.playbackContext,
                                     subtitle: subtitle(for: entry),
                                     onDismissChange: { updateEntry(entry, video: $0) }
                                 )

@@ -309,6 +309,9 @@ export interface HistoryEntry {
   video: VideoSummary;
   played_at: string;
   state: "in_progress" | "seen";
+  /** First feed (sidebar order) holding the video, via a channel or playlist
+   *  source — the context a resume opens with. Null when none does. */
+  feed: FeedRef | null;
 }
 
 export interface Page<T> {

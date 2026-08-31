@@ -317,9 +317,16 @@ resolve, so a stale pin can never wedge the sidebar.
   "id": "uuid",
   "video": VideoSummary,
   "played_at": "…",                    // last_played_at
-  "state": "in_progress|seen"
+  "state": "in_progress|seen",
+  "feed": { "id": "…", "name": "…" } | null
 }
 ```
+
+`feed` is the first of the user's feeds (sidebar order) that contains the
+video — through a channel or a playlist source — so a resume from history or
+the continue-watching rail can open with that feed as its playback context
+(the up-next panel then shows the feed rather than similar videos). Null when
+no feed holds the video.
 
 ### Page
 List endpoints take `page` (0-based) and `page_size` (default 30, max 100) and

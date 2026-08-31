@@ -272,6 +272,12 @@ type HistoryEntry struct {
 	Video    VideoSummary `json:"video"`
 	PlayedAt time.Time    `json:"played_at"`
 	State    string       `json:"state"`
+	// Feed is the first of the user's feeds (in sidebar order) that contains
+	// the video — through a channel or a playlist source — so resuming from
+	// history or the continue-watching rail opens with that feed as the
+	// playback context instead of falling back to similar videos. Null when
+	// no feed holds it.
+	Feed *FeedRef `json:"feed"`
 }
 
 // Comment is one archived comment, as `GET /videos/{id}/comments` returns it.

@@ -181,8 +181,10 @@ reordered and deleted through TubeArchivist so they exist there too.
 
 ## History
 
-Grouped by day, newest first. In-progress rows resume in place; seen rows are
-listed for reference. The × on a row hides the entry without changing the
+Grouped by day, newest first. In-progress rows resume in place — and resume
+*into the feed the video belongs to* when one holds it, so the player's up
+next shows that feed instead of similar videos; the sidebar's continue-watching
+rail does the same. Seen rows are listed for reference. The × on a row hides the entry without changing the
 video's seen state. Filter by in-progress / seen and search by title or channel.
 
 ## Search

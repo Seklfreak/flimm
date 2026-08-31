@@ -85,9 +85,12 @@ export default function HistoryPage() {
 function HistoryRow({ entry, onRemove }: { entry: HistoryEntry; onRemove: () => void }) {
   const v = entry.video;
   const resumable = entry.state === "in_progress";
+  // Resume into the feed the video lives in (see docs/api.md HistoryEntry).
+  const ctx = entry.feed ? { feed: entry.feed.id } : undefined;
   return (
     <VideoRow
       video={v}
+      ctx={ctx}
       lead={<span className="meta hidden w-14 flex-none text-[12px] md:inline">{fmtClock(entry.played_at)}</span>}
       meta={
         <>
@@ -98,12 +101,12 @@ function HistoryRow({ entry, onRemove }: { entry: HistoryEntry; onRemove: () => 
       actions={
         <>
           {resumable ? (
-            <Link to={watchHref(v)} className="btn pri no-underline">
+            <Link to={watchHref(v, ctx)} className="btn pri no-underline">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M7 4l12 8-12 8z" /></svg>
               <span className="hidden sm:inline">Resume</span>
             </Link>
           ) : (
-            <Link to={watchHref(v)} className="btn no-underline">
+            <Link to={watchHref(v, ctx)} className="btn no-underline">
               <CheckIcon size={13} />
               <span className="hidden sm:inline">Seen</span>
             </Link>

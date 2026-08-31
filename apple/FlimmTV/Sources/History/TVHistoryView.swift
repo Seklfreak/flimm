@@ -58,7 +58,11 @@ struct TVHistoryView: View {
                             .foregroundStyle(.secondary)
                         LazyVGrid(columns: TVGrids.videos, alignment: .leading, spacing: TVMetrics.gridSpacing) {
                             ForEach(group.entries) { entry in
-                                TVVideoCard(video: entry.video, onDismissChange: { updateEntry(entry, video: $0) })
+                                TVVideoCard(
+                                    video: entry.video,
+                                    context: entry.playbackContext,
+                                    onDismissChange: { updateEntry(entry, video: $0) }
+                                )
                                     .task { await pager.loadMoreIfNeeded(after: entry) }
                             }
                         }

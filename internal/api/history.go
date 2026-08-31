@@ -45,6 +45,11 @@ func (s *Server) listHistory(w http.ResponseWriter, r *http.Request) {
 		s.writeDBError(w, "count history", err)
 		return
 	}
+	homes, err := s.feedHomes(r.Context(), uid)
+	if err != nil {
+		s.writeDBError(w, "list feeds", err)
+		return
+	}
 	items := make([]HistoryEntry, len(rows))
 	err = parallel(r.Context(), rows, func(ctx context.Context, i int, ev sqlc.WatchEvent) error {
 		entry := HistoryEntry{ID: ev.ID.String(), PlayedAt: ts(ev.LastPlayedAt), State: historyState(ev)}
@@ -52,8 +57,11 @@ func (s *Server) listHistory(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case err == nil:
 			entry.Video = summarize(*v, &ev)
+			entry.Feed = homes.find(v.Channel.ChannelID, v.Playlist)
 		case errors.Is(err, ta.ErrNotFound):
 			entry.Video = summaryFromEvent(ev)
+			// The document is gone, so only the event's channel can match.
+			entry.Feed = homes.find(ev.ChannelID, nil)
 		default:
 			return err
 		}
@@ -79,6 +87,63 @@ func (s *Server) listHistory(w http.ResponseWriter, r *http.Request) {
 		items[i].Video = videos[i]
 	}
 	writeJSON(w, http.StatusOK, Page[HistoryEntry]{Items: items, Page: p.Page, PageSize: p.Size, Total: total})
+}
+
+// feedHomes is the user's feeds with their source sets, in sidebar order, for
+// answering "which feed does this video belong to" — the context a resume
+// from history opens with.
+type feedHomes []struct {
+	ref   FeedRef
+	chans map[string]bool
+	pls   map[string]bool
+}
+
+// find is the first feed containing the channel or one of the playlists.
+func (h feedHomes) find(channelID string, playlists []string) *FeedRef {
+	for _, f := range h {
+		if f.chans[channelID] {
+			ref := f.ref
+			return &ref
+		}
+		for _, pl := range playlists {
+			if f.pls[pl] {
+				ref := f.ref
+				return &ref
+			}
+		}
+	}
+	return nil
+}
+
+func (s *Server) feedHomes(ctx context.Context, uid uuid.UUID) (feedHomes, error) {
+	feeds, err := s.q.ListFeeds(ctx, uid)
+	if err != nil {
+		return nil, err
+	}
+	chans, err := s.feedChannelMap(ctx, uid)
+	if err != nil {
+		return nil, err
+	}
+	pls, err := s.feedPlaylistMap(ctx, uid)
+	if err != nil {
+		return nil, err
+	}
+	out := make(feedHomes, 0, len(feeds))
+	for _, f := range feeds {
+		entry := struct {
+			ref   FeedRef
+			chans map[string]bool
+			pls   map[string]bool
+		}{ref: FeedRef{ID: f.ID.String(), Name: f.Name}, chans: map[string]bool{}, pls: map[string]bool{}}
+		for _, c := range chans[f.ID] {
+			entry.chans[c] = true
+		}
+		for _, pl := range pls[f.ID] {
+			entry.pls[pl] = true
+		}
+		out = append(out, entry)
+	}
+	return out, nil
 }
 
 func (s *Server) deleteHistoryEntry(w http.ResponseWriter, r *http.Request) {

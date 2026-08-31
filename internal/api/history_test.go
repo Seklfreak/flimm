@@ -68,3 +68,56 @@ func TestHistoryListAndDelete(t *testing.T) {
 		t.Errorf("delete unknown: %d", rec.Code)
 	}
 }
+
+// A history entry names the first feed that holds its video — through a
+// channel or a playlist source — so a resume opens with that feed as its
+// playback context instead of falling back to similar videos.
+func TestHistoryEntriesCarryTheirHomeFeed(t *testing.T) {
+	client := ta.NewFake()
+	client.AddVideo(video("a1", "A", "2026-08-01", 600, false))
+	series := video("p1", "B", "2026-08-02", 600, false)
+	series.Playlist = []string{"PL"}
+	client.AddVideo(series)
+	client.AddVideo(video("x1", "X", "2026-08-03", 600, false))
+
+	channelFeed := sqlc.Feed{ID: uuid.New(), Name: "Making", Position: 0}
+	seriesFeed := sqlc.Feed{ID: uuid.New(), Name: "Night sides", Position: 1}
+	now := pgtype.Timestamptz{Time: time.Now(), Valid: true}
+	events := []sqlc.WatchEvent{
+		{ID: uuid.New(), VideoID: "a1", ChannelID: "A", Position: 10, Duration: 600, LastPlayedAt: now},
+		{ID: uuid.New(), VideoID: "p1", ChannelID: "B", Position: 10, Duration: 600, LastPlayedAt: now},
+		{ID: uuid.New(), VideoID: "x1", ChannelID: "X", Position: 10, Duration: 600, LastPlayedAt: now},
+	}
+
+	q := newEventStore().querier()
+	q.ListHistoryFn = func(context.Context, sqlc.ListHistoryParams) ([]sqlc.WatchEvent, error) { return events, nil }
+	q.CountHistoryFn = func(context.Context, sqlc.CountHistoryParams) (int64, error) { return 3, nil }
+	q.ListFeedsFn = func(context.Context, uuid.UUID) ([]sqlc.Feed, error) {
+		return []sqlc.Feed{channelFeed, seriesFeed}, nil
+	}
+	q.ListFeedChannelsForUserFn = func(context.Context, uuid.UUID) ([]sqlc.ListFeedChannelsForUserRow, error) {
+		return []sqlc.ListFeedChannelsForUserRow{{FeedID: channelFeed.ID, ChannelID: "A", FeedName: "Making"}}, nil
+	}
+	q.ListFeedPlaylistsForUserFn = func(context.Context, uuid.UUID) ([]sqlc.ListFeedPlaylistsForUserRow, error) {
+		return []sqlc.ListFeedPlaylistsForUserRow{{FeedID: seriesFeed.ID, PlaylistID: "PL", FeedName: "Night sides"}}, nil
+	}
+	h := newTestServer(client, q).Router()
+
+	page := decode[Page[HistoryEntry]](t, do(t, h, http.MethodGet, "/api/v1/history", ""))
+	if len(page.Items) != 3 {
+		t.Fatalf("items = %d, want 3", len(page.Items))
+	}
+	byVideo := map[string]*FeedRef{}
+	for _, it := range page.Items {
+		byVideo[it.Video.ID] = it.Feed
+	}
+	if f := byVideo["a1"]; f == nil || f.Name != "Making" {
+		t.Errorf("a1 feed = %+v, want Making (channel source)", f)
+	}
+	if f := byVideo["p1"]; f == nil || f.Name != "Night sides" {
+		t.Errorf("p1 feed = %+v, want Night sides (playlist source)", f)
+	}
+	if f := byVideo["x1"]; f != nil {
+		t.Errorf("x1 feed = %+v, want none", f)
+	}
+}
