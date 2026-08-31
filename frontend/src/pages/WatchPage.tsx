@@ -239,6 +239,7 @@ export default function WatchPage() {
         hasNextPage={!!upNext.hasNextPage}
         isFetchingNextPage={upNext.isFetchingNextPage}
         fetchNextPage={() => void upNext.fetchNextPage()}
+        current={v ? { ...v, channel: v.channel } : undefined}
         previous={
           hasContext
             ? {

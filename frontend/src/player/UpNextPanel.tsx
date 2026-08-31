@@ -53,6 +53,7 @@ export function UpNextPanel({
   isFetchingNextPage,
   fetchNextPage,
   previous,
+  current,
   ctx,
   autoplay,
   onAutoplay,
@@ -64,6 +65,9 @@ export function UpNextPanel({
   isFetchingNextPage: boolean;
   fetchNextPage: () => void;
   previous?: PreviousProps;
+  /** The video being watched — the anchor row between Previous and the queue,
+   *  so the two halves read as one list. Only shown with a context. */
+  current?: VideoSummary;
   ctx?: Record<string, string | undefined>;
   autoplay: boolean;
   onAutoplay: (patch: Partial<Prefs>) => void;
@@ -183,6 +187,17 @@ export function UpNextPanel({
               </>
             ))}
           <div className="border-t border-hair" />
+        </div>
+      )}
+      {previous && current && (
+        <div className="-mx-2 flex items-center gap-3 rounded-[12px] bg-raised px-2 py-2">
+          <div className="w-32 flex-none">
+            <Thumb video={current} compact className="!rounded-[10px]" />
+          </div>
+          <span className="flex min-w-0 flex-col gap-[3px]">
+            <span className="text-[14px] font-extrabold leading-[1.25] line-clamp-2">{current.title}</span>
+            <span className="text-[12px] font-bold text-accent">Now playing</span>
+          </span>
         </div>
       )}
       {isLoading ? (

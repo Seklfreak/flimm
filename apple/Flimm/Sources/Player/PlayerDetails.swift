@@ -192,6 +192,19 @@ struct UpNextList: View {
                     Divider()
                 }
             }
+            // The anchor: where the viewer is in the context, so the
+            // history above and the queue below read as one list.
+            if model.hasContext, let current = model.video?.summary {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Now playing")
+                        .font(.caption2.weight(.bold))
+                        .foregroundStyle(Palette.accent)
+                    row(current)
+                }
+                .padding(10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Palette.raised, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            }
             if model.upNext.isEmpty {
                 Text("Nothing more in this context.")
                     .font(.footnote)
