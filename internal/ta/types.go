@@ -4,6 +4,9 @@
 package ta
 
 import (
+	"encoding/json"
+	"fmt"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -157,6 +160,77 @@ type SubtitleHit struct {
 	SubtitleLang  string  `json:"subtitle_lang"`
 	ChannelID     string  `json:"subtitle_channel_id"`
 	Channel       string  `json:"subtitle_channel"`
+}
+
+// TA stores subtitle_start/subtitle_end as the VTT timestamp strings its
+// indexer formats ("HH:MM:SS.mmm"), not as numbers. Decode both shapes, and
+// encode the string shape so the fake archive speaks the real wire format.
+
+func (h *SubtitleHit) UnmarshalJSON(b []byte) error {
+	type alias SubtitleHit
+	aux := struct {
+		*alias
+		SubtitleStart vttSeconds `json:"subtitle_start"`
+		SubtitleEnd   vttSeconds `json:"subtitle_end"`
+	}{alias: (*alias)(h)}
+	if err := json.Unmarshal(b, &aux); err != nil {
+		return err
+	}
+	h.SubtitleStart = float64(aux.SubtitleStart)
+	h.SubtitleEnd = float64(aux.SubtitleEnd)
+	return nil
+}
+
+func (h SubtitleHit) MarshalJSON() ([]byte, error) {
+	type alias SubtitleHit
+	return json.Marshal(struct {
+		alias
+		SubtitleStart string `json:"subtitle_start"`
+		SubtitleEnd   string `json:"subtitle_end"`
+	}{alias(h), vttStamp(h.SubtitleStart), vttStamp(h.SubtitleEnd)})
+}
+
+// vttSeconds decodes a duration TA writes either as a number of seconds or as
+// a "HH:MM:SS.mmm" timestamp string.
+type vttSeconds float64
+
+func (s *vttSeconds) UnmarshalJSON(b []byte) error {
+	if string(b) == "null" {
+		*s = 0
+		return nil
+	}
+	if b[0] != '"' {
+		var f float64
+		if err := json.Unmarshal(b, &f); err != nil {
+			return fmt.Errorf("subtitle timestamp %s: %w", b, err)
+		}
+		*s = vttSeconds(f)
+		return nil
+	}
+	var str string
+	if err := json.Unmarshal(b, &str); err != nil {
+		return err
+	}
+	if str == "" {
+		*s = 0
+		return nil
+	}
+	total := 0.0
+	for _, part := range strings.Split(str, ":") {
+		f, err := strconv.ParseFloat(part, 64)
+		if err != nil {
+			return fmt.Errorf("subtitle timestamp %q: %w", str, err)
+		}
+		total = total*60 + f
+	}
+	*s = vttSeconds(total)
+	return nil
+}
+
+// vttStamp formats seconds the way TA's subtitle indexer does.
+func vttStamp(seconds float64) string {
+	ms := int64(seconds * 1000)
+	return fmt.Sprintf("%02d:%02d:%02d.%03d", ms/3600000, ms/60000%60, ms/1000%60, ms%1000)
 }
 
 // Comment is one archived comment, as TubeArchivist indexed it from yt-dlp.

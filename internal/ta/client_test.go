@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -175,5 +176,55 @@ func TestChannelCountReadsTheAggregate(t *testing.T) {
 	}
 	if len(paths) != 1 {
 		t.Errorf("made %d requests, want the second answered from the cache", len(paths))
+	}
+}
+
+// Real TA indexes subtitle_start/subtitle_end as the VTT timestamp strings
+// its indexer formats ("HH:MM:SS.mmm"); the fulltext bucket must decode them
+// (and tolerate plain numbers).
+func TestSearchDecodesSubtitleTimestampStrings(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"results":{"fulltext_results":[
+			{"youtube_id":"v1","subtitle_line":"a","subtitle_start":"00:01:05.500","subtitle_end":"00:01:20.000"},
+			{"youtube_id":"v2","subtitle_line":"b","subtitle_start":42.5,"subtitle_end":50}
+		]}}`))
+	}))
+	defer srv.Close()
+
+	res, err := New(srv.URL, "tok").Search(context.Background(), "full:test")
+	if err != nil {
+		t.Fatalf("search: %v", err)
+	}
+	if len(res.Fulltext) != 2 {
+		t.Fatalf("hits = %d, want 2", len(res.Fulltext))
+	}
+	if got := res.Fulltext[0].SubtitleStart; got != 65.5 {
+		t.Errorf("string start = %v, want 65.5", got)
+	}
+	if got := res.Fulltext[0].SubtitleEnd; got != 80 {
+		t.Errorf("string end = %v, want 80", got)
+	}
+	if got := res.Fulltext[1].SubtitleStart; got != 42.5 {
+		t.Errorf("numeric start = %v, want 42.5", got)
+	}
+}
+
+// The fake archive must speak the same wire format as real TA, so marshaling
+// a hit produces the timestamp string that unmarshaling reads back.
+func TestSubtitleHitRoundTripsVTTStamps(t *testing.T) {
+	in := SubtitleHit{YoutubeID: "v", SubtitleStart: 3725.25, SubtitleEnd: 3730}
+	b, err := json.Marshal(in)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if want := `"subtitle_start":"01:02:05.250"`; !strings.Contains(string(b), want) {
+		t.Fatalf("marshal = %s, want it to carry %s", b, want)
+	}
+	var out SubtitleHit
+	if err := json.Unmarshal(b, &out); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if out.SubtitleStart != in.SubtitleStart || out.SubtitleEnd != in.SubtitleEnd {
+		t.Errorf("round trip = %+v, want %+v", out, in)
 	}
 }
