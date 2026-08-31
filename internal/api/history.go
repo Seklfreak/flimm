@@ -57,11 +57,15 @@ func (s *Server) listHistory(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case err == nil:
 			entry.Video = summarize(*v, &ev)
-			entry.Feed = homes.find(v.Channel.ChannelID, v.Playlist)
+			pid, feed := homes.find(v.Channel.ChannelID, v.Playlist)
+			entry.Feed = feed
+			if pid != "" {
+				entry.PlaylistID = &pid
+			}
 		case errors.Is(err, ta.ErrNotFound):
 			entry.Video = summaryFromEvent(ev)
 			// The document is gone, so only the event's channel can match.
-			entry.Feed = homes.find(ev.ChannelID, nil)
+			_, entry.Feed = homes.find(ev.ChannelID, nil)
 		default:
 			return err
 		}
@@ -98,27 +102,27 @@ type feedHomes []struct {
 	pls   map[string]bool
 }
 
-// find is the feed the video most specifically belongs to. A playlist-source
-// match wins over a channel match even further down the sidebar: a series
-// feed says "this exact run of videos", a channel feed only "this uploader",
-// so resuming into the series is what continuing actually means. Sidebar
-// order breaks ties within each kind.
-func (h feedHomes) find(channelID string, playlists []string) *FeedRef {
+// find is the home the video most specifically belongs to. When a feed holds
+// the video through a playlist source, the *playlist itself* is the resume
+// context — the series is the run being watched, so up next should be its
+// next episode, not whatever else the feed carries. Only a plain channel
+// match falls back to the feed. Sidebar order breaks ties within each kind.
+func (h feedHomes) find(channelID string, playlists []string) (playlistID string, feed *FeedRef) {
 	for _, f := range h {
 		for _, pl := range playlists {
 			if f.pls[pl] {
 				ref := f.ref
-				return &ref
+				return pl, &ref
 			}
 		}
 	}
 	for _, f := range h {
 		if f.chans[channelID] {
 			ref := f.ref
-			return &ref
+			return "", &ref
 		}
 	}
-	return nil
+	return "", nil
 }
 
 func (s *Server) feedHomes(ctx context.Context, uid uuid.UUID) (feedHomes, error) {

@@ -19,22 +19,26 @@ public struct HistoryEntry: Codable, Sendable, Hashable, Identifiable {
     public let video: VideoSummary
     public let playedAt: Date?
     public let state: HistoryState
-    /// The feed the video most specifically belongs to — a playlist-source
-    /// (series) match beats a channel match — and the playback context a
-    /// resume opens with, so the up-next panel shows the feed rather than
-    /// similar videos. Nil when no feed holds it.
+    /// The series the video belongs to through a feed's playlist source —
+    /// the resume context when set, so up next is the next episode.
+    public let playlistId: String?
+    /// The feed holding the video's channel — the resume context when no
+    /// series claims it. Nil when no feed holds the video at all.
     public let feed: FeedRef?
 
-    /// The context a tap on this entry should play with.
+    /// The context a tap on this entry should play with: series first, else
+    /// the feed.
     public var playbackContext: PlaybackContext {
-        feed.map { .feed($0.id) } ?? .none
+        if let playlistId { return .playlist(playlistId) }
+        return feed.map { .feed($0.id) } ?? .none
     }
 
-    public init(id: String, video: VideoSummary, playedAt: Date?, state: HistoryState, feed: FeedRef? = nil) {
+    public init(id: String, video: VideoSummary, playedAt: Date?, state: HistoryState, playlistId: String? = nil, feed: FeedRef? = nil) {
         self.id = id
         self.video = video
         self.playedAt = playedAt
         self.state = state
+        self.playlistId = playlistId
         self.feed = feed
     }
 }

@@ -69,9 +69,10 @@ func TestHistoryListAndDelete(t *testing.T) {
 	}
 }
 
-// A history entry names the feed its video most specifically belongs to: a
-// playlist-source (series) match beats a channel match even when the channel
-// feed sits higher in the sidebar, and no match means null.
+// A history entry names the home its video most specifically belongs to: a
+// playlist-source (series) match yields the playlist itself as the resume
+// context, beating a channel match even when that feed sits higher in the
+// sidebar; a plain channel match yields the feed; no match means null.
 func TestHistoryEntriesCarryTheirHomeFeed(t *testing.T) {
 	client := ta.NewFake()
 	client.AddVideo(video("a1", "A", "2026-08-01", 600, false))
@@ -111,17 +112,18 @@ func TestHistoryEntriesCarryTheirHomeFeed(t *testing.T) {
 	if len(page.Items) != 3 {
 		t.Fatalf("items = %d, want 3", len(page.Items))
 	}
-	byVideo := map[string]*FeedRef{}
+	byVideo := map[string]HistoryEntry{}
 	for _, it := range page.Items {
-		byVideo[it.Video.ID] = it.Feed
+		byVideo[it.Video.ID] = it
 	}
-	if f := byVideo["a1"]; f == nil || f.Name != "Making" {
-		t.Errorf("a1 feed = %+v, want Making (channel source)", f)
+	if e := byVideo["a1"]; e.Feed == nil || e.Feed.Name != "Making" || e.PlaylistID != nil {
+		t.Errorf("a1 = feed %+v playlist %v, want feed Making and no playlist", e.Feed, e.PlaylistID)
 	}
-	if f := byVideo["p1"]; f == nil || f.Name != "Night sides" {
-		t.Errorf("p1 feed = %+v, want Night sides (series beats the channel feed above it)", f)
+	// The series is the resume context itself — not just its feed.
+	if e := byVideo["p1"]; e.PlaylistID == nil || *e.PlaylistID != "PL" || e.Feed == nil || e.Feed.Name != "Night sides" {
+		t.Errorf("p1 = feed %+v playlist %v, want playlist PL (series beats the channel feed above it)", e.Feed, e.PlaylistID)
 	}
-	if f := byVideo["x1"]; f != nil {
-		t.Errorf("x1 feed = %+v, want none", f)
+	if e := byVideo["x1"]; e.Feed != nil || e.PlaylistID != nil {
+		t.Errorf("x1 = feed %+v playlist %v, want none", e.Feed, e.PlaylistID)
 	}
 }

@@ -272,11 +272,14 @@ type HistoryEntry struct {
 	Video    VideoSummary `json:"video"`
 	PlayedAt time.Time    `json:"played_at"`
 	State    string       `json:"state"`
-	// Feed is the feed the video most specifically belongs to, the playback
-	// context a resume opens with: a feed holding it through a playlist
-	// source (a series) wins over one holding the whole channel, and sidebar
-	// order breaks ties within each kind. Null when no feed holds it.
-	Feed *FeedRef `json:"feed"`
+	// PlaylistID and Feed are the video's home, the playback context a resume
+	// opens with. When a feed holds the video through a playlist source (a
+	// series), PlaylistID names that playlist and it takes priority: the
+	// series is the run being watched, so up next should be its next episode
+	// rather than the rest of the feed. Feed alone is set for a plain channel
+	// match; both null when no feed holds the video.
+	PlaylistID *string  `json:"playlist_id"`
+	Feed       *FeedRef `json:"feed"`
 }
 
 // Comment is one archived comment, as `GET /videos/{id}/comments` returns it.

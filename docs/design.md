@@ -184,9 +184,11 @@ reordered and deleted through TubeArchivist so they exist there too.
 Grouped by day, newest first. In-progress rows resume in place — and resume
 *into the feed the video belongs to* when one holds it, so the player's up
 next shows that feed instead of similar videos; the sidebar's continue-watching
-rail does the same. A series feed wins over a channel feed that also holds the
-video: the series is the run being watched, the channel just its uploader.
-Seen rows are listed for reference. The × on a row hides the entry without changing the
+rail does the same. A video that got there through a **series** (a feed's
+playlist source) resumes into the series itself — up next is the next episode
+— which beats any feed that merely holds the channel: the series is the run
+being watched, the channel just its uploader. Seen rows are listed for
+reference. The × on a row hides the entry without changing the
 video's seen state. Filter by in-progress / seen and search by title or channel.
 
 ## Search

@@ -141,9 +141,9 @@ function FeedNavItem({ feed, active }: { feed: Feed; active: boolean }) {
 // not nested inside it, so tapping it can never navigate.
 function ContinueItem({ entry, onRemove }: { entry: HistoryEntry; onRemove: () => void }) {
   const v = entry.video;
-  // Resume into the feed the video lives in, so the player's up next shows
-  // that feed instead of similar videos.
-  const ctx = entry.feed ? { feed: entry.feed.id } : undefined;
+  // Resume into the video's home — its series first, else its feed — so the
+  // player's up next continues what was actually being watched.
+  const ctx = entry.playlist_id ? { playlist: entry.playlist_id } : entry.feed ? { feed: entry.feed.id } : undefined;
   return (
     <div className="group relative flex items-center gap-2.5 rounded-[10px] px-2.5 py-[7px] hover:bg-raised/60">
       <Link to={watchHref(v, ctx)} className="flex min-w-0 flex-1 items-center gap-2.5 text-ink no-underline hover:text-ink">

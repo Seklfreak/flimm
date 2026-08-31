@@ -85,8 +85,8 @@ export default function HistoryPage() {
 function HistoryRow({ entry, onRemove }: { entry: HistoryEntry; onRemove: () => void }) {
   const v = entry.video;
   const resumable = entry.state === "in_progress";
-  // Resume into the feed the video lives in (see docs/api.md HistoryEntry).
-  const ctx = entry.feed ? { feed: entry.feed.id } : undefined;
+  // Resume into the video's home — series first, else feed (docs/api.md).
+  const ctx = entry.playlist_id ? { playlist: entry.playlist_id } : entry.feed ? { feed: entry.feed.id } : undefined;
   return (
     <VideoRow
       video={v}

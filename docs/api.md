@@ -322,13 +322,13 @@ resolve, so a stale pin can never wedge the sidebar.
 }
 ```
 
-`feed` is the feed the video most specifically belongs to, so a resume from
-history or the continue-watching rail can open with that feed as its playback
-context (the up-next panel then shows the feed rather than similar videos).
-A feed holding the video through a **playlist source** (a series) wins over
-one holding the whole channel — the series names this exact run of videos,
-the channel only its uploader — and sidebar order breaks ties within each
-kind. Null when no feed holds the video.
+`playlist_id` and `feed` are the video's home, the playback context a resume
+from history or the continue-watching rail opens with. When a feed holds the
+video through a **playlist source** (a series), `playlist_id` names that
+playlist and clients use it as the context — the series is the run being
+watched, so up next should be its next episode rather than the rest of the
+feed. A plain channel match sets only `feed`; sidebar order breaks ties
+within each kind, and both are null when no feed holds the video.
 
 ### Page
 List endpoints take `page` (0-based) and `page_size` (default 30, max 100) and
