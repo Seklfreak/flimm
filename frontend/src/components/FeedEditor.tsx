@@ -41,7 +41,15 @@ export function FeedEditor({ feed, onClose }: { feed?: Feed; onClose: () => void
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const all = useMemo(() => channels.data ?? [], [channels.data]);
+  // The channels the feed opened with float to the top of the picker, so an
+  // edit starts with what the feed *is*. A snapshot, not the live selection —
+  // re-sorting under a toggling finger would make rows jump.
+  const [initialIds] = useState<Set<string>>(() => new Set(feed?.channel_ids ?? []));
+  const all = useMemo(() => {
+    const list = channels.data ?? [];
+    if (initialIds.size === 0) return list;
+    return [...list.filter((c) => initialIds.has(c.id)), ...list.filter((c) => !initialIds.has(c.id))];
+  }, [channels.data, initialIds]);
   const visible = useMemo(() => {
     const q = filter.trim().toLowerCase();
     return q ? all.filter((c) => c.name.toLowerCase().includes(q)) : all;

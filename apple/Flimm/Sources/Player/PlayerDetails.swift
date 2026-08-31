@@ -165,37 +165,31 @@ struct UpNextList: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
-            if model.hasContext {
-                Text("Previous")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                if model.previous.isEmpty {
-                    Text("Nothing before this one.")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                } else {
-                    ForEach(model.previous.prefix(visiblePrevious)) { video in
-                        Button {
-                            Task { await model.go(to: video.id) }
-                        } label: {
-                            row(video)
+            // No heading, no empty state: the dimmed rows above the raised
+            // anchor *are* the previous videos, one continuous list. "Show
+            // earlier" sits on top — earlier is upward.
+            if model.hasContext, !model.previous.isEmpty {
+                if model.previous.count > visiblePrevious || model.hasMorePrevious {
+                    Button("Show earlier") {
+                        visiblePrevious += 10
+                        if model.previous.count < visiblePrevious {
+                            Task { await model.loadMorePrevious() }
                         }
-                        .buttonStyle(.plain)
-                        // What was already watched recedes; the row a viewer
-                        // would go back for keeps its full weight.
-                        .opacity(video.watched ? 0.45 : 1)
                     }
-                    if model.previous.count > visiblePrevious || model.hasMorePrevious {
-                        Button("Show earlier") {
-                            visiblePrevious += 10
-                            if model.previous.count < visiblePrevious {
-                                Task { await model.loadMorePrevious() }
-                            }
-                        }
-                        .font(.footnote.weight(.semibold))
-                        .buttonStyle(.plain)
-                        .foregroundStyle(Palette.accent)
+                    .font(.footnote.weight(.semibold))
+                    .buttonStyle(.plain)
+                    .foregroundStyle(Palette.accent)
+                }
+                ForEach(model.previous.prefix(visiblePrevious).reversed()) { video in
+                    Button {
+                        Task { await model.go(to: video.id) }
+                    } label: {
+                        row(video)
                     }
+                    .buttonStyle(.plain)
+                    // What was already watched recedes; the row a viewer
+                    // would go back for keeps its full weight.
+                    .opacity(video.watched ? 0.45 : 1)
                 }
             }
             // The anchor: where the viewer is in the context, so the

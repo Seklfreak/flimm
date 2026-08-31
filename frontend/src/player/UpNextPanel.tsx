@@ -149,38 +149,33 @@ export function UpNextPanel({
           </button>
         </div>
       </div>
-      {previous && (
-        <div className="flex flex-col gap-3">
-          <span className="text-[13px] font-bold text-muted-2">Previous</span>
-          {previous.isLoading ? (
-            <Spinner />
-          ) : previous.items.length === 0 ? (
-            <p className="meta">Nothing before this one.</p>
-          ) : (
-            /* Two rows tall; the history further back is a scroll away, and
-               the sentinel inside keeps fetching as it comes into view. */
-            <div className="flex max-h-[168px] flex-col gap-3 overflow-y-auto">
-              {previous.items.map((v) => (
-                <Link
-                  key={v.id}
-                  to={watchHref(v, ctx)}
-                  className={`flex min-w-0 flex-none items-center gap-3 text-ink no-underline hover:text-ink ${v.watched ? "opacity-45" : ""}`}
-                >
-                  <div className="w-32 flex-none">
-                    <Thumb video={v} compact className="!rounded-[10px]" />
-                  </div>
-                  <span className="flex min-w-0 flex-col gap-[3px]">
-                    <span className="text-[14px] font-extrabold leading-[1.25] line-clamp-2">{v.title}</span>
-                    <span className="meta text-[12px]">
-                      {v.channel.name} · {fmtDuration(v.duration)}
-                    </span>
-                  </span>
-                </Link>
-              ))}
-              <InfiniteSentinel enabled={previous.hasNextPage && !previous.isFetchingNextPage} onVisible={previous.fetchNextPage} />
-              {previous.isFetchingNextPage && <Spinner />}
-            </div>
-          )}
+      {previous && previous.items.length > 0 && (
+        /* No heading and no frame: the dimmed rows above the raised anchor
+           *are* the previous videos, and the panel reads as one continuous
+           list in watch order — the closest predecessor touches the anchor,
+           scrolling up goes further back. column-reverse keeps the box
+           anchored at the bottom and puts the sentinel at the visual top,
+           where it fetches more as older history scrolls into view. */
+        <div className="flex max-h-[172px] flex-col-reverse gap-3.5 overflow-y-auto">
+          {previous.items.map((v) => (
+            <Link
+              key={v.id}
+              to={watchHref(v, ctx)}
+              className={`flex min-w-0 flex-none items-center gap-3 text-ink no-underline hover:text-ink ${v.watched ? "opacity-45" : ""}`}
+            >
+              <div className="w-32 flex-none">
+                <Thumb video={v} compact className="!rounded-[10px]" />
+              </div>
+              <span className="flex min-w-0 flex-col gap-[3px]">
+                <span className="text-[14px] font-extrabold leading-[1.25] line-clamp-2">{v.title}</span>
+                <span className="meta text-[12px]">
+                  {v.channel.name} · {fmtDuration(v.duration)}
+                </span>
+              </span>
+            </Link>
+          ))}
+          <InfiniteSentinel enabled={previous.hasNextPage && !previous.isFetchingNextPage} onVisible={previous.fetchNextPage} />
+          {previous.isFetchingNextPage && <Spinner />}
         </div>
       )}
       {previous && current && (

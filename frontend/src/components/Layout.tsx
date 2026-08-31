@@ -43,14 +43,20 @@ function Sidebar() {
   const inProgress = useInProgress();
   const removeEntry = useRemoveHistoryEntry();
   const config = useConfig();
-  const { pathname } = useLocation();
+  const { pathname, search } = useLocation();
   const params = useParams();
   const pinned = pinnedFeed(feeds.data);
-  const activeFeedId = pathname.startsWith("/feeds/") ? params.id : pathname === "/" ? pinned?.id : undefined;
-  const activePlaylistId = pathname.startsWith("/playlists/") ? params.id : undefined;
+  // On the watch page the sidebar mirrors the *playback context*: watching
+  // from a feed, a pinned playlist or a pinned channel lights that entry up,
+  // the same as being on its own page.
+  const watchCtx = pathname.startsWith("/watch/") ? new URLSearchParams(search) : undefined;
+  const activeFeedId =
+    pathname.startsWith("/feeds/") ? params.id : pathname === "/" ? pinned?.id : (watchCtx?.get("feed") ?? undefined);
+  const activePlaylistId = pathname.startsWith("/playlists/") ? params.id : (watchCtx?.get("playlist") ?? undefined);
   const playlists = pinnedPlaylists.data ?? [];
   const channels = pinnedChannels.data ?? [];
-  const activeChannelId = pathname.startsWith("/channels/") ? params.id : undefined;
+  const activeChannelId = pathname.startsWith("/channels/") ? params.id : (watchCtx?.get("channel") ?? undefined);
+  const activeVideoId = pathname.startsWith("/watch/") ? params.id : undefined;
 
   return (
     <aside className="sticky top-0 hidden h-dvh w-[264px] flex-none flex-col gap-[26px] overflow-y-auto border-r border-hair px-5 py-8 md:flex">
@@ -103,7 +109,7 @@ function Sidebar() {
             </Link>
           </div>
           {(inProgress.data?.items ?? []).slice(0, CONTINUE_LIMIT).map((e) => (
-            <ContinueItem key={e.id} entry={e} onRemove={() => removeEntry.mutate(e.id)} />
+            <ContinueItem key={e.id} entry={e} active={e.video.id === activeVideoId} onRemove={() => removeEntry.mutate(e.id)} />
           ))}
         </div>
       )}
@@ -139,13 +145,13 @@ function FeedNavItem({ feed, active }: { feed: Feed; active: boolean }) {
 
 // One "Continue watching" row. The dismiss button is a sibling of the link,
 // not nested inside it, so tapping it can never navigate.
-function ContinueItem({ entry, onRemove }: { entry: HistoryEntry; onRemove: () => void }) {
+function ContinueItem({ entry, active, onRemove }: { entry: HistoryEntry; active: boolean; onRemove: () => void }) {
   const v = entry.video;
   // Resume into the video's home — its series first, else its feed — so the
   // player's up next continues what was actually being watched.
   const ctx = entry.playlist_id ? { playlist: entry.playlist_id } : entry.feed ? { feed: entry.feed.id } : undefined;
   return (
-    <div className="group relative flex items-center gap-2.5 rounded-[10px] px-2.5 py-[7px] hover:bg-raised/60">
+    <div className={`group relative flex items-center gap-2.5 rounded-[10px] px-2.5 py-[7px] ${active ? "bg-raised" : "hover:bg-raised/60"}`}>
       <Link to={watchHref(v, ctx)} className="flex min-w-0 flex-1 items-center gap-2.5 text-ink no-underline hover:text-ink">
         <span className="w-14 flex-none">
           <Thumb video={v} compact className="!rounded-md" />
