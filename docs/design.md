@@ -69,6 +69,17 @@ which is why they are admin-gated like series indexing.
   still show it, marked, which is where a viewer puts one back. Every client
   offers an undo without navigating away, because the action is one tap from a
   card and easy to hit by accident.
+- **A video that ends says so.** Autoplay advances only when there is
+  something to advance to; any other ending — autoplay off, or the end of the
+  list — leaves the player sitting on its last frame, which is exactly what a
+  paused one looks like. So the player raises an end card instead: "Finished",
+  what plays next when there is one, and a Replay that rewinds without
+  clearing the watch state the video has just earned. The rule lives in one
+  place per platform (`PlaybackEnd` in FlimmKit,
+  `frontend/src/player/playbackEnd.ts`) so the page that navigates and the
+  player that raises the card cannot disagree. On the Apple TV the card
+  states rather than offers: AVKit's transport bar underneath owns focus, and
+  it already holds previous/next and the scrubber.
 - **An unseen feed opens with what you are part-way through**, most recently
   played first, and then runs into the rest of the unseen videos. Those are
   the ones a viewer came back for, which is why there is no separate "in

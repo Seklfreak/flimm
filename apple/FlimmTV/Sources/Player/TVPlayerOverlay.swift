@@ -3,7 +3,7 @@ import SwiftUI
 
 /// What is drawn over the video, in `contentOverlayView`.
 ///
-/// Three things live here. **Subtitles**: Flimm's tracks are WebVTT sidecars
+/// Four things live here. **Subtitles**: Flimm's tracks are WebVTT sidecars
 /// fetched with a bearer header, which `AVPlayerItem` has no way to attach, so
 /// the cues are rendered rather than handed to the legible-media system — the
 /// same choice the phone app makes, for the same reason. **Audio-only
@@ -12,6 +12,14 @@ import SwiftUI
 /// what was archived the server transcodes on demand, and the part being
 /// resumed from takes a few seconds — said out loud, with the encoder's own
 /// progress, rather than left as a black screen.
+///
+/// **The end of the video**: a finished video is a still frame, which is
+/// exactly what a paused one looks like, so the ending is said out loud along
+/// with whatever plays next. It states rather than offers: the transport bar
+/// underneath already holds previous/next and the scrubber, and a focusable
+/// card here would have to take focus away from them. That is the one place
+/// the TV differs from the phone, whose card carries its own Replay and
+/// Up-next buttons.
 ///
 /// It is deliberately inert: `allowsHitTesting(false)` keeps every remote press
 /// going to the transport bar underneath.
@@ -26,6 +34,7 @@ struct TVPlayerOverlay: View {
         ZStack {
             if model.audioOnly { artwork }
             if model.isPreparingCompatible { preparing }
+            if model.hasEnded { ended }
             if let cue = model.activeCue, !cue.isEmpty {
                 // Measured from the screen's edge, not from the safe area:
                 // tvOS hands a hosting controller 60pt of overscan inset at
@@ -57,6 +66,33 @@ struct TVPlayerOverlay: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .allowsHitTesting(false)
+    }
+
+    private var ended: some View {
+        ZStack {
+            Color.black.opacity(0.7).ignoresSafeArea()
+            VStack(spacing: 22) {
+                Label("Finished", systemImage: "checkmark.circle")
+                    .font(.title3.weight(.bold))
+                    .foregroundStyle(.white.opacity(0.75))
+                if let next = model.nextUp {
+                    VStack(spacing: 10) {
+                        Text("Up next")
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(.white.opacity(0.55))
+                        Text(next.title)
+                            .font(.title2.weight(.heavy))
+                            .foregroundStyle(.white)
+                            .lineLimit(2)
+                        Text(next.channel.name)
+                            .font(.body.weight(.semibold))
+                            .foregroundStyle(.white.opacity(0.6))
+                    }
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: 1000)
+                }
+            }
+        }
     }
 
     private var preparing: some View {

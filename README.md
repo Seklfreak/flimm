@@ -39,8 +39,9 @@ One container image: a Go backend with the React frontend embedded.
 - **Player** — archived and auto-generated subtitle tracks, SponsorBlock
   segment skipping, scrub previews (drag the scrubber and see the frame you
   are dragging to), loudness normalisation, playback speed, autoplay with
-  context-aware *Up next*, and the archived comments (folded away until you
-  ask, and no avatars fetched from Google).
+  context-aware *Up next*, an end card when a video finishes without autoplay
+  taking over (what is next, and a replay), and the archived comments (folded
+  away until you ask, and no avatars fetched from Google).
 - **An even volume across channels** — each video is measured once (EBU R128)
   and the loud ones are turned down to a common target, so you stop reaching
   for the volume between one channel and the next. The measurement is made

@@ -38,6 +38,10 @@ final class WatchModel {
     private(set) var activeCue: String?
     private(set) var activeChapter: Int = -1
     private(set) var loadError: String?
+    /// The video played to its end and nothing took over — autoplay is off, or
+    /// there was nothing left to play. The end card is up until playback,
+    /// a seek or another video takes it down. See ``PlaybackEnd``.
+    private(set) var hasEnded = false
     /// Set only when the video has nowhere to go: a codec this device cannot
     /// decode on a server that predates `hls_url`. ``CodecGate`` decides.
     private(set) var codecIssue: CodecGate.Issue?
@@ -326,6 +330,7 @@ final class WatchModel {
     }
 
     func resume() {
+        hasEnded = false
         NowPlayingController.configureAudioSession()
         engine.play()
         Task { await reporter.resume() }
@@ -339,6 +344,7 @@ final class WatchModel {
     }
 
     func seek(to seconds: Double) {
+        hasEnded = false
         engine.seek(to: seconds)
         steering.steer(to: seconds)
         resumedFrom = nil
@@ -468,6 +474,7 @@ final class WatchModel {
 
     func go(to id: String) async {
         await reporter.stop()
+        hasEnded = false
         videoId = id
         video = nil
         cues = []
@@ -528,8 +535,10 @@ final class WatchModel {
 
     private func handleEnded() async {
         await reporter.flush()
-        guard prefs.autoplay else { return }
-        await goNext()
+        switch PlaybackEnd.decide(autoplay: prefs.autoplay, hasNext: hasNext) {
+        case .advance: await goNext()
+        case .finished: hasEnded = true
+        }
     }
 
     private func handleTick(_ time: Double) {
@@ -572,6 +581,26 @@ final class WatchModel {
             rate: engine.isPlaying ? prefs.playbackSpeed : 0,
             artwork: artwork
         ), force: force)
+    }
+}
+
+// MARK: - The end of a video
+
+extension WatchModel {
+    /// Everything ``goNext()`` will actually play, which is what decides
+    /// whether an ending advances or stops on the end card.
+    var hasNext: Bool { nav?.next != nil || !upNext.isEmpty }
+
+    /// What the end card offers to play, when there is anything.
+    var nextUp: VideoSummary? { nav?.next ?? upNext.first }
+
+    /// Watch it again. A plain rewind, not ``startOver()``: the video *was*
+    /// watched, and clearing that would put it back in the feeds it has just
+    /// left. Only the resume notice's "Start over" touches server-side
+    /// progress.
+    func replay() {
+        seek(to: 0)
+        resume()
     }
 }
 

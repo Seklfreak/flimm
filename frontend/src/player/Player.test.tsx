@@ -3,7 +3,7 @@ import { fireEvent, screen } from "@testing-library/react";
 import { Player, SUBTITLE_OFF, fmtSpeed, pickTrack, trackLabel, variantHint } from "./Player";
 import type { HLSVariant, Prefs, StreamInfo, SubtitleTrack, Video } from "@/lib/api";
 import { QUALITY_STORAGE_KEY } from "./codecGate";
-import { mockFetch, renderWithProviders, videoDetail } from "@/test/helpers";
+import { mockFetch, renderWithProviders, video, videoDetail } from "@/test/helpers";
 
 const tracks: SubtitleTrack[] = [
   { lang: "en", source: "auto", url: "/a" },
@@ -240,5 +240,73 @@ describe("codec fallback", () => {
     renderVideo(videoDetail({ streams: [stream("av01")] }));
     expect(screen.getByText(/codec \(av01\) can't be played/)).toBeTruthy();
     expect(screen.getByText("Play audio only")).toBeTruthy();
+  });
+});
+
+describe("end of the video", () => {
+  function renderEnding(opts: { autoplay: boolean; withNext: boolean; onPlayNext?: () => void }) {
+    mockFetch({ "GET /api/v1/videos/vid1/chapters": { source: "none", chapters: [] } });
+    const next = video({ id: "vid2", title: "What comes after" });
+    return renderWithProviders(
+      <Player
+        video={videoDetail()}
+        prefs={{ ...prefs, autoplay: opts.autoplay }}
+        audioOnly={false}
+        onToggleAudioOnly={() => {}}
+        onPrefs={() => {}}
+        onWatched={() => {}}
+        onStartOver={async () => {}}
+        onEnded={() => {}}
+        upNext={opts.withNext ? { video: next, onPlay: opts.onPlayNext ?? (() => {}) } : undefined}
+      />,
+    );
+  }
+
+  it("says the video finished, and offers what plays next", () => {
+    const { container } = renderEnding({ autoplay: false, withNext: true });
+    fireEvent.ended(container.querySelector("video")!);
+    expect(screen.getByText("Finished")).toBeTruthy();
+    expect(screen.getByText("What comes after")).toBeTruthy();
+  });
+
+  it("stays out of the way when autoplay is taking over", () => {
+    const { container } = renderEnding({ autoplay: true, withNext: true });
+    fireEvent.ended(container.querySelector("video")!);
+    expect(screen.queryByText("Finished")).toBeNull();
+  });
+
+  it("still says so at the end of the list, autoplay or not", () => {
+    const { container } = renderEnding({ autoplay: true, withNext: false });
+    fireEvent.ended(container.querySelector("video")!);
+    expect(screen.getByText("Finished")).toBeTruthy();
+  });
+
+  it("rewinds and plays again on Replay, without clearing watch state", () => {
+    const { container } = renderEnding({ autoplay: false, withNext: false });
+    const el = container.querySelector("video")!;
+    const play = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(el, "play", { value: play, configurable: true });
+    el.currentTime = 1476;
+    fireEvent.ended(el);
+    fireEvent.click(screen.getByText("Replay"));
+    expect(el.currentTime).toBe(0);
+    expect(play).toHaveBeenCalled();
+    expect(screen.queryByText("Finished")).toBeNull();
+  });
+
+  it("takes the card down when playback starts again", () => {
+    const { container } = renderEnding({ autoplay: false, withNext: true });
+    const el = container.querySelector("video")!;
+    fireEvent.ended(el);
+    fireEvent.play(el);
+    expect(screen.queryByText("Finished")).toBeNull();
+  });
+
+  it("plays the next video when its card is clicked", () => {
+    const onPlayNext = vi.fn();
+    const { container } = renderEnding({ autoplay: false, withNext: true, onPlayNext });
+    fireEvent.ended(container.querySelector("video")!);
+    fireEvent.click(screen.getByText("What comes after"));
+    expect(onPlayNext).toHaveBeenCalled();
   });
 });

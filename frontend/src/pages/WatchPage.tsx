@@ -7,6 +7,7 @@ import { compactCount, fmtDuration, plural, relativeDay } from "@/lib/format";
 import { Avatar, CheckIcon, ErrorState, Spinner, ThumbIcon } from "@/components/ui";
 import { watchHref } from "@/components/VideoCard";
 import { Player, SUBTITLE_OFF, langName, pickTrack, type PlayerHandle } from "@/player/Player";
+import { playbackEnd } from "@/player/playbackEnd";
 import { Chapters } from "@/player/Chapters";
 import { Comments } from "@/player/Comments";
 import { AddToPlaylist } from "@/player/AddToPlaylist";
@@ -95,9 +96,13 @@ export default function WatchPage() {
   }, [qc, id]);
   const onSeekChapter = useCallback((t: number) => playerRef.current?.seek(t), []);
   const next = upNextItems[0];
+  const playNext = useCallback(() => {
+    if (next) navigate(watchHref(next, ctx));
+  }, [next, navigate, ctx]);
   const onEnded = useCallback(() => {
-    if (prefs?.autoplay && next) navigate(watchHref(next, ctx));
-  }, [prefs?.autoplay, next, navigate, ctx]);
+    // The player raises its end card on the other half of this same rule.
+    if (playbackEnd(!!prefs?.autoplay, !!next) === "advance") playNext();
+  }, [prefs?.autoplay, next, playNext]);
 
   if (video.isError) return <ErrorState message={video.error.message} retry={() => video.refetch()} />;
   if (!v || !prefs) return <div className="p-10"><Spinner label="Loading video…" /></div>;
@@ -127,6 +132,7 @@ export default function WatchPage() {
             onWatched={onWatched}
             onStartOver={onStartOver}
             onEnded={onEnded}
+            upNext={next ? { video: next, onPlay: playNext } : undefined}
             onChapterChange={setActiveChapter}
             audioOnly={audioOnly}
             onToggleAudioOnly={onToggleAudioOnly}

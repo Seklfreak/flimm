@@ -235,6 +235,15 @@ struct WatchView: View {
                     .frame(maxHeight: .infinity, alignment: .bottom)
                     .padding(.bottom, cueLift)
                     .allowsHitTesting(false)
+                // Under the controls, which stay reachable over it: scrubbing
+                // back out of a finished video is one drag away.
+                if model.hasEnded {
+                    EndCard(
+                        next: model.nextUp,
+                        onReplay: { model.replay() },
+                        onPlayNext: { Task { await model.goNext() } }
+                    )
+                }
                 PlayerControls(
                     model: model,
                     isFullScreen: isFullScreen,

@@ -401,6 +401,67 @@ struct HighlightButton: View {
     }
 }
 
+/// The end of the video, said out loud.
+///
+/// A finished video is a still frame, which is exactly what a paused one looks
+/// like; this is the difference between the two, plus the two things a viewer
+/// wants at that moment — watch it again, or take what is next. When autoplay
+/// takes over there is no card at all: ``PlaybackEnd`` decides, once, for both
+/// Apple clients and the web.
+struct EndCard: View {
+    let next: VideoSummary?
+    let onReplay: () -> Void
+    let onPlayNext: () -> Void
+
+    var body: some View {
+        ZStack {
+            Color.black.opacity(0.7)
+            VStack(spacing: 12) {
+                Label("Finished", systemImage: "checkmark.circle")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(.white.opacity(0.7))
+                if let next {
+                    Button(action: onPlayNext) {
+                        HStack(spacing: 10) {
+                            VideoThumbnail(video: next, compact: true)
+                                .frame(width: 96, height: 54)
+                                .clipped()
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Up next")
+                                    .font(.caption2.weight(.bold))
+                                    .foregroundStyle(.white.opacity(0.55))
+                                Text(next.title)
+                                    .font(.footnote.weight(.heavy))
+                                    .foregroundStyle(.white)
+                                    .lineLimit(2)
+                                Text(next.channel.name)
+                                    .font(.caption2.weight(.semibold))
+                                    .foregroundStyle(.white.opacity(0.6))
+                            }
+                            .multilineTextAlignment(.leading)
+                            Spacer(minLength: 0)
+                        }
+                        .padding(8)
+                        .background(Color.white.opacity(0.14), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+                    .frame(maxWidth: 340)
+                }
+                Button(action: onReplay) {
+                    Label("Replay", systemImage: "arrow.counterclockwise")
+                        .font(.footnote.weight(.bold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 9)
+                        .background(Color.white.opacity(0.16), in: Capsule())
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, 20)
+        }
+    }
+}
+
 struct ResumeToast: View {
     let position: Double
     let onStartOver: () -> Void

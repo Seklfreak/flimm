@@ -1,10 +1,11 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { HLSState, Prefs, SubtitleTrack, Video } from "@/lib/api";
+import type { HLSState, Prefs, SubtitleTrack, Video, VideoSummary } from "@/lib/api";
 import { fmtDuration } from "@/lib/format";
 import { refreshMediaSession, retryMediaUrl } from "@/lib/media";
 import { trackPlay } from "@/lib/analytics";
 import { CUE_LINE, cueFontSize, cueLineOverChrome, useCueLift, useCueSize } from "./cueSize";
 import { usePreviewTiles } from "./preview";
+import { playbackEnd } from "./playbackEnd";
 import { useLoudnessGain } from "./loudness";
 import { CheckIcon, HeadphonesIcon, MediaImg, Popover, Spinner } from "@/components/ui";
 import { useChapters } from "@/lib/queries";
@@ -63,6 +64,12 @@ export interface PlayerProps {
    * bar doesn't shift as you move through.
    */
   nav?: { onPrev?: () => void; onNext?: () => void };
+  /**
+   * What plays after this one in the current context — exactly what autoplay
+   * would have taken — offered on the end card when it isn't taken
+   * automatically. Absent at the end of a list, or with no context at all.
+   */
+  upNext?: { video: VideoSummary; onPlay: () => void };
   /** `audio=1` in the URL — the live audio/video mode for this video. */
   audioOnly: boolean;
   /** Flips the mode; the caller owns persisting it into the URL. */
@@ -82,7 +89,7 @@ export interface PlayerHandle {
 // HTML5 player with custom controls per the Player artboard: resume chip,
 // progress scrubber, play / ±10s, time, CC menu, speed menu, mute, fullscreen.
 export const Player = forwardRef<PlayerHandle, PlayerProps>(function Player(
-  { video, prefs, startAt, onPrefs, onWatched, onStartOver, onEnded, onChapterChange, nav, audioOnly, onToggleAudioOnly, playlistId },
+  { video, prefs, startAt, onPrefs, onWatched, onStartOver, onEnded, onChapterChange, nav, upNext, audioOnly, onToggleAudioOnly, playlistId },
   ref,
 ) {
   const [el, setEl] = useState<HTMLVideoElement | null>(null);
@@ -108,6 +115,8 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(function Player(
   // before anything is on screen.
   const [waiting, setWaiting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The video played to its end and nothing took over: the end card is up.
+  const [ended, setEnded] = useState(false);
   const idleTimer = useRef<number | undefined>(undefined);
   // One `play` event per video, not one per resume after a pause.
   const reportedPlayRef = useRef<string | null>(null);
@@ -368,6 +377,15 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(function Player(
     if (el.paused) void el.play();
     else el.pause();
   }, [el]);
+  // Replay is a plain rewind, not "start over": the video *was* watched, and
+  // saying otherwise would take it out of the feeds it has earned its way out
+  // of. Only the resume chip clears server-side progress.
+  const replay = useCallback(() => {
+    if (!el) return;
+    el.currentTime = 0;
+    setEnded(false);
+    void el.play();
+  }, [el]);
   const seekTo = useCallback(
     (t: number) => {
       if (el) el.currentTime = Math.max(0, Math.min(el.duration || duration, t));
@@ -542,6 +560,7 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(function Player(
         onClick={togglePlay}
         onPlay={(e) => {
           setPlaying(true);
+          setEnded(false);
           // HAVE_FUTURE_DATA or better means there is a frame to show.
           setWaiting(e.currentTarget.readyState < 3);
           if (reportedPlayRef.current !== video.id) {
@@ -558,7 +577,13 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(function Player(
         onTimeUpdate={(e) => setTime(e.currentTarget.currentTime)}
         onDurationChange={(e) => setDuration(e.currentTarget.duration || video.duration)}
         onVolumeChange={(e) => setMuted(e.currentTarget.muted)}
-        onEnded={onEnded}
+        onEnded={() => {
+          // The page navigates on the same rule when autoplay takes over, so
+          // the card is raised only for an ending that stays put.
+          if (playbackEnd(prefs.autoplay, !!upNext) === "finished") setEnded(true);
+          onEnded();
+        }}
+        onSeeking={() => setEnded(false)}
         onError={() => {
           // hls.js reports its own errors (and clears the element's src while
           // recovering), so only the direct path answers here.
@@ -683,6 +708,42 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(function Player(
             }}
           >
             Start over
+          </button>
+        </div>
+      )}
+
+      {/* The end of the video, said out loud. Without it a finished video is a
+          still frame, which is exactly what a paused one looks like. It sits
+          above the picture but below the control bar (which follows it in the
+          DOM), so scrubbing back out of it stays one click away, and any of
+          play, seek or a new video takes it down again. */}
+      {ended && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black/70 px-5 pb-20 text-center">
+          <p className="flex items-center gap-2 text-[13px] font-bold uppercase tracking-[0.14em] text-white/65">
+            <CheckIcon size={14} />
+            Finished
+          </p>
+          {upNext && (
+            <button
+              className="flex w-full max-w-xs items-center gap-2.5 rounded-xl bg-white/10 p-2 text-left transition-colors hover:bg-white/20"
+              onClick={upNext.onPlay}
+            >
+              <div className="aspect-video w-20 flex-none overflow-hidden rounded-lg bg-thumb">
+                {upNext.video.thumb_url && <MediaImg src={upNext.video.thumb_url} alt="" className="h-full w-full object-cover" />}
+              </div>
+              <span className="flex min-w-0 flex-col gap-0.5">
+                <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-white/55">Up next</span>
+                <span className="line-clamp-2 text-[12.5px] font-extrabold leading-snug text-white">{upNext.video.title}</span>
+                <span className="truncate text-[12px] font-semibold text-white/60">{upNext.video.channel.name}</span>
+              </span>
+            </button>
+          )}
+          <button className="btn" onClick={replay}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden="true">
+              <path d="M4 12a8 8 0 1 1 3 6.2" />
+              <path d="M4 18v-6h6" />
+            </svg>
+            Replay
           </button>
         </div>
       )}

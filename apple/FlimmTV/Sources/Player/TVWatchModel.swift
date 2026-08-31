@@ -1,3 +1,8 @@
+// swiftlint:disable file_length
+// A watching session is one object on purpose: everything here guards the
+// same private playback state, and splitting the file means loosening the
+// access that keeps that state coherent — the phone's ``WatchModel`` says the
+// same thing for the same reason.
 import AVFoundation
 import AVKit
 import FlimmKit
@@ -26,6 +31,10 @@ final class TVWatchModel {
     private(set) var cues: [SubtitleCue] = []
     private(set) var activeCue: String?
     private(set) var loadError: String?
+    /// The video played to its end and nothing took over — autoplay is off, or
+    /// there was nothing left to play. See ``PlaybackEnd``; the overlay says
+    /// so until playback moves again.
+    private(set) var hasEnded = false
     /// Set only when the video has nowhere to go: a codec this device cannot
     /// decode on a server that predates `hls_url`. ``CodecGate`` decides.
     private(set) var codecIssue: CodecGate.Issue?
@@ -112,6 +121,8 @@ final class TVWatchModel {
     }
     var hasContext: Bool { context.source != nil }
     var canGoNext: Bool { nav?.next != nil || !upNext.isEmpty }
+    /// What the end card names as coming next — what ``goNext()`` would play.
+    var nextUp: VideoSummary? { nav?.next ?? upNext.first }
     var canGoPrevious: Bool { nav?.previous != nil }
     var currentTime: Double { player.currentTime().seconds.isFinite ? player.currentTime().seconds : 0 }
     /// What the heartbeat reports. An item that has not reported ready has no
@@ -329,6 +340,7 @@ final class TVWatchModel {
     // MARK: - Transport
 
     func seek(to seconds: Double) {
+        hasEnded = false
         let target = max(0, seconds)
         // An explicit seek replaces a resume that has not landed yet.
         pendingSeek = nil
@@ -434,6 +446,7 @@ final class TVWatchModel {
 
     func go(to id: String) async {
         await reporter.stop()
+        hasEnded = false
         videoId = id
         video = nil
         cues = []
@@ -492,6 +505,10 @@ final class TVWatchModel {
 
     private func tick(_ seconds: Double) {
         guard seconds.isFinite else { return }
+        // AVKit owns the transport bar, so pressing play or scrubbing back
+        // never reaches this model as a call — the tick is the notice that
+        // the video is no longer sitting on its last frame.
+        if hasEnded, player.timeControlStatus == .playing { hasEnded = false }
         // The retry window measures "how long without playback", so it rolls
         // forward while the rendition is actually playing.
         if usingCompatibleRendition, isReady { compatibleSince = Date() }
@@ -551,6 +568,18 @@ final class TVWatchModel {
         player.seek(to: CMTime(seconds: pending, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
     }
 
+    /// Autoplay advances; anything else stops on the end card, which
+    /// ``TVPlayerOverlay`` draws. ``PlaybackEnd`` is the rule itself, shared
+    /// with the phone and the web so the three cannot drift on when a viewer
+    /// is told their video is over.
+    private func handleEnded() async {
+        await reporter.flush()
+        switch PlaybackEnd.decide(autoplay: prefs.autoplay, hasNext: canGoNext) {
+        case .advance: await goNext()
+        case .finished: hasEnded = true
+        }
+    }
+
     private func observeEnd(of item: AVPlayerItem) {
         if let endObserver { NotificationCenter.default.removeObserver(endObserver) }
         endObserver = NotificationCenter.default.addObserver(
@@ -563,12 +592,6 @@ final class TVWatchModel {
                 Task { await self.handleEnded() }
             }
         }
-    }
-
-    private func handleEnded() async {
-        await reporter.flush()
-        guard prefs.autoplay else { return }
-        await goNext()
     }
 
 }
