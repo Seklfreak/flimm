@@ -169,7 +169,7 @@ All configuration is via environment variables.
 | `OIDC_ISSUER` | unless `AUTH_DISABLED=true` | issuer URL (discovery at `<issuer>/.well-known/openid-configuration`) |
 | `OIDC_CLIENT_ID` | unless `AUTH_DISABLED=true` | public client id |
 | `AUTH_DISABLED` | no | `true` skips auth and uses a fixed dev user — **dev only** |
-| `ADMIN_EMAILS` | no | comma-separated; admins see `/healthz` details |
+| `ADMIN_EMAILS` | no | comma-separated; admins see `/healthz` details and get the archive-side controls (index a channel's series, subscribe/unsubscribe) |
 | `APP_NAME` | no | default `Flimm` |
 | `PORT` | no | default `8080` |
 | `MIN_PLAY_SECONDS` | no | how long a video must play before it enters history and gets a resume position (default 15) |

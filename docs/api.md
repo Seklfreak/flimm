@@ -1238,7 +1238,7 @@ tested against a fake.
 | `TA_TOKEN` | yes | TA API token (Settings → user) |
 | `DATABASE_URL` | yes | Postgres DSN |
 | `OIDC_ISSUER`, `OIDC_CLIENT_ID` | unless `AUTH_DISABLED=true` | |
-| `ADMIN_EMAILS` | no | comma list; admins see `/healthz` details |
+| `ADMIN_EMAILS` | no | comma list of JWT emails treated as admins: they see `/healthz` details and may flip instance-wide TubeArchivist state (`/channels/{id}/index-playlists`, `/channels/{id}/subscribed`) |
 | `MEDIA_TOKEN_SECRET` | yes | HMAC secret for the media cookie |
 | `PUBLIC_URL` | yes | for cookie/CORS |
 | `MIN_PLAY_SECONDS` | no | seconds of playback before a video is recorded; default 15 |
