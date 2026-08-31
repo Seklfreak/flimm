@@ -142,9 +142,14 @@ func (s *Server) search(w http.ResponseWriter, r *http.Request) {
 			s.writeDBError(w, "list feed channels", err)
 			return
 		}
+		pins, err := s.pinnedChannelSet(r.Context(), uid)
+		if err != nil {
+			s.writeDBError(w, "list pinned channels", err)
+			return
+		}
 		out := make([]searchChannel, len(merged.Channels))
 		err = parallel(r.Context(), merged.Channels, func(ctx context.Context, i int, c ta.Channel) error {
-			cs, err := s.enrichChannel(ctx, c, refs[c.ChannelID])
+			cs, err := s.enrichChannel(ctx, c, refs[c.ChannelID], pins[c.ChannelID])
 			if err != nil {
 				return err
 			}

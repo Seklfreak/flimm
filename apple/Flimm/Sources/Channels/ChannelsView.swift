@@ -11,8 +11,23 @@ struct ChannelsView: View {
     @State private var sort: ChannelSort = .name
     @State private var unfeededOnly = false
 
+    /// The pinned section leads the directory, but never a search or filter:
+    /// those are questions about the whole archive, not the pins.
+    private var showsPinned: Bool {
+        !app.pinnedChannels.isEmpty && searchText.isEmpty && !unfeededOnly
+    }
+
     var body: some View {
         List {
+            if showsPinned {
+                Section("Pinned") {
+                    ForEach(app.pinnedChannels) { channel in
+                        NavigationLink(value: Route.channel(channel.id)) {
+                            ChannelRow(channel: channel)
+                        }
+                    }
+                }
+            }
             if let pager {
                 if let error = pager.error, pager.items.isEmpty {
                     ErrorState(message: error) { Task { await pager.reload() } }

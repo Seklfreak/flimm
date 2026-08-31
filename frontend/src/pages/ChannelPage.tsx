@@ -2,9 +2,9 @@ import { useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { api, type PlaylistSummary } from "@/lib/api";
-import { invalidateFeedish, invalidateWatchState, useChannel, useChannelPlaylists, useChannelVideos, useMe } from "@/lib/queries";
+import { invalidateFeedish, invalidateWatchState, useChannel, useChannelPlaylists, useChannelVideos, useMe, useSetChannelPinned } from "@/lib/queries";
 import { plural, relativeDay } from "@/lib/format";
-import { Avatar, EmptyState, ErrorState, InfiniteSentinel, Segmented, Spinner } from "@/components/ui";
+import { Avatar, EmptyState, ErrorState, InfiniteSentinel, PinIcon, Segmented, Spinner } from "@/components/ui";
 import { InFeedsControl } from "@/components/InFeedsControl";
 import { VideoCard, VideoGrid } from "@/components/VideoCard";
 import { PlaylistCard } from "@/pages/PlaylistsPage";
@@ -27,6 +27,7 @@ export default function ChannelPage() {
   const qc = useQueryClient();
   const [marking, setMarking] = useState(false);
   const me = useMe();
+  const setPinned = useSetChannelPinned();
   // "requested" survives until the page is left: TubeArchivist discovers the
   // playlists in a background task, so there is nothing to await here.
   const [indexRequested, setIndexRequested] = useState(false);
@@ -67,6 +68,16 @@ export default function ChannelPage() {
           </div>
           {c && (
             <div className="flex items-center gap-2">
+              <button
+                className={`seg ${c.pinned ? "on" : ""}`}
+                aria-pressed={c.pinned}
+                aria-label={c.pinned ? "Unpin from sidebar" : "Pin to sidebar"}
+                title={c.pinned ? "Unpin from sidebar" : "Pin to sidebar"}
+                onClick={() => setPinned.mutate({ id: c.id, pinned: !c.pinned })}
+                disabled={setPinned.isPending}
+              >
+                <PinIcon />
+              </button>
               <InFeedsControl
                 feedIds={c.feeds.map((f) => f.id)}
                 onSave={async (ids) => {

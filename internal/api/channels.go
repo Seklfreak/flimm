@@ -27,14 +27,14 @@ func (s *Server) channelFeedRefs(ctx context.Context, uid uuid.UUID) (map[string
 }
 
 // enrichChannel fills counts and last upload from TA (cached there).
-func (s *Server) enrichChannel(ctx context.Context, c ta.Channel, feeds []FeedRef) (*ChannelSummary, error) {
+func (s *Server) enrichChannel(ctx context.Context, c ta.Channel, feeds []FeedRef, pinned bool) (*ChannelSummary, error) {
 	counts := s.channelAggregates(ctx, []string{c.ChannelID})
-	out := channelSummaryOf(c, feeds, counts[c.ChannelID])
+	out := channelSummaryOf(c, feeds, counts[c.ChannelID], pinned)
 	return &out, nil
 }
 
 // channelSummaryOf is the DTO for one channel and its counts.
-func channelSummaryOf(c ta.Channel, feeds []FeedRef, counts channelAggregate) ChannelSummary {
+func channelSummaryOf(c ta.Channel, feeds []FeedRef, counts channelAggregate, pinned bool) ChannelSummary {
 	if feeds == nil {
 		feeds = []FeedRef{}
 	}
@@ -47,8 +47,22 @@ func channelSummaryOf(c ta.Channel, feeds []FeedRef, counts channelAggregate) Ch
 		UnseenCount: counts.Unseen,
 		LastUpload:  counts.lastUpload(),
 		Subscribed:  c.ChannelSubscribed,
+		Pinned:      pinned,
 		Feeds:       feeds,
 	}
+}
+
+// pinnedChannelSet is which channels the user pinned, for stamping summaries.
+func (s *Server) pinnedChannelSet(ctx context.Context, uid uuid.UUID) (map[string]bool, error) {
+	rows, err := s.q.ListPinnedChannels(ctx, uid)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]bool, len(rows))
+	for _, r := range rows {
+		out[r.ChannelID] = true
+	}
+	return out, nil
 }
 
 func (s *Server) channelSummary(ctx context.Context, uid uuid.UUID, c ta.Channel) (*ChannelSummary, error) {
@@ -56,7 +70,11 @@ func (s *Server) channelSummary(ctx context.Context, uid uuid.UUID, c ta.Channel
 	if err != nil {
 		return nil, err
 	}
-	return s.enrichChannel(ctx, c, refs[c.ChannelID])
+	pins, err := s.pinnedChannelSet(ctx, uid)
+	if err != nil {
+		return nil, err
+	}
+	return s.enrichChannel(ctx, c, refs[c.ChannelID], pins[c.ChannelID])
 }
 
 func (s *Server) listChannels(w http.ResponseWriter, r *http.Request) {
@@ -70,6 +88,11 @@ func (s *Server) listChannels(w http.ResponseWriter, r *http.Request) {
 	refs, err := s.channelFeedRefs(r.Context(), uid)
 	if err != nil {
 		s.writeDBError(w, "list feed channels", err)
+		return
+	}
+	pins, err := s.pinnedChannelSet(r.Context(), uid)
+	if err != nil {
+		s.writeDBError(w, "list pinned channels", err)
 		return
 	}
 	needle := lower(q.Get("q"))
@@ -93,13 +116,13 @@ func (s *Server) listChannels(w http.ResponseWriter, r *http.Request) {
 	if !sortNeedsCounts(sort) {
 		sortChannelsByName(picked)
 		window := slicePage(picked, paging)
-		items := s.summarise(r.Context(), window.Items, refs)
+		items := s.summarise(r.Context(), window.Items, refs, pins)
 		writeJSON(w, http.StatusOK, Page[ChannelSummary]{
 			Items: items, Page: paging.Page, PageSize: paging.Size, Total: window.Total,
 		})
 		return
 	}
-	items := s.summarise(r.Context(), picked, refs)
+	items := s.summarise(r.Context(), picked, refs, pins)
 	sortChannels(items, sort)
 	writeJSON(w, http.StatusOK, slicePage(items, paging))
 }
@@ -124,7 +147,7 @@ func sortChannelsByName(channels []ta.Channel) {
 
 // summarise turns channels into summaries, reading every channel's counts in
 // one pass (see channelAggregates).
-func (s *Server) summarise(ctx context.Context, channels []ta.Channel, refs map[string][]FeedRef) []ChannelSummary {
+func (s *Server) summarise(ctx context.Context, channels []ta.Channel, refs map[string][]FeedRef, pins map[string]bool) []ChannelSummary {
 	ids := make([]string, 0, len(channels))
 	for _, c := range channels {
 		ids = append(ids, c.ChannelID)
@@ -132,7 +155,7 @@ func (s *Server) summarise(ctx context.Context, channels []ta.Channel, refs map[
 	counts := s.channelAggregates(ctx, ids)
 	items := make([]ChannelSummary, len(channels))
 	for i, c := range channels {
-		items[i] = channelSummaryOf(c, refs[c.ChannelID], counts[c.ChannelID])
+		items[i] = channelSummaryOf(c, refs[c.ChannelID], counts[c.ChannelID], pins[c.ChannelID])
 	}
 	return items
 }
@@ -220,6 +243,72 @@ func (s *Server) listChannelPlaylists(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+// listPinnedChannels is the sidebar's pinned-channel list: pin order, and a
+// channel deleted in TubeArchivist simply drops out rather than failing the
+// request (the same contract as pinned playlists).
+func (s *Server) listPinnedChannels(w http.ResponseWriter, r *http.Request) {
+	uid := currentUserID(r.Context())
+	rows, err := s.q.ListPinnedChannels(r.Context(), uid)
+	if err != nil {
+		s.writeDBError(w, "list pinned channels", err)
+		return
+	}
+	all, err := s.ta.ListChannels(r.Context())
+	if err != nil {
+		s.writeTAError(w, "list channels", err)
+		return
+	}
+	byID := make(map[string]ta.Channel, len(all))
+	for _, c := range all {
+		byID[c.ChannelID] = c
+	}
+	refs, err := s.channelFeedRefs(r.Context(), uid)
+	if err != nil {
+		s.writeDBError(w, "list feed channels", err)
+		return
+	}
+	var picked []ta.Channel
+	for _, row := range rows {
+		if c, ok := byID[row.ChannelID]; ok {
+			picked = append(picked, c)
+		}
+	}
+	pins := make(map[string]bool, len(picked))
+	for _, c := range picked {
+		pins[c.ChannelID] = true
+	}
+	writeJSON(w, http.StatusOK, s.summarise(r.Context(), picked, refs, pins))
+}
+
+// setChannelPinned mirrors the playlist pin: per-user sidebar state. Pinning
+// a channel TA does not know is refused, so the sidebar cannot accumulate
+// references that never resolve.
+func (s *Server) setChannelPinned(w http.ResponseWriter, r *http.Request) {
+	uid := currentUserID(r.Context())
+	id := chi.URLParam(r, "id")
+	var req struct {
+		Pinned *bool `json:"pinned"`
+	}
+	if err := decodeBody(r, &req); err != nil || req.Pinned == nil {
+		writeError(w, http.StatusBadRequest, "pinned is required")
+		return
+	}
+	if *req.Pinned {
+		if _, err := s.ta.GetChannel(r.Context(), id); err != nil {
+			s.writeTAError(w, "get channel", err)
+			return
+		}
+		if err := s.q.PinChannel(r.Context(), sqlc.PinChannelParams{UserID: uid, ChannelID: id}); err != nil {
+			s.writeDBError(w, "pin channel", err)
+			return
+		}
+	} else if err := s.q.UnpinChannel(r.Context(), sqlc.UnpinChannelParams{UserID: uid, ChannelID: id}); err != nil {
+		s.writeDBError(w, "unpin channel", err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // indexChannelPlaylists asks TubeArchivist to index the channel's own

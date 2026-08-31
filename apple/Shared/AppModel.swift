@@ -20,6 +20,7 @@ final class AppModel {
     private(set) var me: Me?
     private(set) var feeds: [Feed] = []
     private(set) var pinnedPlaylists: [PlaylistSummary] = []
+    private(set) var pinnedChannels: [ChannelSummary] = []
     /// Set when the first load failed; screens show it with a Retry.
     private(set) var loadError: String?
     private(set) var isLoading = false
@@ -48,11 +49,13 @@ final class AppModel {
         async let account = client.me()
         async let feedList = client.feeds()
         async let pinned = client.pinnedPlaylists()
+        async let pinnedChans = client.pinnedChannels()
         do {
-            let (loadedMe, loadedFeeds, loadedPinned) = try await (account, feedList, pinned)
+            let (loadedMe, loadedFeeds, loadedPinned, loadedChannels) = try await (account, feedList, pinned, pinnedChans)
             me = loadedMe
             feeds = loadedFeeds
             pinnedPlaylists = loadedPinned
+            pinnedChannels = loadedChannels
             loadError = nil
         } catch {
             // A dropped request is not a reason to lose what we already have.
@@ -68,6 +71,11 @@ final class AppModel {
     func refreshPinnedPlaylists() async {
         guard let loaded = try? await client.pinnedPlaylists() else { return }
         pinnedPlaylists = loaded
+    }
+
+    func refreshPinnedChannels() async {
+        guard let loaded = try? await client.pinnedChannels() else { return }
+        pinnedChannels = loaded
     }
 
     /// A single video's watched *or dismissed* state just changed — an

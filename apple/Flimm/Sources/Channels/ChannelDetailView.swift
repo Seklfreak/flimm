@@ -77,6 +77,10 @@ struct ChannelDetailView: View {
     private var toolbar: some ToolbarContent {
         ToolbarItem(placement: .topBarTrailing) {
             Menu {
+                Toggle("Pinned", isOn: Binding(
+                    get: { channel?.summary.pinned ?? false },
+                    set: { value in Task { await setPinned(value) } }
+                ))
                 Button {
                     showFeedPicker = true
                 } label: {
@@ -220,6 +224,12 @@ struct ChannelDetailView: View {
         app.pagers.insert(next, for: key)
         pager = next
         await next.reload()
+    }
+
+    private func setPinned(_ value: Bool) async {
+        try? await app.client.setChannelPinned(channelId, pinned: value)
+        await app.refreshPinnedChannels()
+        await load()
     }
 
     private func markSeen() async {

@@ -288,6 +288,21 @@ export function usePinnedPlaylists() {
   return useQuery({ queryKey: keys.pinnedPlaylists, queryFn: api.pinnedPlaylists, staleTime: 30_000 });
 }
 
+export function usePinnedChannels() {
+  return useQuery({ queryKey: ["channels", "pinned"], queryFn: api.pinnedChannels, staleTime: 30_000 });
+}
+
+export function useSetChannelPinned() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, pinned }: { id: string; pinned: boolean }) => api.setChannelPinned(id, pinned),
+    onSuccess: (_d, v) => {
+      void qc.invalidateQueries({ queryKey: ["channels"] });
+      void qc.invalidateQueries({ queryKey: keys.channel(v.id) });
+    },
+  });
+}
+
 export function useSetPlaylistPinned() {
   const qc = useQueryClient();
   return useMutation({

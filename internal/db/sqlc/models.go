@@ -49,6 +49,13 @@ type FeedPlaylist struct {
 	Position   int32     `json:"position"`
 }
 
+type PinnedChannel struct {
+	UserID    uuid.UUID          `json:"user_id"`
+	ChannelID string             `json:"channel_id"`
+	Position  int32              `json:"position"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
 type PlaylistSetting struct {
 	UserID     uuid.UUID          `json:"user_id"`
 	PlaylistID string             `json:"playlist_id"`

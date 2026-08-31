@@ -194,7 +194,9 @@ type ChannelSummary struct {
 	UnseenCount int        `json:"unseen_count"`
 	LastUpload  *time.Time `json:"last_upload"`
 	Subscribed  bool       `json:"subscribed"`
-	Feeds       []FeedRef  `json:"feeds"`
+	// Pinned to the sidebar — Flimm's own per-user state, like a playlist pin.
+	Pinned bool      `json:"pinned"`
+	Feeds  []FeedRef `json:"feeds"`
 }
 
 type ChannelDetail struct {

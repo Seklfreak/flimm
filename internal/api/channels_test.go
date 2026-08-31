@@ -8,7 +8,9 @@ import (
 	"testing"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
 
+	"github.com/Seklfreak/flimm/internal/db/sqlc"
 	"github.com/Seklfreak/flimm/internal/ta"
 )
 
@@ -47,5 +49,73 @@ func TestIndexChannelPlaylistsIsAdminOnly(t *testing.T) {
 	// A channel TA does not know propagates as 404.
 	if rec := do(t, s.Router(), http.MethodPost, "/api/v1/channels/nope/index-playlists", ""); rec.Code != http.StatusNotFound {
 		t.Errorf("unknown channel = %d, want 404", rec.Code)
+	}
+}
+
+// Channel pins mirror playlist pins: per-user sidebar state, pin order, and a
+// channel TubeArchivist no longer knows simply drops out of the list.
+func TestPinAndUnpinChannel(t *testing.T) {
+	client := ta.NewFake()
+	client.Channels["UC1"] = &ta.Channel{ChannelID: "UC1", ChannelName: "One"}
+	client.Channels["UC2"] = &ta.Channel{ChannelID: "UC2", ChannelName: "Two"}
+
+	es := newEventStore()
+	q := es.querier()
+	var pins []sqlc.PinnedChannel
+	q.ListPinnedChannelsFn = func(context.Context, uuid.UUID) ([]sqlc.PinnedChannel, error) { return pins, nil }
+	q.PinChannelFn = func(_ context.Context, arg sqlc.PinChannelParams) error {
+		for _, p := range pins {
+			if p.ChannelID == arg.ChannelID {
+				return nil
+			}
+		}
+		pins = append(pins, sqlc.PinnedChannel{UserID: arg.UserID, ChannelID: arg.ChannelID, Position: int32(len(pins))}) //nolint:gosec // test fixture
+		return nil
+	}
+	q.UnpinChannelFn = func(_ context.Context, arg sqlc.UnpinChannelParams) error {
+		kept := pins[:0]
+		for _, p := range pins {
+			if p.ChannelID != arg.ChannelID {
+				kept = append(kept, p)
+			}
+		}
+		pins = kept
+		return nil
+	}
+	h := newTestServer(client, q).Router()
+
+	// Pinning an unknown channel is refused.
+	if rec := do(t, h, http.MethodPut, "/api/v1/channels/nope/pinned", `{"pinned":true}`); rec.Code != http.StatusNotFound {
+		t.Errorf("unknown channel pin = %d, want 404", rec.Code)
+	}
+
+	for _, id := range []string{"UC1", "UC2", "UC1"} { // re-pin is idempotent
+		if rec := do(t, h, http.MethodPut, "/api/v1/channels/"+id+"/pinned", `{"pinned":true}`); rec.Code != http.StatusNoContent {
+			t.Fatalf("pin %s = %d: %s", id, rec.Code, rec.Body.String())
+		}
+	}
+	got := decode[[]ChannelSummary](t, do(t, h, http.MethodGet, "/api/v1/channels/pinned", ""))
+	if len(got) != 2 || got[0].ID != "UC1" || got[1].ID != "UC2" || !got[0].Pinned {
+		t.Fatalf("pinned = %+v, want UC1 then UC2, both pinned", got)
+	}
+
+	// The flag rides the directory and the channel page too.
+	detail := decode[ChannelSummary](t, do(t, h, http.MethodGet, "/api/v1/channels/UC1", ""))
+	if !detail.Pinned {
+		t.Error("channel detail does not report the pin")
+	}
+
+	// A channel deleted in TA drops out instead of failing the request.
+	delete(client.Channels, "UC2")
+	got = decode[[]ChannelSummary](t, do(t, h, http.MethodGet, "/api/v1/channels/pinned", ""))
+	if len(got) != 1 || got[0].ID != "UC1" {
+		t.Errorf("after TA delete = %+v, want only UC1", got)
+	}
+
+	if rec := do(t, h, http.MethodPut, "/api/v1/channels/UC1/pinned", `{"pinned":false}`); rec.Code != http.StatusNoContent {
+		t.Fatalf("unpin = %d", rec.Code)
+	}
+	if got := decode[[]ChannelSummary](t, do(t, h, http.MethodGet, "/api/v1/channels/pinned", "")); len(got) != 0 {
+		t.Errorf("still pinned after unpin: %+v", got)
 	}
 }

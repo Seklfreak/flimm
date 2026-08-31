@@ -46,6 +46,9 @@ type FakeQuerier struct {
 	ListFeedsFn                   func(context.Context, uuid.UUID) ([]sqlc.Feed, error)
 	ListHistoryFn                 func(context.Context, sqlc.ListHistoryParams) ([]sqlc.WatchEvent, error)
 	ListInProgressFn              func(context.Context, sqlc.ListInProgressParams) ([]sqlc.WatchEvent, error)
+	ListPinnedChannelsFn          func(context.Context, uuid.UUID) ([]sqlc.PinnedChannel, error)
+	PinChannelFn                  func(context.Context, sqlc.PinChannelParams) error
+	UnpinChannelFn                func(context.Context, sqlc.UnpinChannelParams) error
 	ListPinnedPlaylistsFn         func(context.Context, uuid.UUID) ([]sqlc.PlaylistSetting, error)
 	ListPlaylistSettingsFn        func(context.Context, uuid.UUID) ([]sqlc.PlaylistSetting, error)
 	ListWatchEventsForVideosFn    func(context.Context, sqlc.ListWatchEventsForVideosParams) ([]sqlc.WatchEvent, error)
@@ -259,6 +262,18 @@ func (f *FakeQuerier) UpsertProgress(ctx context.Context, arg sqlc.UpsertProgres
 
 func (f *FakeQuerier) UpsertUser(ctx context.Context, arg sqlc.UpsertUserParams) (sqlc.User, error) {
 	return f.UpsertUserFn(ctx, arg)
+}
+
+func (f *FakeQuerier) ListPinnedChannels(ctx context.Context, userID uuid.UUID) ([]sqlc.PinnedChannel, error) {
+	return f.ListPinnedChannelsFn(ctx, userID)
+}
+
+func (f *FakeQuerier) PinChannel(ctx context.Context, arg sqlc.PinChannelParams) error {
+	return f.PinChannelFn(ctx, arg)
+}
+
+func (f *FakeQuerier) UnpinChannel(ctx context.Context, arg sqlc.UnpinChannelParams) error {
+	return f.UnpinChannelFn(ctx, arg)
 }
 
 func (f *FakeQuerier) ListPinnedPlaylists(ctx context.Context, userID uuid.UUID) ([]sqlc.PlaylistSetting, error) {

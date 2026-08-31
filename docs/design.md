@@ -41,7 +41,10 @@ browsing and are separate from the channel directory:
 upload), see which feeds each channel is in, and spot channels that are in no
 feed. Any channel name on a card links to its channel page, which lists all its
 videos and playlists and has an *In feeds: …* control to add or remove it from
-feeds without leaving the page.
+feeds without leaving the page. A channel can be **pinned**, exactly like a
+playlist: it joins the sidebar (web) or a *Pinned* section leading the
+directory (iPhone, iPad, Apple TV), with its unseen count, and unpinning never
+touches anything but the pin.
 
 ## Player, resume and seen state
 

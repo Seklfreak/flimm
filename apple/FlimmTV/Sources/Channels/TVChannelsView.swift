@@ -26,6 +26,9 @@ struct TVChannelsView: View {
                     .fixedSize()
                 }
                 .padding(.top, 20)
+                if !app.pinnedChannels.isEmpty {
+                    pinnedSection
+                }
                 content
             }
             .padding(.horizontal, TVMetrics.margin)
@@ -33,6 +36,19 @@ struct TVChannelsView: View {
         }
         .onAppear { Analytics.screen(.channels) }
         .task(id: sort) { await reload() }
+    }
+
+    private var pinnedSection: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Pinned")
+                .font(.title3.weight(.semibold))
+                .foregroundStyle(.secondary)
+            LazyVGrid(columns: TVGrids.tiles, alignment: .leading, spacing: TVMetrics.gridSpacing) {
+                ForEach(app.pinnedChannels) { channel in
+                    TVChannelCard(channel: channel)
+                }
+            }
+        }
     }
 
     @ViewBuilder

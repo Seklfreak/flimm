@@ -1,11 +1,11 @@
 import { formatCount, remainingUnseen } from "../lib/format";
 import { useEffect, useState } from "react";
 import { Link, NavLink, Outlet, useLocation, useNavigate, useParams } from "react-router";
-import { EVERYTHING_ID, type Feed, type HistoryEntry, type PlaylistSummary } from "@/lib/api";
+import { EVERYTHING_ID, type ChannelSummary, type Feed, type HistoryEntry, type PlaylistSummary } from "@/lib/api";
 import { useConfig } from "@/lib/config";
-import { pinnedFeed, useFeeds, useInProgress, usePinnedPlaylists, useRemoveHistoryEntry } from "@/lib/queries";
+import { pinnedFeed, useFeeds, useInProgress, usePinnedChannels, usePinnedPlaylists, useRemoveHistoryEntry } from "@/lib/queries";
 import { fmtDuration, plural } from "@/lib/format";
-import { SearchIcon, Sheet } from "./ui";
+import { Avatar, SearchIcon, Sheet } from "./ui";
 import { Thumb, watchHref } from "./VideoCard";
 
 // Sidebar (≥ md) with feeds + library nav, per the Main artboard; bottom tab
@@ -39,6 +39,7 @@ const CONTINUE_LIMIT = 5;
 function Sidebar() {
   const feeds = useFeeds();
   const pinnedPlaylists = usePinnedPlaylists();
+  const pinnedChannels = usePinnedChannels();
   const inProgress = useInProgress();
   const removeEntry = useRemoveHistoryEntry();
   const config = useConfig();
@@ -48,6 +49,8 @@ function Sidebar() {
   const activeFeedId = pathname.startsWith("/feeds/") ? params.id : pathname === "/" ? pinned?.id : undefined;
   const activePlaylistId = pathname.startsWith("/playlists/") ? params.id : undefined;
   const playlists = pinnedPlaylists.data ?? [];
+  const channels = pinnedChannels.data ?? [];
+  const activeChannelId = pathname.startsWith("/channels/") ? params.id : undefined;
 
   return (
     <aside className="sticky top-0 hidden h-dvh w-[264px] flex-none flex-col gap-[26px] overflow-y-auto border-r border-hair px-5 py-8 md:flex">
@@ -71,6 +74,16 @@ function Sidebar() {
           <FeedNavItem key={f.id} feed={f} active={f.id === activeFeedId} />
         ))}
       </div>
+      {channels.length > 0 && (
+        <div className="flex flex-col gap-1">
+          <div className="sec px-2.5 pb-1">
+            <span>Channels</span>
+          </div>
+          {channels.map((c) => (
+            <ChannelNavItem key={c.id} channel={c} active={c.id === activeChannelId} />
+          ))}
+        </div>
+      )}
       {playlists.length > 0 && (
         <div className="flex flex-col gap-1">
           <div className="sec px-2.5 pb-1">
@@ -147,6 +160,21 @@ function ContinueItem({ entry, onRemove }: { entry: HistoryEntry; onRemove: () =
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M6 6l12 12M18 6L6 18" /></svg>
       </button>
     </div>
+  );
+}
+
+function ChannelNavItem({ channel, active }: { channel: ChannelSummary; active: boolean }) {
+  return (
+    <Link
+      to={`/channels/${channel.id}`}
+      className={`flex items-center justify-between rounded-[10px] px-2.5 py-[9px] text-[14px] font-bold text-ink no-underline hover:text-ink ${active ? "bg-raised" : "hover:bg-raised/60"}`}
+    >
+      <span className="flex min-w-0 items-center gap-2.5">
+        <Avatar src={channel.thumb_url} name={channel.name} size={22} />
+        <span className="truncate">{channel.name}</span>
+      </span>
+      <UnseenBadge n={channel.unseen_count} />
+    </Link>
   );
 }
 

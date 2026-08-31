@@ -238,6 +238,8 @@ export interface ChannelSummary {
   unseen_count: number;
   last_upload: string | null;
   subscribed: boolean;
+  /** Pinned to the sidebar — per-user state, like a playlist pin. */
+  pinned: boolean;
   feeds: FeedRef[];
 }
 
@@ -481,6 +483,9 @@ export const api = {
   channelVideos: (id: string, view: "all" | "unseen", at: PageAt) =>
     req<Page<VideoSummary>>(`/channels/${id}/videos${qs({ view, ...pageAt(at) })}`),
   channelPlaylists: (id: string) => req<PlaylistSummary[]>(`/channels/${id}/playlists`),
+  pinnedChannels: () => req<ChannelSummary[]>("/channels/pinned"),
+  setChannelPinned: (id: string, pinned: boolean) =>
+    req<void>(`/channels/${id}/pinned`, json("PUT", { pinned })),
   setChannelFeeds: (id: string, feed_ids: string[]) =>
     req<void>(`/channels/${id}/feeds`, json("PUT", { feed_ids })),
   markChannelSeen: (id: string) => req<void>(`/channels/${id}/mark-seen`, { method: "POST" }),

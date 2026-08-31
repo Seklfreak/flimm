@@ -259,7 +259,9 @@ func (s *Server) Router() http.Handler {
 			r.Post("/feeds/{id}/mark-seen", s.markFeedSeen)
 
 			r.Get("/channels", s.listChannels)
+			r.Get("/channels/pinned", s.listPinnedChannels)
 			r.Get("/channels/{id}", s.getChannel)
+			r.Put("/channels/{id}/pinned", s.setChannelPinned)
 			r.Get("/channels/{id}/videos", s.listChannelVideos)
 			r.Get("/channels/{id}/playlists", s.listChannelPlaylists)
 			r.Put("/channels/{id}/feeds", s.setChannelFeeds)

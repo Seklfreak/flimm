@@ -51,12 +51,15 @@ type Querier interface {
 	ListHistory(ctx context.Context, arg ListHistoryParams) ([]WatchEvent, error)
 	// "Continue watching": started, not finished, newest activity first.
 	ListInProgress(ctx context.Context, arg ListInProgressParams) ([]WatchEvent, error)
+	ListPinnedChannels(ctx context.Context, userID uuid.UUID) ([]PinnedChannel, error)
 	ListPinnedPlaylists(ctx context.Context, userID uuid.UUID) ([]PlaylistSetting, error)
 	ListPlaylistSettings(ctx context.Context, userID uuid.UUID) ([]PlaylistSetting, error)
 	ListWatchEventsForVideos(ctx context.Context, arg ListWatchEventsForVideosParams) ([]WatchEvent, error)
 	NextFeedChannelPosition(ctx context.Context, feedID uuid.UUID) (int32, error)
 	NextFeedPlaylistPosition(ctx context.Context, feedID uuid.UUID) (int32, error)
 	NextFeedPosition(ctx context.Context, userID uuid.UUID) (int32, error)
+	// Appends to the end of the user's pins; re-pinning keeps the position.
+	PinChannel(ctx context.Context, arg PinChannelParams) error
 	// A row with nothing set is noise; drop it so the table only holds intent.
 	PruneEmptyPlaylistSettings(ctx context.Context, userID uuid.UUID) error
 	// "Start over": position back to 0, completion untouched.
@@ -71,6 +74,7 @@ type Querier interface {
 	// from a list doesn't reorder history.
 	SetWatched(ctx context.Context, arg SetWatchedParams) (WatchEvent, error)
 	UndismissVideo(ctx context.Context, arg UndismissVideoParams) error
+	UnpinChannel(ctx context.Context, arg UnpinChannelParams) error
 	UnpinFeeds(ctx context.Context, userID uuid.UUID) error
 	UpdateFeed(ctx context.Context, arg UpdateFeedParams) (Feed, error)
 	UpsertCached(ctx context.Context, arg UpsertCachedParams) error

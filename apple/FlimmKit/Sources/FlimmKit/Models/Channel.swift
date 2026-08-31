@@ -20,6 +20,8 @@ public struct ChannelSummary: Codable, Sendable, Hashable, Identifiable {
     public let unseenCount: Int
     public let lastUpload: Date?
     public let subscribed: Bool
+    /// Pinned to the sidebar — Flimm's own per-user state, like a playlist pin.
+    public let pinned: Bool
     /// The feeds this channel is in — backs the "In feeds:" control.
     public let feeds: [FeedRef]
 
@@ -32,6 +34,7 @@ public struct ChannelSummary: Codable, Sendable, Hashable, Identifiable {
         unseenCount: Int = 0,
         lastUpload: Date? = nil,
         subscribed: Bool = true,
+        pinned: Bool = false,
         feeds: [FeedRef] = []
     ) {
         self.id = id
@@ -42,6 +45,7 @@ public struct ChannelSummary: Codable, Sendable, Hashable, Identifiable {
         self.unseenCount = unseenCount
         self.lastUpload = lastUpload
         self.subscribed = subscribed
+        self.pinned = pinned
         self.feeds = feeds
     }
 
@@ -55,6 +59,7 @@ public struct ChannelSummary: Codable, Sendable, Hashable, Identifiable {
         unseenCount = try c.decode(.unseenCount, or: 0)
         lastUpload = try c.decodeIfPresent(Date.self, forKey: .lastUpload)
         subscribed = try c.decode(.subscribed, or: true)
+        pinned = try c.decode(.pinned, or: false)
         feeds = try c.decode(.feeds, or: [])
     }
 }

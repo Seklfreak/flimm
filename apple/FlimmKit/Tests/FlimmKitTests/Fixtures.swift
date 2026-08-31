@@ -48,6 +48,7 @@ enum Fixtures {
       "video_count": 212, "unseen_count": 3,
       "last_upload": "2026-08-25T00:00:00Z",
       "subscribed": true,
+      "pinned": true,
       "feeds": [ { "id": "feed-1", "name": "Home" } ]
     }
     """

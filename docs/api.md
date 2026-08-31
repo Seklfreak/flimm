@@ -241,9 +241,15 @@ video differ.
   "video_count": 212, "unseen_count": 3,
   "last_upload": "2026-08-25T00:00:00Z",
   "subscribed": true,
+  "pinned": false,                     // shown in the client's sidebar
   "feeds": [ { "id": "…", "name": "Home" } ]
 }
 ```
+
+Channel pins work exactly like playlist pins (see "Pinned playlists"): Flimm's
+own per-user state, appended to the end of the pin order, and a pinned channel
+that is later deleted in TubeArchivist simply drops out of
+`GET /channels/pinned`.
 
 ### Feed
 ```json
@@ -434,6 +440,8 @@ its default — send the whole map back, which is what the settings screens do.
 | Method | Path | Notes |
 |---|---|---|
 | GET | `/channels` | query `q`, `sort=name\|videos\|unseen\|last_upload`, `unfeeded=true`; paged ChannelSummary |
+| GET | `/channels/pinned` | ChannelSummary[] the user pinned to the sidebar, in pin order; unpaged |
+| PUT | `/channels/{id}/pinned` | `{ "pinned": true\|false }` → 204. Pinning appends to the end; 404 for a channel TA does not know |
 | GET | `/channels/{id}` | ChannelSummary + `description` |
 | GET | `/channels/{id}/videos` | `view=all\|unseen`, `sort`, paged |
 | GET | `/channels/{id}/playlists` | PlaylistSummary[] |

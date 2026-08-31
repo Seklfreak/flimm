@@ -91,6 +91,17 @@ extension APIClient {
         try await get("/channels/\(esc(id))/playlists")
     }
 
+    /// Unpaged, in pin order. Only channels that still resolve in
+    /// TubeArchivist come back, so a stale pin can never wedge the sidebar.
+    public func pinnedChannels() async throws -> [ChannelSummary] {
+        try await get("/channels/pinned")
+    }
+
+    /// Pinning appends to the end of the pin order.
+    public func setChannelPinned(_ id: String, pinned: Bool) async throws {
+        try await discard(.put, "/channels/\(esc(id))/pinned", body: PinnedBody(pinned: pinned))
+    }
+
     /// The "In feeds:" control — replaces the channel's feed membership.
     public func setChannelFeeds(_ id: String, feedIds: [String]) async throws {
         try await discard(.put, "/channels/\(esc(id))/feeds", body: FeedIDList(feedIds: feedIds))

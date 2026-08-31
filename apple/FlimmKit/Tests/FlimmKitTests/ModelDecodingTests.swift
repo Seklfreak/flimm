@@ -234,6 +234,7 @@ final class ModelDecodingTests: XCTestCase {
 
     func testChannelSummaryAndDetail() throws {
         let summary = try decode(ChannelSummary.self, Fixtures.channelSummary)
+        XCTAssertTrue(summary.pinned)
         XCTAssertEqual(summary.unseenCount, 3)
         XCTAssertEqual(summary.feeds.first, FeedRef(id: "feed-1", name: "Home"))
 
