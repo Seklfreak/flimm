@@ -4,7 +4,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { invalidateFeedish, usePlaylist, useSetPlaylistMusic, useSetPlaylistPinned, useSetWatched } from "@/lib/queries";
 import { ccLabel, fmtDuration, fmtDurationLong, plural, relativeDay } from "@/lib/format";
-import { CheckIcon, EmptyState, ErrorState, HeadphonesIcon, PinIcon, Spinner } from "@/components/ui";
+import { CheckIcon, EmptyState, ErrorState, HeadphonesIcon, LoadingState, PinIcon } from "@/components/ui";
 import { InFeedsControl } from "@/components/InFeedsControl";
 import { VideoRow } from "@/components/VideoRow";
 import { watchHref } from "@/components/VideoCard";
@@ -32,7 +32,7 @@ export default function PlaylistPage() {
   }, [p, unseenOnly]);
 
   if (playlist.isError) return <ErrorState message={playlist.error.message} retry={() => playlist.refetch()} />;
-  if (!p) return <div className="p-10"><Spinner label="Loading playlist…" /></div>;
+  if (!p) return <LoadingState label="Loading playlist…" />;
 
   const isCustom = p.kind === "custom";
   // Every link this page produces to the player carries the playlist's

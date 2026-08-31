@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, EVERYTHING_ID } from "@/lib/api";
 import { invalidateWatchState, keys, useChapters, useComments, useFeeds, usePrefs, usePreviousInContext, useSetWatched, useUpdatePrefs, useUpNext, useVideo } from "@/lib/queries";
 import { compactCount, fmtDuration, plural, relativeDay } from "@/lib/format";
-import { Avatar, CheckIcon, ErrorState, Spinner, ThumbIcon } from "@/components/ui";
+import { Avatar, CheckIcon, ErrorState, LoadingState, ThumbIcon } from "@/components/ui";
 import { watchHref } from "@/components/VideoCard";
 import { Player, SUBTITLE_OFF, langName, pickTrack, type PlayerHandle } from "@/player/Player";
 import { playbackEnd } from "@/player/playbackEnd";
@@ -105,7 +105,7 @@ export default function WatchPage() {
   }, [prefs?.autoplay, next, playNext]);
 
   if (video.isError) return <ErrorState message={video.error.message} retry={() => video.refetch()} />;
-  if (!v || !prefs) return <div className="p-10"><Spinner label="Loading video…" /></div>;
+  if (!v || !prefs) return <LoadingState label="Loading video…" />;
 
   const contextName = ctx.feed
     ? feeds.data?.find((f) => f.id === ctx.feed)?.name
