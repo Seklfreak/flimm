@@ -23,6 +23,11 @@ type FakeQuerier struct {
 	DismissVideoFn               func(context.Context, sqlc.DismissVideoParams) error
 	UndismissVideoFn             func(context.Context, sqlc.UndismissVideoParams) error
 	ListDismissedForVideosFn     func(context.Context, sqlc.ListDismissedForVideosParams) ([]string, error)
+	WatchTotalsFn                func(context.Context, sqlc.WatchTotalsParams) (sqlc.WatchTotalsRow, error)
+	WatchTopChannelsFn           func(context.Context, sqlc.WatchTopChannelsParams) ([]sqlc.WatchTopChannelsRow, error)
+	WatchByHourFn                func(context.Context, sqlc.WatchByHourParams) ([]sqlc.WatchByHourRow, error)
+	WatchByWeekdayFn             func(context.Context, sqlc.WatchByWeekdayParams) ([]sqlc.WatchByWeekdayRow, error)
+	WatchByMonthFn               func(context.Context, sqlc.WatchByMonthParams) ([]sqlc.WatchByMonthRow, error)
 	GetFeedFn                    func(context.Context, sqlc.GetFeedParams) (sqlc.Feed, error)
 	GetPrefsFn                   func(context.Context, uuid.UUID) ([]byte, error)
 	GetUserFn                    func(context.Context, uuid.UUID) (sqlc.User, error)
@@ -105,6 +110,26 @@ func (f *FakeQuerier) ListFeedChannelsForUser(ctx context.Context, userID uuid.U
 
 func (f *FakeQuerier) ListFeeds(ctx context.Context, userID uuid.UUID) ([]sqlc.Feed, error) {
 	return f.ListFeedsFn(ctx, userID)
+}
+
+func (f *FakeQuerier) WatchTotals(ctx context.Context, arg sqlc.WatchTotalsParams) (sqlc.WatchTotalsRow, error) {
+	return f.WatchTotalsFn(ctx, arg)
+}
+
+func (f *FakeQuerier) WatchTopChannels(ctx context.Context, arg sqlc.WatchTopChannelsParams) ([]sqlc.WatchTopChannelsRow, error) {
+	return f.WatchTopChannelsFn(ctx, arg)
+}
+
+func (f *FakeQuerier) WatchByHour(ctx context.Context, arg sqlc.WatchByHourParams) ([]sqlc.WatchByHourRow, error) {
+	return f.WatchByHourFn(ctx, arg)
+}
+
+func (f *FakeQuerier) WatchByWeekday(ctx context.Context, arg sqlc.WatchByWeekdayParams) ([]sqlc.WatchByWeekdayRow, error) {
+	return f.WatchByWeekdayFn(ctx, arg)
+}
+
+func (f *FakeQuerier) WatchByMonth(ctx context.Context, arg sqlc.WatchByMonthParams) ([]sqlc.WatchByMonthRow, error) {
+	return f.WatchByMonthFn(ctx, arg)
 }
 
 func (f *FakeQuerier) ListHistory(ctx context.Context, arg sqlc.ListHistoryParams) ([]sqlc.WatchEvent, error) {

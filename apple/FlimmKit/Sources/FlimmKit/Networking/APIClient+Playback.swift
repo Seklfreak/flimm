@@ -181,6 +181,21 @@ extension APIClient {
         return try await get("/history", query: query.items)
     }
 
+    /// What the viewer's history adds up to.
+    ///
+    /// The zone travels with the request because an hour-of-day breakdown
+    /// computed anywhere else is wrong: a video started at 11pm belongs to that
+    /// evening, not to whatever the server's clock says.
+    public func stats(
+        range: StatsRange = .all,
+        zone: TimeZone = .current
+    ) async throws -> WatchStats {
+        var query = QueryBuilder()
+        if range != .all { query.add("range", range.rawValue) }
+        query.add("tz", zone.identifier)
+        return try await get("/stats", query: query.items)
+    }
+
     /// Hides the entry. Watch state is unchanged, so the video stays seen.
     public func deleteHistoryEntry(_ entryId: String) async throws {
         try await discard(.delete, "/history/\(esc(entryId))")

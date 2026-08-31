@@ -15,6 +15,8 @@ struct TVSettingsView: View {
     @Environment(PlaybackSettings.self) private var playback
 
     @State private var confirmSignOut = false
+    /// Loaded once when the section appears; see `statsSection`.
+    @State private var stats: WatchStats?
     @State private var isPublishing = false
     @State private var publishResult: String?
     @State private var confirmChangeServer = false
@@ -110,6 +112,7 @@ struct TVSettingsView: View {
             qualitySection
             subtitleSection
             everythingSection
+            statsSection
             librarySection
             accountSection
         }
@@ -258,6 +261,40 @@ struct TVSettingsView: View {
                 .foregroundStyle(.secondary)
         } header: {
             sectionHeader("“Everything” feed")
+        }
+    }
+
+    /// The headline numbers only. The phone and the web draw the charts; a
+    /// remote has nothing to hover and nothing to tap on a bar, so the TV shows
+    /// what can be read from the sofa and says where the rest is.
+    private var statsSection: some View {
+        Section {
+            if let stats, stats.started > 0 {
+                LabeledContent("Watched", value: Fmt.durationLong(stats.seconds))
+                LabeledContent("Videos started", value: Fmt.compact(stats.started))
+                LabeledContent("Finished", value: Fmt.compact(stats.finished))
+                if let rate = stats.finishRate {
+                    LabeledContent("Finish rate", value: "\(Int((rate * 100).rounded()))%")
+                }
+                ForEach(stats.topChannels.prefix(3)) { channel in
+                    LabeledContent(channel.name, value: Fmt.durationLong(channel.seconds))
+                }
+                note("""
+                “Watched” is the furthest point reached in each video, added up: a finished video counts in full, \
+                an abandoned one counts where it stopped, and watching something twice counts once. The charts are \
+                on your phone, iPad or the web.
+                """)
+            } else if stats != nil {
+                Label("Nothing watched yet", systemImage: "chart.bar").foregroundStyle(.secondary)
+            } else {
+                ProgressView()
+            }
+        } header: {
+            sectionHeader("Stats")
+        }
+        .task {
+            guard stats == nil else { return }
+            stats = try? await app.client.stats()
         }
     }
 

@@ -76,6 +76,20 @@ type Querier interface {
 	// Called on every authenticated request from the JWT's sub/email/name. The sub
 	// is the stable identity; email/name are refreshed and last_seen_at bumped.
 	UpsertUser(ctx context.Context, arg UpsertUserParams) (User, error)
+	// When videos are *started*, in the viewer's own timezone — the caller passes
+	// the zone because the server's is nobody's business.
+	WatchByHour(ctx context.Context, arg WatchByHourParams) ([]WatchByHourRow, error)
+	// The last `months` calendar months of activity, oldest first.
+	WatchByMonth(ctx context.Context, arg WatchByMonthParams) ([]WatchByMonthRow, error)
+	WatchByWeekday(ctx context.Context, arg WatchByWeekdayParams) ([]WatchByWeekdayRow, error)
+	WatchTopChannels(ctx context.Context, arg WatchTopChannelsParams) ([]WatchTopChannelsRow, error)
+	// Stats: what a viewer's watch history adds up to.
+	//
+	// One row per (user, video), so "seconds" is the furthest point reached in
+	// each video — a finished video counts its whole duration, an abandoned one
+	// counts where it stopped, and neither counts a rewatch. It is what the table
+	// can honestly answer; see docs/api.md "Watch stats".
+	WatchTotals(ctx context.Context, arg WatchTotalsParams) (WatchTotalsRow, error)
 }
 
 var _ Querier = (*Queries)(nil)

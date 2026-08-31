@@ -75,6 +75,14 @@ struct HistoryView: View {
         .onAppear { Analytics.screen(.history) }
         .searchable(text: $searchText, isPresented: nav.searchPresented(for: .history), prompt: "Search history")
         .toolbar {
+            // Stats live behind History because they are the same data read a
+            // different way; the web client puts them next to it for the same
+            // reason.
+            ToolbarItem(placement: .topBarTrailing) {
+                NavigationLink(value: Route.stats) {
+                    Label("Stats", systemImage: "chart.bar")
+                }
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 Picker("Filter", selection: $filter) {
                     Text("All").tag(HistoryFilter.all)

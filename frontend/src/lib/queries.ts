@@ -5,7 +5,7 @@ import {
   useQueryClient,
   type QueryClient,
 } from "@tanstack/react-query";
-import { api, type Comment, type Feed, type FeedInput, type Page, type PageAt, type Prefs, type VideoSummary, EVERYTHING_ID } from "./api";
+import { api, type Comment, type Feed, type FeedInput, type Page, type PageAt, type Prefs, type StatsRange, type VideoSummary, EVERYTHING_ID } from "./api";
 
 export const keys = {
   me: ["me"] as const,
@@ -337,6 +337,19 @@ export function useHistory(filter: "all" | "in_progress" | "seen", q: string) {
     queryKey: keys.history(filter, q),
     queryFn: ({ pageParam }) => api.history(filter, q, pageParam),
     ...pageParams(),
+  });
+}
+
+/**
+ * Watch stats. The browser's own timezone decides which evening a late-night
+ * play belongs to — the server has no business guessing it.
+ */
+export function useStats(range: StatsRange) {
+  const zone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+  return useQuery({
+    queryKey: ["stats", range, zone],
+    queryFn: () => api.stats(range, zone),
+    staleTime: 60_000,
   });
 }
 

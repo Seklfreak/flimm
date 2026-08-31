@@ -83,3 +83,77 @@ SELECT * FROM watch_events
 WHERE user_id = $1 AND NOT hidden AND completed_at IS NULL AND position > 0
 ORDER BY last_played_at DESC
 LIMIT $2;
+
+-- Stats: what a viewer's watch history adds up to.
+--
+-- One row per (user, video), so "seconds" is the furthest point reached in
+-- each video — a finished video counts its whole duration, an abandoned one
+-- counts where it stopped, and neither counts a rewatch. It is what the table
+-- can honestly answer; see docs/api.md "Watch stats".
+
+-- name: WatchTotals :one
+SELECT
+    count(*)                                                     AS started,
+    count(*) FILTER (WHERE completed_at IS NOT NULL)             AS finished,
+    coalesce(sum(least(
+        CASE WHEN completed_at IS NOT NULL THEN duration::float8 ELSE position END,
+        CASE WHEN duration > 0 THEN duration::float8 ELSE position END
+    )), 0)::float8                                               AS seconds,
+    min(first_played_at)::timestamptz                            AS since
+FROM watch_events
+WHERE user_id = sqlc.arg(user_id)
+  AND (sqlc.arg(since)::timestamptz IS NULL OR first_played_at >= sqlc.arg(since)::timestamptz);
+
+-- name: WatchTopChannels :many
+SELECT
+    channel_id,
+    max(channel_name)::text                                      AS channel_name,
+    count(*)                                                     AS videos,
+    coalesce(sum(least(
+        CASE WHEN completed_at IS NOT NULL THEN duration::float8 ELSE position END,
+        CASE WHEN duration > 0 THEN duration::float8 ELSE position END
+    )), 0)::float8                                               AS seconds
+FROM watch_events
+WHERE user_id = sqlc.arg(user_id)
+  AND channel_id <> ''
+  AND (sqlc.arg(since)::timestamptz IS NULL OR first_played_at >= sqlc.arg(since)::timestamptz)
+GROUP BY channel_id
+ORDER BY seconds DESC, videos DESC
+LIMIT sqlc.arg(row_limit);
+
+-- name: WatchByHour :many
+-- When videos are *started*, in the viewer's own timezone — the caller passes
+-- the zone because the server's is nobody's business.
+SELECT
+    EXTRACT(HOUR FROM first_played_at AT TIME ZONE sqlc.arg(zone)::text)::int AS hour,
+    count(*)                                                                  AS videos
+FROM watch_events
+WHERE user_id = sqlc.arg(user_id)
+  AND (sqlc.arg(since)::timestamptz IS NULL OR first_played_at >= sqlc.arg(since)::timestamptz)
+GROUP BY 1
+ORDER BY 1;
+
+-- name: WatchByWeekday :many
+SELECT
+    EXTRACT(ISODOW FROM first_played_at AT TIME ZONE sqlc.arg(zone)::text)::int AS weekday,
+    count(*)                                                                    AS videos
+FROM watch_events
+WHERE user_id = sqlc.arg(user_id)
+  AND (sqlc.arg(since)::timestamptz IS NULL OR first_played_at >= sqlc.arg(since)::timestamptz)
+GROUP BY 1
+ORDER BY 1;
+
+-- name: WatchByMonth :many
+-- The last `months` calendar months of activity, oldest first.
+SELECT
+    to_char(first_played_at AT TIME ZONE sqlc.arg(zone)::text, 'YYYY-MM')     AS month,
+    count(*)                                                                  AS videos,
+    coalesce(sum(least(
+        CASE WHEN completed_at IS NOT NULL THEN duration::float8 ELSE position END,
+        CASE WHEN duration > 0 THEN duration::float8 ELSE position END
+    )), 0)::float8                                                            AS seconds
+FROM watch_events
+WHERE user_id = sqlc.arg(user_id)
+  AND first_played_at >= sqlc.arg(since)::timestamptz
+GROUP BY 1
+ORDER BY 1;

@@ -535,6 +535,7 @@ Clients treat an empty list as "no chapter UI", never as an error.
 | Method | Path | Notes |
 |---|---|---|
 | GET | `/history` | query `filter=all\|in_progress\|seen`, `q` (title/channel substring), paged HistoryEntry, newest first. Entries below `MIN_PLAY_SECONDS` that never completed are excluded |
+| GET | `/stats` | what that history adds up to: `{ "started", "finished", "seconds", "since", "range", "zone", "top_channels": [{ "id", "name", "videos", "seconds" }], "by_hour": [24], "by_weekday": [7], "by_month": [{ "month": "2026-08", "videos", "seconds" }] }`. `?range=all\|year\|month` (calendar windows, default all; anything else **400**), `?tz=` an IANA zone the breakdowns are computed in (default UTC). See [Watch stats](#watch-stats) for what these numbers can honestly say |
 | DELETE | `/history/{entry_id}` | hides the entry (soft delete), 204; does not change watched state |
 
 #### Minimum play time
@@ -606,6 +607,38 @@ nginx declares a `types { text/vtt vtt; }` block on `/media/`, which replaces
 the default MIME map for that location, so `.mp4` would otherwise arrive as
 `application/octet-stream` and `<video>` refuses to decode it.
 
+
+### Watch stats
+
+`GET /stats` is the whole of a viewer's history read sideways. Everything in it
+comes from `watch_events`, which holds **one row per video per viewer** — the
+furthest point reached, whether it completed, and when it was first and last
+played. That shape decides what can honestly be said:
+
+- **`seconds` is the summed furthest point reached.** A finished video counts
+  its whole duration; an abandoned one counts where it stopped. A video watched
+  three times counts once, and one skimmed through counts the part that was
+  skipped past. It is a **floor** on time spent, not a stopwatch.
+- **`by_hour` and `by_weekday` are when videos were *first started*.** That is
+  the only moment the table records exactly. Someone who starts at midnight and
+  watches until two appears at midnight, once.
+- **`top_channels` is ordered by those same seconds**, and names at most eight.
+
+None of that is a limitation to hide. Every client prints it under the numbers,
+because a figure nobody qualifies is a figure people trust — and an invented
+one here would look exactly like a real one.
+
+**`tz` decides which evening a late-night play belongs to.** The server does not
+guess: without it everything is computed in UTC, which is wrong for almost
+everyone. Clients send their own zone (`Intl.DateTimeFormat()` on the web,
+`TimeZone.current` on Apple) and it is echoed back as `zone` so the screen can
+name it. `range=year` and `range=month` are **calendar** windows in that zone —
+"this year" means the year on the wall, not the last 365 days.
+
+**Clients.** A Stats page on the web (in the sidebar, next to History), a Stats
+screen behind History on iPhone and iPad, and the headline numbers in Settings
+on the Apple TV — no charts there, because a remote has nothing to hover over a
+bar with, and the screen says where the charts are.
 
 ### Views and votes
 

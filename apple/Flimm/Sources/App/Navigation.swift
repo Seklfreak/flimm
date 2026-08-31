@@ -9,6 +9,7 @@ enum Route: Hashable {
     case feedEditor(feedId: String?)
     case feedManager
     case settings
+    case stats
 }
 
 extension View {
@@ -26,6 +27,8 @@ extension View {
                 FeedManagerView()
             case .settings:
                 SettingsView()
+            case .stats:
+                StatsView()
             }
         }
     }

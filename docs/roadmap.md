@@ -2,6 +2,20 @@
 
 ## Done
 
+- **Watch stats** (2026-08-30) — `watch_events` had been filling up since the
+  first release and nothing read it. `GET /stats` now answers what it adds up
+  to: time watched, videos started and finished, whose videos, and when — by
+  hour, by weekday, by month — in the viewer's own timezone, over all time,
+  this year or this month.
+
+  What the table *cannot* say is said on every screen: "watched" is the summed
+  furthest point reached rather than a stopwatch, and the times are when a video
+  was first started. A number nobody qualifies is a number people trust.
+
+  A page on the web (sidebar, next to History), a screen behind History on
+  iPhone and iPad, and the headline numbers in Settings on the Apple TV — no
+  charts there, deliberately: a remote has nothing to hover over a bar with.
+
 - **Comments under the description** (2026-08-30) — they were behind a
   collapsed section on the phone and the web, and on the iPad they were in the
   column beside the video, next to "up next", where nothing else about the

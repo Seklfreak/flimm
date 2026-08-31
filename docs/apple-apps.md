@@ -178,6 +178,13 @@ What is there:
     for an unproduced segment behind the run now re-aims it (see
     `HLSJob.Request`). It is the difference between a black screen for minutes
     and picture in under a second.
+  - **Stats are a screen on the phone and iPad, and four numbers on the TV.**
+    The charts want a pointer: a bar you can hover to read, or tap to see what
+    it counts. A remote has neither, so the TV shows the headlines in Settings
+    — watched, started, finished, finish rate, top three channels — and says
+    the charts are on the phone, iPad or web. It is the same `GET /stats` on
+    every platform, including the timezone that decides which evening a
+    late-night play belongs to.
   - **Comments are a second Info-panel tab on the TV, and a section under the
     description on the phone and iPad.** Selecting a video on tvOS plays it, so
     there is no detail screen to hang comments on, and the panel AVKit gives a

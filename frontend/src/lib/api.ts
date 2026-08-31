@@ -156,6 +156,25 @@ export type HLSState = "pending" | "running" | "done" | "failed";
  *  refuse, not something to hide from the picker. */
 export type HLSCodec = "h264" | "hevc" | (string & {});
 
+export type StatsRange = "all" | "year" | "month";
+
+/** `GET /stats` — see docs/api.md, "Watch stats", for what these can honestly say. */
+export interface WatchStats {
+  started: number;
+  finished: number;
+  /** The summed furthest point reached in each video: a floor, not a stopwatch. */
+  seconds: number;
+  since: string | null;
+  range: StatsRange;
+  zone: string;
+  top_channels: { id: string; name: string; videos: number; seconds: number }[];
+  /** 24 counts, midnight first. */
+  by_hour: number[];
+  /** 7 counts, Monday first. */
+  by_weekday: number[];
+  by_month: { month: string; videos: number; seconds: number }[];
+}
+
 /** One rung of the compatible-rendition ladder (docs/api.md, tallest first). */
 export interface HLSVariant {
   height: number;
@@ -490,6 +509,10 @@ export const api = {
   // server knows why (see useStallReport and docs/api.md). Fire and forget.
   reportStall: (id: string, body: { position: number; seconds: number; height: number; client: string }) =>
     req<void>(`/videos/${id}/stall`, json("POST", body)),
+  // What a viewer's history adds up to. `tz` decides which evening an 11pm
+  // play belongs to, so the browser's own zone is sent (docs/api.md).
+  stats: (range: StatsRange, tz: string) =>
+    req<WatchStats>(`/stats${qs({ range: range === "all" ? undefined : range, tz })}`),
   setWatched: (id: string, watched: boolean) =>
     req<void>(`/videos/${id}/watched`, json("POST", { watched })),
   startOver: (id: string) => req<void>(`/videos/${id}/progress`, { method: "DELETE" }),

@@ -28,6 +28,7 @@ const NAV = [
   { to: "/channels", label: "Channels", icon: ChannelsIcon },
   { to: "/playlists", label: "Playlists", icon: PlaylistsIcon },
   { to: "/history", label: "History", icon: HistoryIcon },
+  { to: "/stats", label: "Stats", icon: StatsIcon },
   { to: "/search", label: "Search", icon: SearchIcon },
   { to: "/settings", label: "Settings", icon: SettingsIcon },
 ];
@@ -336,6 +337,10 @@ function SettingsIcon() {
       <path d="M12 3.5v2M12 18.5v2M3.5 12h2M18.5 12h2M6 6l1.4 1.4M16.6 16.6L18 18M18 6l-1.4 1.4M7.4 16.6L6 18" />
     </svg>
   );
+}
+
+function StatsIcon() {
+  return <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M5 20V11M12 20V5M19 20v-6" /></svg>;
 }
 
 function HistoryIcon() {

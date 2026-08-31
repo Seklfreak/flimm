@@ -68,6 +68,25 @@ final class NavigationModel {
 
     private var stacks: [Tab: NavigationPath] = [:]
 
+    init() {
+        #if DEBUG
+        // The sibling of `FLIMM_OPEN_TAB`, for a screen that lives *behind* a
+        // tab: `FLIMM_OPEN_ROUTE=stats` opens the tab's stack on that screen.
+        // Some screens (Stats, the feed manager) are otherwise unreachable in a
+        // simulator, which cannot tap. A shipped app has no such door.
+        if let raw = ProcessInfo.processInfo.environment["FLIMM_OPEN_ROUTE"] {
+            var path = NavigationPath()
+            switch raw {
+            case "stats": path.append(Route.stats)
+            case "settings": path.append(Route.settings)
+            case "feeds": path.append(Route.feedManager)
+            default: break
+            }
+            if !path.isEmpty { stacks[tab] = path }
+        }
+        #endif
+    }
+
     // MARK: - Stacks
 
     func path(for tab: Tab) -> Binding<NavigationPath> {

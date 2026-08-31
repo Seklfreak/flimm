@@ -24,6 +24,31 @@ final class ModelDecodingTests: XCTestCase {
         XCTAssertEqual(none.dislikes, 0)
     }
 
+    /// A client draws 24 columns and 7 days; a short array from an older
+    /// server must not make it decide what a missing hour means.
+    func testWatchStatsPadsTheBreakdowns() throws {
+        let stats = try decode(WatchStats.self, #"""
+        {"started": 412, "finished": 297, "seconds": 987654, "since": "2026-01-02T15:04:00Z",
+         "range": "year", "zone": "America/New_York",
+         "top_channels": [{"id": "UC1", "name": "Slow Kitchen", "videos": 40, "seconds": 120000}],
+         "by_hour": [1, 2, 3], "by_weekday": [], "by_month": [{"month": "2026-07", "videos": 30, "seconds": 60000}]}
+        """#)
+        XCTAssertEqual(stats.byHour.count, 24)
+        XCTAssertEqual(stats.byHour[0], 1)
+        XCTAssertEqual(stats.byHour[23], 0)
+        XCTAssertEqual(stats.byWeekday, Array(repeating: 0, count: 7))
+        XCTAssertEqual(stats.range, .year)
+        XCTAssertEqual(stats.topChannels.first?.name, "Slow Kitchen")
+        XCTAssertEqual(stats.byMonth.first?.videos, 30)
+        XCTAssertEqual(stats.finishRate ?? 0, 297.0 / 412.0, accuracy: 0.0001)
+    }
+
+    /// A rate over no videos is nothing, not 0% — the difference is a screen
+    /// that says "nothing watched yet" instead of one that says you finish 0%.
+    func testFinishRateIsNilWithNoHistory() {
+        XCTAssertNil(WatchStats().finishRate)
+    }
+
     func testVideoSummary() throws {
         let video = try decode(VideoSummary.self, Fixtures.videoSummary)
         XCTAssertEqual(video.id, "yt-id")

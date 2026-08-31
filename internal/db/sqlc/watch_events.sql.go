@@ -9,6 +9,7 @@ import (
 	"context"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const countHistory = `-- name: CountHistory :one
@@ -374,6 +375,241 @@ func (q *Queries) UpsertProgress(ctx context.Context, arg UpsertProgressParams) 
 		&i.Duration,
 		&i.CompletedAt,
 		&i.Hidden,
+	)
+	return i, err
+}
+
+const watchByHour = `-- name: WatchByHour :many
+SELECT
+    EXTRACT(HOUR FROM first_played_at AT TIME ZONE $1::text)::int AS hour,
+    count(*)                                                                  AS videos
+FROM watch_events
+WHERE user_id = $2
+  AND ($3::timestamptz IS NULL OR first_played_at >= $3::timestamptz)
+GROUP BY 1
+ORDER BY 1
+`
+
+type WatchByHourParams struct {
+	Zone   string             `json:"zone"`
+	UserID uuid.UUID          `json:"user_id"`
+	Since  pgtype.Timestamptz `json:"since"`
+}
+
+type WatchByHourRow struct {
+	Hour   int32 `json:"hour"`
+	Videos int64 `json:"videos"`
+}
+
+// When videos are *started*, in the viewer's own timezone — the caller passes
+// the zone because the server's is nobody's business.
+func (q *Queries) WatchByHour(ctx context.Context, arg WatchByHourParams) ([]WatchByHourRow, error) {
+	rows, err := q.db.Query(ctx, watchByHour, arg.Zone, arg.UserID, arg.Since)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []WatchByHourRow{}
+	for rows.Next() {
+		var i WatchByHourRow
+		if err := rows.Scan(&i.Hour, &i.Videos); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const watchByMonth = `-- name: WatchByMonth :many
+SELECT
+    to_char(first_played_at AT TIME ZONE $1::text, 'YYYY-MM')     AS month,
+    count(*)                                                                  AS videos,
+    coalesce(sum(least(
+        CASE WHEN completed_at IS NOT NULL THEN duration::float8 ELSE position END,
+        CASE WHEN duration > 0 THEN duration::float8 ELSE position END
+    )), 0)::float8                                                            AS seconds
+FROM watch_events
+WHERE user_id = $2
+  AND first_played_at >= $3::timestamptz
+GROUP BY 1
+ORDER BY 1
+`
+
+type WatchByMonthParams struct {
+	Zone   string             `json:"zone"`
+	UserID uuid.UUID          `json:"user_id"`
+	Since  pgtype.Timestamptz `json:"since"`
+}
+
+type WatchByMonthRow struct {
+	Month   string  `json:"month"`
+	Videos  int64   `json:"videos"`
+	Seconds float64 `json:"seconds"`
+}
+
+// The last `months` calendar months of activity, oldest first.
+func (q *Queries) WatchByMonth(ctx context.Context, arg WatchByMonthParams) ([]WatchByMonthRow, error) {
+	rows, err := q.db.Query(ctx, watchByMonth, arg.Zone, arg.UserID, arg.Since)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []WatchByMonthRow{}
+	for rows.Next() {
+		var i WatchByMonthRow
+		if err := rows.Scan(&i.Month, &i.Videos, &i.Seconds); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const watchByWeekday = `-- name: WatchByWeekday :many
+SELECT
+    EXTRACT(ISODOW FROM first_played_at AT TIME ZONE $1::text)::int AS weekday,
+    count(*)                                                                    AS videos
+FROM watch_events
+WHERE user_id = $2
+  AND ($3::timestamptz IS NULL OR first_played_at >= $3::timestamptz)
+GROUP BY 1
+ORDER BY 1
+`
+
+type WatchByWeekdayParams struct {
+	Zone   string             `json:"zone"`
+	UserID uuid.UUID          `json:"user_id"`
+	Since  pgtype.Timestamptz `json:"since"`
+}
+
+type WatchByWeekdayRow struct {
+	Weekday int32 `json:"weekday"`
+	Videos  int64 `json:"videos"`
+}
+
+func (q *Queries) WatchByWeekday(ctx context.Context, arg WatchByWeekdayParams) ([]WatchByWeekdayRow, error) {
+	rows, err := q.db.Query(ctx, watchByWeekday, arg.Zone, arg.UserID, arg.Since)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []WatchByWeekdayRow{}
+	for rows.Next() {
+		var i WatchByWeekdayRow
+		if err := rows.Scan(&i.Weekday, &i.Videos); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const watchTopChannels = `-- name: WatchTopChannels :many
+SELECT
+    channel_id,
+    max(channel_name)::text                                      AS channel_name,
+    count(*)                                                     AS videos,
+    coalesce(sum(least(
+        CASE WHEN completed_at IS NOT NULL THEN duration::float8 ELSE position END,
+        CASE WHEN duration > 0 THEN duration::float8 ELSE position END
+    )), 0)::float8                                               AS seconds
+FROM watch_events
+WHERE user_id = $1
+  AND channel_id <> ''
+  AND ($2::timestamptz IS NULL OR first_played_at >= $2::timestamptz)
+GROUP BY channel_id
+ORDER BY seconds DESC, videos DESC
+LIMIT $3
+`
+
+type WatchTopChannelsParams struct {
+	UserID   uuid.UUID          `json:"user_id"`
+	Since    pgtype.Timestamptz `json:"since"`
+	RowLimit int32              `json:"row_limit"`
+}
+
+type WatchTopChannelsRow struct {
+	ChannelID   string  `json:"channel_id"`
+	ChannelName string  `json:"channel_name"`
+	Videos      int64   `json:"videos"`
+	Seconds     float64 `json:"seconds"`
+}
+
+func (q *Queries) WatchTopChannels(ctx context.Context, arg WatchTopChannelsParams) ([]WatchTopChannelsRow, error) {
+	rows, err := q.db.Query(ctx, watchTopChannels, arg.UserID, arg.Since, arg.RowLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []WatchTopChannelsRow{}
+	for rows.Next() {
+		var i WatchTopChannelsRow
+		if err := rows.Scan(
+			&i.ChannelID,
+			&i.ChannelName,
+			&i.Videos,
+			&i.Seconds,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const watchTotals = `-- name: WatchTotals :one
+
+SELECT
+    count(*)                                                     AS started,
+    count(*) FILTER (WHERE completed_at IS NOT NULL)             AS finished,
+    coalesce(sum(least(
+        CASE WHEN completed_at IS NOT NULL THEN duration::float8 ELSE position END,
+        CASE WHEN duration > 0 THEN duration::float8 ELSE position END
+    )), 0)::float8                                               AS seconds,
+    min(first_played_at)::timestamptz                            AS since
+FROM watch_events
+WHERE user_id = $1
+  AND ($2::timestamptz IS NULL OR first_played_at >= $2::timestamptz)
+`
+
+type WatchTotalsParams struct {
+	UserID uuid.UUID          `json:"user_id"`
+	Since  pgtype.Timestamptz `json:"since"`
+}
+
+type WatchTotalsRow struct {
+	Started  int64              `json:"started"`
+	Finished int64              `json:"finished"`
+	Seconds  float64            `json:"seconds"`
+	Since    pgtype.Timestamptz `json:"since"`
+}
+
+// Stats: what a viewer's watch history adds up to.
+//
+// One row per (user, video), so "seconds" is the furthest point reached in
+// each video — a finished video counts its whole duration, an abandoned one
+// counts where it stopped, and neither counts a rewatch. It is what the table
+// can honestly answer; see docs/api.md "Watch stats".
+func (q *Queries) WatchTotals(ctx context.Context, arg WatchTotalsParams) (WatchTotalsRow, error) {
+	row := q.db.QueryRow(ctx, watchTotals, arg.UserID, arg.Since)
+	var i WatchTotalsRow
+	err := row.Scan(
+		&i.Started,
+		&i.Finished,
+		&i.Seconds,
+		&i.Since,
 	)
 	return i, err
 }

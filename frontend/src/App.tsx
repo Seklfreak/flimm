@@ -18,6 +18,7 @@ import ChannelPage from "@/pages/ChannelPage";
 import PlaylistsPage from "@/pages/PlaylistsPage";
 import PlaylistPage from "@/pages/PlaylistPage";
 import HistoryPage from "@/pages/HistoryPage";
+import StatsPage from "@/pages/StatsPage";
 import SearchPage from "@/pages/SearchPage";
 import SettingsPage from "@/pages/SettingsPage";
 import WatchPage from "@/pages/WatchPage";
@@ -46,6 +47,7 @@ export default function App() {
               <Route path="/playlists" element={<PlaylistsPage />} />
               <Route path="/playlists/:id" element={<PlaylistPage />} />
               <Route path="/history" element={<HistoryPage />} />
+              <Route path="/stats" element={<StatsPage />} />
               <Route path="/search" element={<SearchPage />} />
               <Route path="/settings" element={<SettingsPage />} />
               <Route path="/watch/:id" element={<WatchPage />} />

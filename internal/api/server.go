@@ -284,6 +284,7 @@ func (s *Server) Router() http.Handler {
 			r.Post("/playlists/{id}/videos", s.playlistVideoAction)
 
 			r.Get("/history", s.listHistory)
+			r.Get("/stats", s.getStats)
 			r.Delete("/history/{id}", s.deleteHistoryEntry)
 
 			r.Get("/search", s.search)
