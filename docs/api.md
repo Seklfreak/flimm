@@ -632,6 +632,14 @@ Implementation: TA `/search/?query=` for titles/channels/playlists and
 `full:<q>` for the `ta_subtitle` index; group subtitle hits by video; `unseen`
 and `feed` filter the video results in the backend.
 
+`q` is matched literally: colons are folded to spaces before the query goes to
+TA, whose parser crashes (500) on a colon in the first word — which our index
+prefix guarantees — or on a two-colon word like a `1:23:45` timestamp. TA's
+own filter syntax (`channel:`, `lang:`, `active:`) is deliberately not passed
+through; the `scope` parameter is the supported way to narrow a search. A `q`
+that is only colons returns empty buckets without querying TA (a bare index
+prefix would be a match-all there).
+
 ### Media (no `/api/v1` prefix)
 | Path | Notes |
 |---|---|

@@ -2,6 +2,7 @@ package faketa_test
 
 import (
 	"context"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http/httptest"
@@ -234,6 +235,22 @@ func TestSearchBucketsAndSubtitleHits(t *testing.T) {
 	}
 	if full.Fulltext[0].SubtitleStart != 20 {
 		t.Errorf("hit at %v, want 20", full.Fulltext[0].SubtitleStart)
+	}
+}
+
+// Real TA crashes with a 500 on any word holding two colons; the fake
+// mirrors that so an unsanitized query fails in tests the way it fails in
+// production.
+func TestSearchColonWordCrashesLikeTA(t *testing.T) {
+	client, _ := fixture(t)
+
+	_, err := client.Search(context.Background(), "video:re:zero")
+	if !errors.Is(err, ta.ErrUnavailable) {
+		t.Fatalf("err = %v, want ErrUnavailable (TA 500)", err)
+	}
+	// One colon per word is fine, exactly like real TA.
+	if _, err := client.Search(context.Background(), "video:foo 10:30"); err != nil {
+		t.Fatalf("single-colon word: %v", err)
 	}
 }
 

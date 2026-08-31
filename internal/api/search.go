@@ -68,6 +68,23 @@ func (s *Server) search(w http.ResponseWriter, r *http.Request) {
 	}
 	unseen := r.URL.Query().Get("unseen") == "true"
 
+	// TA's query parser splits every whitespace-separated word on ":" into
+	// exactly two parts, so a colon in the first word (which carries our
+	// index prefix) or two colons in any word ("1:23:45") crash it with a
+	// 500. Colons are not tokens ES indexes, so folding them to spaces keeps
+	// the same matches. An empty remainder must not reach TA either: a bare
+	// prefix turns into a match-all that returns arbitrary documents.
+	term := strings.Join(strings.Fields(strings.ReplaceAll(q, ":", " ")), " ")
+	if term == "" {
+		writeJSON(w, http.StatusOK, searchResponse{
+			TookMS:    time.Since(start).Milliseconds(),
+			Videos:    searchBucket[searchVideo]{Items: []searchVideo{}},
+			Channels:  searchBucket[searchChannel]{Items: []searchChannel{}},
+			Playlists: searchBucket[searchPlaylist]{Items: []searchPlaylist{}},
+		})
+		return
+	}
+
 	// Feed restriction: nil = no restriction, empty = everything feed. A feed
 	// admits a video through either source kind — its channels, or playlist
 	// membership.
@@ -92,16 +109,16 @@ func (s *Server) search(w http.ResponseWriter, r *http.Request) {
 	var queries []string
 	want := func(k string) bool { return scope == "all" || scope == k }
 	if want("titles") {
-		queries = append(queries, "video:"+q)
+		queries = append(queries, "video:"+term)
 	}
 	if want("subtitles") {
-		queries = append(queries, "full:"+q)
+		queries = append(queries, "full:"+term)
 	}
 	if want("channels") {
-		queries = append(queries, "channel:"+q)
+		queries = append(queries, "channel:"+term)
 	}
 	if want("playlists") {
-		queries = append(queries, "playlist:"+q)
+		queries = append(queries, "playlist:"+term)
 	}
 	var mu sync.Mutex
 	merged := ta.SearchResult{Videos: []ta.Video{}, Channels: []ta.Channel{}, Playlists: []ta.Playlist{}, Fulltext: []ta.SubtitleHit{}}

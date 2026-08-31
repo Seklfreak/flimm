@@ -497,6 +497,16 @@ func (s *Server) deletePlaylist(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) search(w http.ResponseWriter, r *http.Request) {
 	query := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("query")))
+	// Real TA (v0.5.12) splits every word on ":" into exactly two parts and
+	// crashes with a 500 on a third — which is what any word holding two
+	// colons produces. Mirror that so a query the server forgot to sanitize
+	// fails here the way it fails in production.
+	for _, word := range strings.Fields(query) {
+		if strings.Count(word, ":") >= 2 {
+			http.Error(w, "ValueError: too many values to unpack", http.StatusInternalServerError)
+			return
+		}
+	}
 	// TA's prefixes narrow the search to one index.
 	only := ""
 	for _, prefix := range []string{"video:", "channel:", "playlist:", "full:"} {
