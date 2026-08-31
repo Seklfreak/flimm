@@ -205,6 +205,11 @@ func main() {
 		Handler:           srv.Router(),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
+	// The crowd-title cache warms itself: workers drain the lookup queue and a
+	// sweep fills it from the archive, so a viewer waits for a title at most
+	// once per video. Stops with the process's context.
+	srv.StartBrandingWarmer(ctx)
+
 	log.Info("listening", "port", cfg.Port)
 	serveErr := make(chan error, 1)
 	go func() { serveErr <- httpServer.ListenAndServe() }()

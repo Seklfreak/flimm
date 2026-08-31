@@ -375,6 +375,25 @@ has: a title with the shouting taken out, and the frame the service suggests.
 A crowd that voted to *keep* the original is obeyed by both. The two are
 separate preferences because they are separate things to want.
 
+**Nobody waits for the same video twice.** What DeArrow said is kept in
+`dearrow_branding` — one row per video, shared by every user, and durable, so a
+restart does not throw it away (the cache before this one lived in memory and
+died on every deploy). A row is served immediately however old it is; past its
+freshness window a refresh is queued *behind* the response. Only a video with no
+row at all is fetched inside the request, under a **2.5 s** deadline — the
+service answers in 200–400 ms when healthy and has been measured at fifteen
+seconds when not, and a page must not be able to wait that long. Past the
+deadline the archive's own title goes out and the lookup finishes in the
+background, so the second view is right.
+
+Freshness is two windows because the two answers age differently: **24 h** for a
+row carrying a submission (votes move), **7 days** for "nobody has submitted
+anything" — which is around nine rows in ten, measured against a real archive,
+and the least likely to change. A background sweep walks the archive every six
+hours and queues whatever is missing or stale at a deliberate crawl, so a video
+downloaded today is usually already known by the time anyone opens the page it
+is on.
+
 A crowd-sourced thumbnail comes back as a `thumb_url` of
 `/media/frame/{id}/{ms}.jpg` — DeArrow returns a timestamp, not an image, so
 the frame is cut from the deployment's own copy of the video (cached like any

@@ -23,6 +23,8 @@ type FakeQuerier struct {
 	DismissVideoFn               func(context.Context, sqlc.DismissVideoParams) error
 	UndismissVideoFn             func(context.Context, sqlc.UndismissVideoParams) error
 	ListDismissedForVideosFn     func(context.Context, sqlc.ListDismissedForVideosParams) ([]string, error)
+	ListBrandingFn               func(context.Context, []string) ([]sqlc.DearrowBranding, error)
+	UpsertBrandingFn             func(context.Context, sqlc.UpsertBrandingParams) error
 	WatchTotalsFn                func(context.Context, sqlc.WatchTotalsParams) (sqlc.WatchTotalsRow, error)
 	WatchTopChannelsFn           func(context.Context, sqlc.WatchTopChannelsParams) ([]sqlc.WatchTopChannelsRow, error)
 	WatchByHourFn                func(context.Context, sqlc.WatchByHourParams) ([]sqlc.WatchByHourRow, error)
@@ -110,6 +112,14 @@ func (f *FakeQuerier) ListFeedChannelsForUser(ctx context.Context, userID uuid.U
 
 func (f *FakeQuerier) ListFeeds(ctx context.Context, userID uuid.UUID) ([]sqlc.Feed, error) {
 	return f.ListFeedsFn(ctx, userID)
+}
+
+func (f *FakeQuerier) ListBranding(ctx context.Context, ids []string) ([]sqlc.DearrowBranding, error) {
+	return f.ListBrandingFn(ctx, ids)
+}
+
+func (f *FakeQuerier) UpsertBranding(ctx context.Context, arg sqlc.UpsertBrandingParams) error {
+	return f.UpsertBrandingFn(ctx, arg)
 }
 
 func (f *FakeQuerier) WatchTotals(ctx context.Context, arg sqlc.WatchTotalsParams) (sqlc.WatchTotalsRow, error) {

@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 	"unicode"
 
 	"github.com/Seklfreak/flimm/internal/dearrow"
@@ -37,22 +38,54 @@ func (s *Server) applyBranding(ctx context.Context, prefs Prefs, items []VideoSu
 	if s.dearrow == nil || !brandingWanted(prefs) || len(items) == 0 {
 		return
 	}
-	// One lookup per video, in parallel and cached across the page — a prefix
-	// answers for every video that shares it, so a second page of the same
-	// channel usually costs nothing.
+	ids := make([]string, 0, len(items))
+	for _, item := range items {
+		ids = append(ids, item.ID)
+	}
+	known := s.loadBranding(ctx, ids)
+
+	// Anything already known is applied without touching the network, however
+	// old it is; anything past its freshness window is refreshed behind the
+	// response. Only a video nothing is known about is waited for.
+	now := time.Now()
 	branding := make([]dearrow.Branding, len(items))
 	found := make([]bool, len(items))
-	err := parallel(ctx, items, func(ctx context.Context, i int, item VideoSummary) error {
-		b, err := s.dearrow.Branding(ctx, item.ID)
-		if err != nil {
-			return nil // a lookup failure is not this request's failure
+	var unknown []int
+	for i, item := range items {
+		row, ok := known[item.ID]
+		if !ok {
+			unknown = append(unknown, i)
+			continue
 		}
-		branding[i], found[i] = b, true
-		return nil
-	})
-	if err != nil {
-		return
+		branding[i], found[i] = row.branding, true
+		if !row.fresh(now) {
+			s.queueBranding(item.ID)
+		}
 	}
+
+	if len(unknown) > 0 {
+		// Bounded, because this is the only path a viewer can wait on. What
+		// does not arrive in time is finished in the background instead, so the
+		// same video is never waited for twice.
+		wait, cancel := context.WithTimeout(ctx, brandingInlineWait)
+		defer cancel()
+		err := parallel(wait, unknown, func(ctx context.Context, _ int, i int) error {
+			b, ok := s.fetchBranding(ctx, items[i].ID)
+			if ok {
+				branding[i], found[i] = b, true
+			}
+			return nil // a lookup failure is not this request's failure
+		})
+		if err != nil {
+			s.log.Debug("dearrow: inline lookups did not finish", "err", err)
+		}
+		for _, i := range unknown {
+			if !found[i] {
+				s.queueBranding(items[i].ID)
+			}
+		}
+	}
+
 	for i := range items {
 		if !found[i] {
 			continue

@@ -2,6 +2,24 @@
 
 ## Done
 
+- **DeArrow, off the critical path** (2026-08-31) — crowd titles were fetched
+  inside the request that needed them: one internet round trip per video, on
+  every list page, waited for. Measured from the cluster, the service answers in
+  200–400 ms and has spiked to fifteen seconds; the cache in front of it lived
+  in memory, so it died on every deploy and was dropped wholesale past a few
+  thousand entries. For an archive of eight thousand videos it was cold most of
+  the time, which is most of what made a feed page take a second.
+
+  It is now a table. A known video is served without touching the network, a
+  stale one is served *and* refreshed behind the response, and only a video
+  nothing is known about is waited for — under a deadline, after which the page
+  goes out with the archive's title and the lookup finishes in the background.
+  A sweep keeps ahead of new downloads.
+
+  The measurement that matters: the same feed page, cold 514 ms, warm 13 ms, and
+  40 ms on the first request after a restart — the number that used to be the
+  cold one every time.
+
 - **Traces that can answer a question** (2026-08-31) — tracing had been on at
   full sampling for months and could not say which endpoint was slow. Every
   transaction arrived as `GET /api/v1/*`: sentryhttp names them from
