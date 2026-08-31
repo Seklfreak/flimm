@@ -37,9 +37,10 @@ func Init(release string, keepTx func(name string) bool) (flush func(), err erro
 		Environment: env,
 		// Handled errors are captured as plain errors; the stack at the
 		// capture site is what locates them.
-		AttachStacktrace: true,
-		EnableTracing:    true,
-		BeforeSend:       dropAbortedRequests,
+		AttachStacktrace:      true,
+		EnableTracing:         true,
+		BeforeSend:            dropAbortedRequests,
+		BeforeSendTransaction: nameByRoute,
 		TracesSampler: func(sctx sentry.SamplingContext) float64 {
 			if keepTx(sctx.Span.Name) {
 				return 1
@@ -48,6 +49,32 @@ func Init(release string, keepTx func(name string) bool) (flush func(), err erro
 		},
 	})
 	return func() { sentry.Flush(2 * time.Second) }, err
+}
+
+// RouteKey is where a request handler leaves the route it matched, for
+// nameByRoute to promote into the transaction's name.
+const RouteKey = "flimm.route"
+
+// nameByRoute names a transaction after the route that served it.
+//
+// It has to happen here, at the last possible moment, because sentryhttp names
+// the transaction itself in a deferred call *after* the handler has run — from
+// `http.Request.Pattern`, which chi fills in with the pattern matched at the
+// outermost mux. For this app that is the mount, `/api/v1/*`, so every read the
+// API does arrives under one name and every latency figure is an average over
+// the whole API. Anything the handler sets is overwritten on the way out; this
+// runs later still.
+func nameByRoute(event *sentry.Event, _ *sentry.EventHint) *sentry.Event {
+	route := event.Tags[RouteKey]
+	if route == "" {
+		return event
+	}
+	delete(event.Tags, RouteKey)
+	event.Transaction = route
+	// `route` is the promise that this name is one of a small set, and what
+	// stops Sentry clustering it back into a wildcard.
+	event.TransactionInfo = &sentry.TransactionInfo{Source: sentry.SourceRoute}
+	return event
 }
 
 // dropAbortedRequests discards the panic net/http uses to tear down a response

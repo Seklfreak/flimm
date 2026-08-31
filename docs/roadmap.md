@@ -2,6 +2,19 @@
 
 ## Done
 
+- **Traces that can answer a question** (2026-08-31) — tracing had been on at
+  full sampling for months and could not say which endpoint was slow. Every
+  transaction arrived as `GET /api/v1/*`: sentryhttp names them from
+  `http.Request.Pattern`, chi fills that with the pattern matched at the
+  outermost mux, and for a mounted API that is the mount. So the p95 on the
+  board was an average over the whole API, and a seven-second request could not
+  be traced to a route.
+
+  Transactions are now named after the route they matched, and outgoing calls —
+  TubeArchivist, SponsorBlock, DeArrow, Return YouTube Dislike — are spans of
+  their own. Database queries already were. A slow request now reads as what it
+  is: how many calls, to whom, and how long each took.
+
 - **Scrub previews on the compatible path** (2026-08-31) — dragging the Apple
   TV's scrubber over a transcoded video showed a bare timeline: an HLS stream
   has pictures to scrub with only if it says where its I-frames are, and ours

@@ -52,3 +52,38 @@ func TestDropAbortedRequestsKeepsOtherPanics(t *testing.T) {
 		})
 	}
 }
+
+// The route a handler matched becomes the transaction's name. Without this the
+// name is whatever sentryhttp derived on the way out — for a mounted router,
+// the mount pattern, which is the same string for every endpoint in the app.
+func TestNameByRoutePromotesTheRouteTag(t *testing.T) {
+	event := &sentry.Event{
+		Transaction: "GET /api/v1/*",
+		Tags:        map[string]string{RouteKey: "GET /api/v1/feeds/{id}/videos", "other": "kept"},
+	}
+	got := nameByRoute(event, nil)
+	if got.Transaction != "GET /api/v1/feeds/{id}/videos" {
+		t.Errorf("transaction = %q", got.Transaction)
+	}
+	// `route` is what stops Sentry clustering the name back into a wildcard.
+	if got.TransactionInfo == nil || got.TransactionInfo.Source != sentry.SourceRoute {
+		t.Errorf("source = %+v", got.TransactionInfo)
+	}
+	// The tag has done its job; leaving it on adds a second copy of the name
+	// to every transaction.
+	if _, ok := got.Tags[RouteKey]; ok {
+		t.Error("the route tag was left behind")
+	}
+	if got.Tags["other"] != "kept" {
+		t.Error("an unrelated tag was dropped")
+	}
+}
+
+// A transaction with no route — a 404, or anything that never reached the
+// router — keeps the name it arrived with rather than being renamed to nothing.
+func TestNameByRouteLeavesUntaggedTransactionsAlone(t *testing.T) {
+	event := &sentry.Event{Transaction: "GET /nope"}
+	if got := nameByRoute(event, nil); got.Transaction != "GET /nope" {
+		t.Errorf("transaction = %q, want it untouched", got.Transaction)
+	}
+}

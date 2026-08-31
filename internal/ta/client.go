@@ -14,6 +14,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/Seklfreak/flimm/internal/obs"
 )
 
 var (
@@ -111,11 +113,14 @@ type cached[T any] struct {
 func New(baseURL, token string) *HTTP {
 	streamTransport := http.DefaultTransport.(*http.Transport).Clone()
 	streamTransport.ResponseHeaderTimeout = 30 * time.Second
+	// Every call becomes a span on the request that made it: a list page is a
+	// handful of these, and how many there are is usually the answer to why a
+	// page was slow. See obs.Transport.
 	return &HTTP{
 		base:   strings.TrimRight(baseURL, "/"),
 		token:  token,
-		http:   &http.Client{Timeout: 30 * time.Second},
-		stream: &http.Client{Transport: streamTransport},
+		http:   &http.Client{Timeout: 30 * time.Second, Transport: obs.Transport{}},
+		stream: &http.Client{Transport: obs.Transport{Base: streamTransport}},
 		counts: map[string]*cached[int]{},
 		stats:  map[string]*cached[ChannelStats]{},
 		videos: map[string]*cached[Video]{},

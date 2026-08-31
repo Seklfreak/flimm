@@ -207,6 +207,9 @@ func (s *Server) Router() http.Handler {
 	// Inside Recoverer on purpose: a panic is captured to Sentry first, then
 	// re-panicked for Recoverer to turn into a 500.
 	r.Use(sentryhttp.New(sentryhttp.Options{Repanic: true}).Handle)
+	// Directly inside it: the transaction exists from here on, and this is
+	// what stops every request being filed under `GET /api/v1/*`.
+	r.Use(traceRouteName)
 	if len(s.corsOrigins) > 0 {
 		r.Use(cors.Handler(cors.Options{
 			AllowedOrigins:   s.corsOrigins,

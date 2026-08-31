@@ -34,6 +34,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/Seklfreak/flimm/internal/obs"
 )
 
 // DefaultBaseURL is the public Return YouTube Dislike API. It is a default for
@@ -116,7 +118,9 @@ func New(o Options) *Client {
 		if timeout <= 0 {
 			timeout = defaultTimeout
 		}
-		httpClient = &http.Client{Timeout: timeout}
+		// Traced, so a slow lookup shows up as a span on the request that
+		// waited for it rather than as unexplained time (see obs.Transport).
+		httpClient = &http.Client{Timeout: timeout, Transport: obs.Transport{}}
 	}
 	ttl := o.TTL
 	if ttl <= 0 {
