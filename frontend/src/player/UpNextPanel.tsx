@@ -181,7 +181,6 @@ export function UpNextPanel({
               {previous.isFetchingNextPage && <Spinner />}
             </div>
           )}
-          <div className="border-t border-hair" />
         </div>
       )}
       {previous && current && (

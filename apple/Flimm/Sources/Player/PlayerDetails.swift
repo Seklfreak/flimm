@@ -197,7 +197,6 @@ struct UpNextList: View {
                         .foregroundStyle(Palette.accent)
                     }
                 }
-                Divider()
             }
             // The anchor: where the viewer is in the context, so the
             // history above and the queue below read as one list.
