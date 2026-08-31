@@ -50,6 +50,12 @@ type Client interface {
 	// ChannelStats is the channel's video count and newest upload (cached).
 	ChannelStats(ctx context.Context, channelID string) (*ChannelStats, error)
 
+	// IndexChannelPlaylists asks TA to index all of the channel's own
+	// playlists (sets the channel's index_playlists overwrite, which also
+	// queues the discovery task). Instance-wide TA state, so the caller is
+	// expected to gate it behind admin.
+	IndexChannelPlaylists(ctx context.Context, channelID string) error
+
 	ListPlaylists(ctx context.Context, kind, channelID string) ([]Playlist, error)
 	GetPlaylist(ctx context.Context, id string) (*Playlist, error)
 	CreateCustomPlaylist(ctx context.Context, name string) (*Playlist, error)
@@ -505,6 +511,14 @@ func (c *HTTP) ChannelStats(ctx context.Context, channelID string) (*ChannelStat
 
 // ListPlaylists lists playlists of a kind (custom|regular|"" for all),
 // optionally restricted to a channel.
+// IndexChannelPlaylists flips the channel's index_playlists overwrite; TA
+// both stores it and queues its playlist-discovery task, which retroactively
+// stamps membership onto already-indexed videos.
+func (c *HTTP) IndexChannelPlaylists(ctx context.Context, channelID string) error {
+	body := map[string]any{"channel_overwrites": map[string]bool{"index_playlists": true}}
+	return c.do(ctx, http.MethodPost, "/api/channel/"+url.PathEscape(channelID)+"/", nil, body, nil)
+}
+
 func (c *HTTP) ListPlaylists(ctx context.Context, kind, channelID string) ([]Playlist, error) {
 	all := []Playlist{}
 	for page := 1; page <= 100; page++ {

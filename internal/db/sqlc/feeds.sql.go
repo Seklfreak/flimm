@@ -28,6 +28,23 @@ func (q *Queries) AddFeedChannel(ctx context.Context, arg AddFeedChannelParams) 
 	return err
 }
 
+const addFeedPlaylist = `-- name: AddFeedPlaylist :exec
+INSERT INTO feed_playlists (feed_id, playlist_id, position)
+VALUES ($1, $2, $3)
+ON CONFLICT (feed_id, playlist_id) DO UPDATE SET position = EXCLUDED.position
+`
+
+type AddFeedPlaylistParams struct {
+	FeedID     uuid.UUID `json:"feed_id"`
+	PlaylistID string    `json:"playlist_id"`
+	Position   int32     `json:"position"`
+}
+
+func (q *Queries) AddFeedPlaylist(ctx context.Context, arg AddFeedPlaylistParams) error {
+	_, err := q.db.Exec(ctx, addFeedPlaylist, arg.FeedID, arg.PlaylistID, arg.Position)
+	return err
+}
+
 const createFeed = `-- name: CreateFeed :one
 INSERT INTO feeds (user_id, name, sort, hide_seen, include_shorts, subtitles_only, pinned, position)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
@@ -114,6 +131,33 @@ DELETE FROM feed_channels WHERE feed_id = $1
 
 func (q *Queries) DeleteFeedChannels(ctx context.Context, feedID uuid.UUID) error {
 	_, err := q.db.Exec(ctx, deleteFeedChannels, feedID)
+	return err
+}
+
+const deleteFeedPlaylists = `-- name: DeleteFeedPlaylists :exec
+DELETE FROM feed_playlists WHERE feed_id = $1
+`
+
+func (q *Queries) DeleteFeedPlaylists(ctx context.Context, feedID uuid.UUID) error {
+	_, err := q.db.Exec(ctx, deleteFeedPlaylists, feedID)
+	return err
+}
+
+const deletePlaylistFromUserFeeds = `-- name: DeletePlaylistFromUserFeeds :exec
+DELETE FROM feed_playlists fp
+USING feeds f
+WHERE fp.feed_id = f.id AND f.user_id = $1 AND fp.playlist_id = $2
+`
+
+type DeletePlaylistFromUserFeedsParams struct {
+	UserID     uuid.UUID `json:"user_id"`
+	PlaylistID string    `json:"playlist_id"`
+}
+
+// Removes a playlist from every feed the user owns (before re-adding it to
+// the selected ones).
+func (q *Queries) DeletePlaylistFromUserFeeds(ctx context.Context, arg DeletePlaylistFromUserFeedsParams) error {
+	_, err := q.db.Exec(ctx, deletePlaylistFromUserFeeds, arg.UserID, arg.PlaylistID)
 	return err
 }
 
@@ -211,6 +255,72 @@ func (q *Queries) ListFeedChannelsForUser(ctx context.Context, userID uuid.UUID)
 	return items, nil
 }
 
+const listFeedPlaylists = `-- name: ListFeedPlaylists :many
+SELECT playlist_id FROM feed_playlists WHERE feed_id = $1 ORDER BY position
+`
+
+func (q *Queries) ListFeedPlaylists(ctx context.Context, feedID uuid.UUID) ([]string, error) {
+	rows, err := q.db.Query(ctx, listFeedPlaylists, feedID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var playlist_id string
+		if err := rows.Scan(&playlist_id); err != nil {
+			return nil, err
+		}
+		items = append(items, playlist_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listFeedPlaylistsForUser = `-- name: ListFeedPlaylistsForUser :many
+SELECT fp.feed_id, fp.playlist_id, fp.position, f.name AS feed_name
+FROM feed_playlists fp
+JOIN feeds f ON f.id = fp.feed_id
+WHERE f.user_id = $1
+ORDER BY f.position, fp.position
+`
+
+type ListFeedPlaylistsForUserRow struct {
+	FeedID     uuid.UUID `json:"feed_id"`
+	PlaylistID string    `json:"playlist_id"`
+	Position   int32     `json:"position"`
+	FeedName   string    `json:"feed_name"`
+}
+
+// Every (feed, playlist) membership of the user in one go, so feed lists and
+// playlist "In feeds:" badges need a single query.
+func (q *Queries) ListFeedPlaylistsForUser(ctx context.Context, userID uuid.UUID) ([]ListFeedPlaylistsForUserRow, error) {
+	rows, err := q.db.Query(ctx, listFeedPlaylistsForUser, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListFeedPlaylistsForUserRow{}
+	for rows.Next() {
+		var i ListFeedPlaylistsForUserRow
+		if err := rows.Scan(
+			&i.FeedID,
+			&i.PlaylistID,
+			&i.Position,
+			&i.FeedName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listFeeds = `-- name: ListFeeds :many
 SELECT id, user_id, name, sort, hide_seen, include_shorts, subtitles_only, pinned, position, created_at, updated_at FROM feeds WHERE user_id = $1 ORDER BY position, created_at
 `
@@ -253,6 +363,17 @@ SELECT COALESCE(MAX(position), -1)::int + 1 FROM feed_channels WHERE feed_id = $
 
 func (q *Queries) NextFeedChannelPosition(ctx context.Context, feedID uuid.UUID) (int32, error) {
 	row := q.db.QueryRow(ctx, nextFeedChannelPosition, feedID)
+	var column_1 int32
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
+const nextFeedPlaylistPosition = `-- name: NextFeedPlaylistPosition :one
+SELECT COALESCE(MAX(position), -1)::int + 1 FROM feed_playlists WHERE feed_id = $1
+`
+
+func (q *Queries) NextFeedPlaylistPosition(ctx context.Context, feedID uuid.UUID) (int32, error) {
+	row := q.db.QueryRow(ctx, nextFeedPlaylistPosition, feedID)
 	var column_1 int32
 	err := row.Scan(&column_1)
 	return column_1, err

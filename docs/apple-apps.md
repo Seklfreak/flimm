@@ -71,7 +71,7 @@ What is there:
     the header. The pinned feed is the launch screen. Video cards carry the
     resume pill, seen check, duration and progress bar; lists page on the last
     row and pull to refresh.
-  - **Editing** — the feed editor (name, channel multi-select, sort, hide
+  - **Editing** — the feed editor (name, channel multi-select, a series picker, sort, hide
     seen, Shorts, subtitles-only, pin), feed reordering, the channel directory
     and channel page with the "In feeds:" control and mark-seen, playlists with
     the pin and music toggles, and history with swipe-to-delete.
@@ -337,7 +337,9 @@ What is there:
     it both paints an opaque ground and is pinned to the panel's width;
     without the pin the ground stops short and the video shows beside it.
   - **Read-only feeds.** No feed editor: naming a feed and picking its
-    channels wants a keyboard and a long list. The screens say "Edit feeds on
+    channels (or series) wants a keyboard and a long list. The admin
+    "index this channel's series" control is also absent here for the same
+    reason — it lives on the web and iPhone/iPad channel pages. The screens say "Edit feeds on
     your phone" where the button would otherwise be, rather than leaving
     someone hunting for it.
 - `.github/workflows/apple.yaml` — lint, package tests and unsigned iOS and
@@ -514,7 +516,7 @@ exercise.
 | Feature | Endpoints |
 |---|---|
 | Feeds, unseen counts, pinned feed as the launch screen | `GET /feeds`, `GET /feeds/{id}/videos` |
-| Feed editor (channels, sort, hide seen, shorts, subtitles-only, pin) | `POST/PUT/DELETE /feeds*` |
+| Feed editor (channels, series, sort, hide seen, shorts, subtitles-only, pin) | `POST/PUT/DELETE /feeds*` |
 | Channels directory, channel page, feed membership | `GET /channels*`, `PUT /channels/{id}/feeds` |
 | Playlists, pinned playlists in the sidebar | `GET /playlists`, `/playlists/pinned`, `PUT /playlists/{id}/pinned` |
 | History grouped by day, remove an entry | `GET /history`, `DELETE /history/{id}` |

@@ -251,9 +251,15 @@ final class ModelDecodingTests: XCTestCase {
         XCTAssertFalse(feed.isEverything)
         XCTAssertNotNil(feed.createdAt)
 
+        XCTAssertEqual(feed.playlistIds, ["PL-9"])
+        XCTAssertEqual(feed.playlistCount, 1)
+
         let everything = try decode(Feed.self, Fixtures.everythingFeed)
         XCTAssertTrue(everything.isEverything)
         XCTAssertTrue(everything.channelIds.isEmpty)
+        // A server from before playlist sources existed sends no playlist_ids;
+        // the field must default rather than fail the decode.
+        XCTAssertTrue(everything.playlistIds.isEmpty)
     }
 
     func testFeedInputRoundTrip() throws {
@@ -263,6 +269,7 @@ final class ModelDecodingTests: XCTestCase {
         let object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
         XCTAssertEqual(object["name"] as? String, "Home")
         XCTAssertEqual(object["channel_ids"] as? [String], ["UC-chan"])
+        XCTAssertEqual(object["playlist_ids"] as? [String], ["PL-9"])
         XCTAssertEqual(object["hide_seen"] as? Bool, true)
         XCTAssertEqual(object["subtitles_only"] as? Bool, false)
         XCTAssertEqual(object["pinned"] as? Bool, true)
@@ -275,6 +282,7 @@ final class ModelDecodingTests: XCTestCase {
         XCTAssertEqual(summary.resumeVideoId, "yt-id")
         XCTAssertFalse(summary.pinned)
         XCTAssertFalse(summary.music)
+        XCTAssertEqual(summary.feeds.first?.name, "Home")
 
         let music = try decode(PlaylistSummary.self, Fixtures.musicPlaylistSummary)
         XCTAssertTrue(music.music)

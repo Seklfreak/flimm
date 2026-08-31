@@ -8,9 +8,12 @@ encodes.
 
 ## Feeds
 
-A **feed** is a named set of channels — *Home*, *DevOps*, *Making*, *Cooking*.
-Feeds are the primary way of browsing and are separate from the channel
-directory:
+A **feed** is a named set of sources — *Home*, *DevOps*, *Making*, *Cooking*.
+A source is usually a whole channel, but it can be a single playlist — a
+**series** — for channels that publish everything into series: one Let's Play
+out of a channel with thousands of videos, without following the rest. The
+feed's videos are the union of its sources. Feeds are the primary way of
+browsing and are separate from the channel directory:
 
 - Feeds live at the top of the sidebar (desktop) or behind the title dropdown
   (mobile). Each shows its unseen count. One feed can be **pinned**; that is
@@ -22,8 +25,13 @@ directory:
   include Shorts, only videos with subtitles, pin to top.
 - The feed editor is one form for *New feed* and *Edit feed*: name, a channel
   picker (search, select all / clear, shows which other feeds each channel is
-  already in) and the options above. Deleting a feed never deletes channels or
-  videos.
+  already in), a series picker behind each channel (its archived playlists,
+  fetched only when opened; redundant while the whole channel is selected) and
+  the options above. Deleting a feed never deletes channels or videos.
+- Playlist pages carry the same *In feeds: …* control a channel page does, so
+  a series found while browsing can be put in a feed on the spot. Being a
+  feed source does **not** put a channel playlist on the Playlists page —
+  that page stays custom + taken-up only.
 - A feed view can show *unseen*, *continue watching* or *all*, and has a
   *mark all seen* action.
 
@@ -157,9 +165,13 @@ feeds without leaving the page.
 
 ## Playlists
 
-Your own custom playlists and the ones archived from channels, side by side.
-Each card shows watched progress across the playlist and a resume target (the
-first in-progress video, else the first unseen). Custom playlists are created,
+Your own custom playlists, plus the channel playlists you have taken up —
+pinned, or marked as music. A channel's full set of playlists lives on its
+channel page instead: the archive may index every playlist a prolific channel
+owns, and a page that listed them all would bury the lists that are yours
+under hundreds that are not. Taking one up is what puts it here. Each card
+shows watched progress across the playlist and a resume target (the first
+in-progress video, else the first unseen). Custom playlists are created,
 reordered and deleted through TubeArchivist so they exist there too.
 
 ## History

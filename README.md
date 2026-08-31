@@ -16,7 +16,11 @@ One container image: a Go backend with the React frontend embedded.
 
 - **Feeds** — named sets of channels (*Home*, *DevOps*, *Making*…) with unseen
   counts, per-feed sort / hide-seen / Shorts / subtitles-only options, one
-  pinned feed the app opens on, and a built-in **Everything** feed.
+  pinned feed the app opens on, and a built-in **Everything** feed. A feed can
+  also hold a single **series** — one of a channel's playlists — so one Let's
+  Play follows you around without the channel's other thousands of videos
+  (TubeArchivist must have the playlist indexed; an admin can trigger that
+  from the channel page).
 - **Channels** directory — search, sort, see which feeds each channel is in,
   find channels in no feed; add/remove from feeds right on the channel page.
 - **Resume & seen state per user** — heartbeat progress, automatic resume

@@ -11,11 +11,17 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/Seklfreak/flimm/internal/db/sqlc"
+	"github.com/Seklfreak/flimm/internal/ta"
 )
 
 type feedBody struct {
-	Name          string   `json:"name"`
-	ChannelIDs    []string `json:"channel_ids"`
+	Name       string   `json:"name"`
+	ChannelIDs []string `json:"channel_ids"`
+	// PlaylistIDs are the feed's playlist sources — single series next to
+	// whole channels. Nil on PUT means "leave them as they are", so a client
+	// built before playlist sources existed cannot wipe them with a full
+	// update; an explicit empty list clears them.
+	PlaylistIDs   []string `json:"playlist_ids"`
 	Sort          string   `json:"sort"`
 	HideSeen      *bool    `json:"hide_seen"`
 	IncludeShorts *bool    `json:"include_shorts"`
@@ -43,8 +49,56 @@ func (s *Server) feedChannelMap(ctx context.Context, uid uuid.UUID) (map[uuid.UU
 	return out, nil
 }
 
-// unseenForChannels sums TA's per-channel unwatched counts; nil channels =
-// the whole library.
+// feedPlaylistMap groups the user's playlist-source memberships by feed id.
+func (s *Server) feedPlaylistMap(ctx context.Context, uid uuid.UUID) (map[uuid.UUID][]string, error) {
+	rows, err := s.q.ListFeedPlaylistsForUser(ctx, uid)
+	if err != nil {
+		return nil, err
+	}
+	out := map[uuid.UUID][]string{}
+	for _, r := range rows {
+		out[r.FeedID] = append(out[r.FeedID], r.PlaylistID)
+	}
+	return out, nil
+}
+
+// unseenForPlaylists sums TA's unwatched totals across playlist sources, one
+// single-row query per playlist (the TA client caches them).
+func (s *Server) unseenForPlaylists(ctx context.Context, ids []string) (int, error) {
+	counts := make([]int, len(ids))
+	err := parallel(ctx, ids, func(ctx context.Context, i int, id string) error {
+		p, err := s.ta.ListVideos(ctx, ta.VideoQuery{Playlist: id, Watch: "unwatched", PageSize: 1})
+		if err != nil {
+			return err
+		}
+		counts[i] = p.Paginate.TotalHits
+		return nil
+	})
+	if err != nil {
+		return 0, err
+	}
+	total := 0
+	for _, c := range counts {
+		total += c
+	}
+	return total, nil
+}
+
+// unseenForFeed is the feed's unseen hint across both source kinds. A video
+// that is in a member channel *and* a member playlist is counted twice — the
+// number was already a hint (see docs/api.md), and staying one keeps it to
+// cached counts instead of a walk of both lists.
+func (s *Server) unseenForFeed(ctx context.Context, channelIDs, playlistIDs []string) (int, error) {
+	unseen, err := s.unseenForChannels(ctx, channelIDs)
+	if err != nil {
+		return 0, err
+	}
+	fromPlaylists, err := s.unseenForPlaylists(ctx, playlistIDs)
+	if err != nil {
+		return 0, err
+	}
+	return unseen + fromPlaylists, nil
+}
 
 func (s *Server) everythingFeed(ctx context.Context, uid uuid.UUID, position int) (FeedDTO, error) {
 	raw, err := s.q.GetPrefs(ctx, uid)
@@ -69,6 +123,7 @@ func (s *Server) everythingFeed(ctx context.Context, uid uuid.UUID, position int
 		Name:          "Everything",
 		ChannelIDs:    []string{},
 		ChannelCount:  channelCount,
+		PlaylistIDs:   []string{},
 		UnseenCount:   unseen,
 		Sort:          prefs.EverythingSort,
 		HideSeen:      prefs.EverythingHideSeen,
@@ -89,13 +144,18 @@ func (s *Server) listFeeds(w http.ResponseWriter, r *http.Request) {
 		s.writeDBError(w, "list feed channels", err)
 		return
 	}
+	playlists, err := s.feedPlaylistMap(r.Context(), uid)
+	if err != nil {
+		s.writeDBError(w, "list feed playlists", err)
+		return
+	}
 	out := make([]FeedDTO, len(feeds)+1)
 	err = parallel(r.Context(), feeds, func(ctx context.Context, i int, f sqlc.Feed) error {
-		unseen, err := s.unseenForChannels(ctx, orEmptyIDs(channels[f.ID]))
+		unseen, err := s.unseenForFeed(ctx, orEmptyIDs(channels[f.ID]), playlists[f.ID])
 		if err != nil {
 			return err
 		}
-		out[i] = feedDTO(f, channels[f.ID], unseen)
+		out[i] = feedDTO(f, channels[f.ID], playlists[f.ID], unseen)
 		return nil
 	})
 	if err != nil {
@@ -156,19 +216,22 @@ func (s *Server) createFeed(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			return err
 		}
-		return setFeedChannels(r.Context(), q, feed.ID, req.ChannelIDs)
+		if err := setFeedChannels(r.Context(), q, feed.ID, req.ChannelIDs); err != nil {
+			return err
+		}
+		return setFeedPlaylists(r.Context(), q, feed.ID, req.PlaylistIDs)
 	})
 	if err != nil {
 		s.writeDBError(w, "create feed", err)
 		return
 	}
-	chans := dedupe(req.ChannelIDs)
-	unseen, err := s.unseenForChannels(r.Context(), chans)
+	chans, pls := dedupe(req.ChannelIDs), dedupe(req.PlaylistIDs)
+	unseen, err := s.unseenForFeed(r.Context(), chans, pls)
 	if err != nil {
 		s.writeTAError(w, "feed unseen count", err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, feedDTO(feed, chans, unseen))
+	writeJSON(w, http.StatusCreated, feedDTO(feed, chans, pls, unseen))
 }
 
 func dedupe(ids []string) []string {
@@ -196,21 +259,38 @@ func setFeedChannels(ctx context.Context, q sqlc.Querier, feedID uuid.UUID, ids 
 	return nil
 }
 
-// loadFeed resolves a feed id for the user; "everything" is never a row.
-func (s *Server) loadFeed(ctx context.Context, uid uuid.UUID, id string) (sqlc.Feed, []string, error) {
+func setFeedPlaylists(ctx context.Context, q sqlc.Querier, feedID uuid.UUID, ids []string) error {
+	if err := q.DeleteFeedPlaylists(ctx, feedID); err != nil {
+		return err
+	}
+	for i, id := range dedupe(ids) {
+		if err := q.AddFeedPlaylist(ctx, sqlc.AddFeedPlaylistParams{FeedID: feedID, PlaylistID: id, Position: int32(i)}); err != nil { //nolint:gosec // small
+			return err
+		}
+	}
+	return nil
+}
+
+// loadFeed resolves a feed id for the user — the feed row plus its channel
+// and playlist sources; "everything" is never a row.
+func (s *Server) loadFeed(ctx context.Context, uid uuid.UUID, id string) (sqlc.Feed, []string, []string, error) {
 	fid, err := uuid.Parse(id)
 	if err != nil {
-		return sqlc.Feed{}, nil, pgx.ErrNoRows
+		return sqlc.Feed{}, nil, nil, pgx.ErrNoRows
 	}
 	feed, err := s.q.GetFeed(ctx, sqlc.GetFeedParams{ID: fid, UserID: uid})
 	if err != nil {
-		return sqlc.Feed{}, nil, err
+		return sqlc.Feed{}, nil, nil, err
 	}
 	chans, err := s.q.ListFeedChannels(ctx, fid)
 	if err != nil {
-		return sqlc.Feed{}, nil, err
+		return sqlc.Feed{}, nil, nil, err
 	}
-	return feed, orEmptyIDs(chans), nil
+	pls, err := s.q.ListFeedPlaylists(ctx, fid)
+	if err != nil {
+		return sqlc.Feed{}, nil, nil, err
+	}
+	return feed, orEmptyIDs(chans), orEmptyIDs(pls), nil
 }
 
 func (s *Server) getFeed(w http.ResponseWriter, r *http.Request) {
@@ -230,17 +310,17 @@ func (s *Server) getFeed(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, every)
 		return
 	}
-	feed, chans, err := s.loadFeed(r.Context(), uid, id)
+	feed, chans, pls, err := s.loadFeed(r.Context(), uid, id)
 	if err != nil {
 		s.writeDBError(w, "get feed", err)
 		return
 	}
-	unseen, err := s.unseenForChannels(r.Context(), chans)
+	unseen, err := s.unseenForFeed(r.Context(), chans, pls)
 	if err != nil {
 		s.writeTAError(w, "feed unseen count", err)
 		return
 	}
-	writeJSON(w, http.StatusOK, feedDTO(feed, chans, unseen))
+	writeJSON(w, http.StatusOK, feedDTO(feed, chans, pls, unseen))
 }
 
 func (s *Server) updateFeed(w http.ResponseWriter, r *http.Request) {
@@ -312,7 +392,12 @@ func (s *Server) updateFeed(w http.ResponseWriter, r *http.Request) {
 			return err
 		}
 		if req.ChannelIDs != nil {
-			return setFeedChannels(r.Context(), q, fid, req.ChannelIDs)
+			if err := setFeedChannels(r.Context(), q, fid, req.ChannelIDs); err != nil {
+				return err
+			}
+		}
+		if req.PlaylistIDs != nil {
+			return setFeedPlaylists(r.Context(), q, fid, req.PlaylistIDs)
 		}
 		return nil
 	})
@@ -325,13 +410,18 @@ func (s *Server) updateFeed(w http.ResponseWriter, r *http.Request) {
 		s.writeDBError(w, "list feed channels", err)
 		return
 	}
-	chans = orEmptyIDs(chans)
-	unseen, err := s.unseenForChannels(r.Context(), chans)
+	pls, err := s.q.ListFeedPlaylists(r.Context(), fid)
+	if err != nil {
+		s.writeDBError(w, "list feed playlists", err)
+		return
+	}
+	chans, pls = orEmptyIDs(chans), orEmptyIDs(pls)
+	unseen, err := s.unseenForFeed(r.Context(), chans, pls)
 	if err != nil {
 		s.writeTAError(w, "feed unseen count", err)
 		return
 	}
-	writeJSON(w, http.StatusOK, feedDTO(feed, chans, unseen))
+	writeJSON(w, http.StatusOK, feedDTO(feed, chans, pls, unseen))
 }
 
 func (s *Server) deleteFeed(w http.ResponseWriter, r *http.Request) {
@@ -397,11 +487,11 @@ func (s *Server) feedListOpts(r *http.Request, uid uuid.UUID, id string) (listOp
 		}
 		o = listOpts{Sort: prefs.EverythingSort, IncludeShorts: prefs.EverythingIncludeShorts, UnseenOnly: prefs.EverythingHideSeen, DropDismissed: true}
 	} else {
-		feed, chans, err := s.loadFeed(r.Context(), uid, id)
+		feed, chans, pls, err := s.loadFeed(r.Context(), uid, id)
 		if err != nil {
 			return o, err
 		}
-		o = listOpts{ChannelIDs: chans, Sort: feed.Sort, IncludeShorts: feed.IncludeShorts, SubtitlesOnly: feed.SubtitlesOnly, UnseenOnly: feed.HideSeen, DropDismissed: true}
+		o = listOpts{ChannelIDs: chans, PlaylistIDs: pls, Sort: feed.Sort, IncludeShorts: feed.IncludeShorts, SubtitlesOnly: feed.SubtitlesOnly, UnseenOnly: feed.HideSeen, DropDismissed: true}
 	}
 	switch r.URL.Query().Get("view") {
 	case "unseen":
@@ -425,7 +515,7 @@ func (s *Server) listFeedVideos(w http.ResponseWriter, r *http.Request) {
 	// before that — it answers with the same in-progress videos, which are the
 	// head of the list those clients would get from `view=unseen` today.
 	if r.URL.Query().Get("view") == "continue" {
-		items, err := s.continueList(r.Context(), uid, o.ChannelIDs, o.IncludeShorts)
+		items, err := s.continueList(r.Context(), uid, o)
 		if err != nil {
 			s.writeTAError(w, "list feed videos", err)
 			return
@@ -457,7 +547,7 @@ func (s *Server) listFeedPage(ctx context.Context, uid uuid.UUID, o listOpts, p 
 	if !o.UnseenOnly {
 		return s.listVideosPage(ctx, uid, o, p)
 	}
-	head, err := s.continueList(ctx, uid, o.ChannelIDs, o.IncludeShorts)
+	head, err := s.continueList(ctx, uid, o)
 	if err != nil {
 		return Page[VideoSummary]{}, err
 	}

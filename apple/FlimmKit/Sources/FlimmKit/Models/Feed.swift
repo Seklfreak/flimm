@@ -27,6 +27,10 @@ public struct Feed: Codable, Sendable, Hashable, Identifiable {
     /// Empty for ``everythingID``, which means "all channels".
     public let channelIds: [String]
     public let channelCount: Int
+    /// Playlist sources — single series next to whole channels; the feed's
+    /// videos are the union of both kinds.
+    public let playlistIds: [String]
+    public let playlistCount: Int
     public let unseenCount: Int
     public let sort: FeedSort
     public let hideSeen: Bool
@@ -47,6 +51,8 @@ public struct Feed: Codable, Sendable, Hashable, Identifiable {
         name: String,
         channelIds: [String] = [],
         channelCount: Int = 0,
+        playlistIds: [String] = [],
+        playlistCount: Int = 0,
         unseenCount: Int = 0,
         sort: FeedSort = .newest,
         hideSeen: Bool = true,
@@ -61,6 +67,8 @@ public struct Feed: Codable, Sendable, Hashable, Identifiable {
         self.name = name
         self.channelIds = channelIds
         self.channelCount = channelCount
+        self.playlistIds = playlistIds
+        self.playlistCount = playlistCount
         self.unseenCount = unseenCount
         self.sort = sort
         self.hideSeen = hideSeen
@@ -78,6 +86,8 @@ public struct Feed: Codable, Sendable, Hashable, Identifiable {
         name = try c.decode(String.self, forKey: .name)
         channelIds = try c.decode(.channelIds, or: [])
         channelCount = try c.decode(.channelCount, or: 0)
+        playlistIds = try c.decode(.playlistIds, or: [])
+        playlistCount = try c.decode(.playlistCount, or: 0)
         unseenCount = try c.decode(.unseenCount, or: 0)
         sort = try c.decode(.sort, or: FeedSort.newest)
         hideSeen = try c.decode(.hideSeen, or: true)
@@ -95,6 +105,10 @@ public struct Feed: Codable, Sendable, Hashable, Identifiable {
 public struct FeedInput: Codable, Sendable, Hashable {
     public var name: String
     public var channelIds: [String]
+    /// Playlist sources. Always sent: the native editor owns the full set, so
+    /// a save is a full update (the server treats an *absent* field, not an
+    /// empty one, as "keep").
+    public var playlistIds: [String]
     public var sort: FeedSort
     public var hideSeen: Bool
     public var includeShorts: Bool
@@ -105,6 +119,7 @@ public struct FeedInput: Codable, Sendable, Hashable {
     public init(
         name: String,
         channelIds: [String] = [],
+        playlistIds: [String] = [],
         sort: FeedSort = .newest,
         hideSeen: Bool = true,
         includeShorts: Bool = false,
@@ -113,6 +128,7 @@ public struct FeedInput: Codable, Sendable, Hashable {
     ) {
         self.name = name
         self.channelIds = channelIds
+        self.playlistIds = playlistIds
         self.sort = sort
         self.hideSeen = hideSeen
         self.includeShorts = includeShorts
@@ -124,6 +140,7 @@ public struct FeedInput: Codable, Sendable, Hashable {
         self.init(
             name: feed.name,
             channelIds: feed.channelIds,
+            playlistIds: feed.playlistIds,
             sort: feed.sort,
             hideSeen: feed.hideSeen,
             includeShorts: feed.includeShorts,

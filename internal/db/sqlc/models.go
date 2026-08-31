@@ -43,6 +43,12 @@ type FeedChannel struct {
 	Position  int32     `json:"position"`
 }
 
+type FeedPlaylist struct {
+	FeedID     uuid.UUID `json:"feed_id"`
+	PlaylistID string    `json:"playlist_id"`
+	Position   int32     `json:"position"`
+}
+
 type PlaylistSetting struct {
 	UserID     uuid.UUID          `json:"user_id"`
 	PlaylistID string             `json:"playlist_id"`

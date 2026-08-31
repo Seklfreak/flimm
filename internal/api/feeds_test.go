@@ -187,9 +187,15 @@ func TestCreateFeedPinsAndStoresChannels(t *testing.T) {
 		added = append(added, arg.ChannelID)
 		return nil
 	}
+	var addedPlaylists []string
+	q.DeleteFeedPlaylistsFn = func(context.Context, uuid.UUID) error { return nil }
+	q.AddFeedPlaylistFn = func(_ context.Context, arg sqlc.AddFeedPlaylistParams) error {
+		addedPlaylists = append(addedPlaylists, arg.PlaylistID)
+		return nil
+	}
 	h := newTestServer(client, q).Router()
 
-	rec := do(t, h, http.MethodPost, "/api/v1/feeds", `{"name":"Maker","channel_ids":["A","A","B"],"pinned":true,"sort":"oldest"}`)
+	rec := do(t, h, http.MethodPost, "/api/v1/feeds", `{"name":"Maker","channel_ids":["A","A","B"],"playlist_ids":["PL1","PL1"],"pinned":true,"sort":"oldest"}`)
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("status = %d: %s", rec.Code, rec.Body.String())
 	}
@@ -199,8 +205,11 @@ func TestCreateFeedPinsAndStoresChannels(t *testing.T) {
 	if !reflect.DeepEqual(added, []string{"A", "B"}) {
 		t.Errorf("channels = %v", added)
 	}
+	if !reflect.DeepEqual(addedPlaylists, []string{"PL1"}) {
+		t.Errorf("playlists = %v", addedPlaylists)
+	}
 	f := decode[FeedDTO](t, rec)
-	if f.ChannelCount != 2 || f.UnseenCount != 1 {
+	if f.ChannelCount != 2 || f.PlaylistCount != 1 || f.UnseenCount != 1 {
 		t.Errorf("feed = %+v", f)
 	}
 	rec = do(t, h, http.MethodPost, "/api/v1/feeds", `{"name":"x","sort":"random"}`)
@@ -282,5 +291,128 @@ func TestTheAllViewIsNotReordered(t *testing.T) {
 	// stays where the feed's own sort puts it.
 	if got := ids(page.Items); len(got) == 0 || got[0] != "b2" {
 		t.Errorf("items = %v, want the feed's own order (b2 newest first)", got)
+	}
+}
+
+// A feed's videos are the union of its channels and its playlist sources —
+// a series can sit in a feed without the rest of its channel — and a video
+// reached through both kinds appears once.
+func TestFeedMergesPlaylistAndChannelSources(t *testing.T) {
+	client := ta.NewFake()
+	inPL := video("a2", "A", "2026-08-03", 100, false)
+	inPL.Playlist = []string{"PL"}
+	series := video("b1", "B", "2026-08-02", 3000, false)
+	series.Playlist = []string{"PL"}
+	client.AddVideo(video("a1", "A", "2026-08-01", 600, false))
+	client.AddVideo(inPL)
+	client.AddVideo(series)
+	client.AddVideo(video("c1", "C", "2026-08-05", 500, false))
+
+	feed := sqlc.Feed{ID: uuid.New(), Name: "Series", Sort: "newest", HideSeen: false}
+	es := newEventStore()
+	q := es.querier()
+	q.GetFeedFn = func(_ context.Context, arg sqlc.GetFeedParams) (sqlc.Feed, error) {
+		if arg.ID != feed.ID {
+			return sqlc.Feed{}, errNoRows
+		}
+		return feed, nil
+	}
+	q.ListFeedChannelsFn = func(context.Context, uuid.UUID) ([]string, error) { return []string{"A"}, nil }
+	q.ListFeedPlaylistsFn = func(context.Context, uuid.UUID) ([]string, error) { return []string{"PL"}, nil }
+	h := newTestServer(client, q).Router()
+
+	rec := do(t, h, http.MethodGet, "/api/v1/feeds/"+feed.ID.String()+"/videos?view=all", "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", rec.Code, rec.Body.String())
+	}
+	page := decode[Page[VideoSummary]](t, rec)
+	// a2 belongs to both the channel and the playlist: once, not twice.
+	if got := ids(page.Items); !reflect.DeepEqual(got, []string{"a2", "b1", "a1"}) {
+		t.Errorf("items = %v, want [a2 b1 a1] (union, deduped, newest first)", got)
+	}
+
+	// The unseen hint covers both source kinds (and double-counts overlap —
+	// documented as a hint): channel A has 2 unseen + playlist PL has 2.
+	rec = do(t, h, http.MethodGet, "/api/v1/feeds/"+feed.ID.String(), "")
+	f := decode[FeedDTO](t, rec)
+	if f.ChannelCount != 1 || f.PlaylistCount != 1 || f.UnseenCount != 4 {
+		t.Errorf("feed = %+v, want 1 channel, 1 playlist, unseen hint 4", f)
+	}
+}
+
+// An in-progress video that reached the feed through a playlist source has no
+// channel membership to say so — the video document's playlist list does.
+func TestUnseenFeedHeadIncludesPlaylistSourcedVideo(t *testing.T) {
+	client := ta.NewFake()
+	client.AddVideo(video("a1", "A", "2026-08-01", 600, false))
+	series := video("p1", "B", "2026-08-02", 3000, false)
+	series.Playlist = []string{"PL"}
+	client.AddVideo(series)
+	client.AddVideo(video("c1", "C", "2026-08-05", 500, false))
+
+	feed := sqlc.Feed{ID: uuid.New(), Name: "Series", Sort: "newest", HideSeen: true}
+	es := newEventStore()
+	q := es.querier()
+	q.GetFeedFn = func(context.Context, sqlc.GetFeedParams) (sqlc.Feed, error) { return feed, nil }
+	q.ListFeedChannelsFn = func(context.Context, uuid.UUID) ([]string, error) { return []string{"A"}, nil }
+	q.ListFeedPlaylistsFn = func(context.Context, uuid.UUID) ([]string, error) { return []string{"PL"}, nil }
+	es.events["p1"] = sqlc.WatchEvent{
+		VideoID: "p1", ChannelID: "B", Position: 100, Duration: 3000,
+		LastPlayedAt: pgtype.Timestamptz{Time: time.Now(), Valid: true},
+	}
+	es.events["c1"] = sqlc.WatchEvent{
+		VideoID: "c1", ChannelID: "C", Position: 100, Duration: 500,
+		LastPlayedAt: pgtype.Timestamptz{Time: time.Now(), Valid: true},
+	}
+	h := newTestServer(client, q).Router()
+
+	rec := do(t, h, http.MethodGet, "/api/v1/feeds/"+feed.ID.String()+"/videos?view=unseen", "")
+	page := decode[Page[VideoSummary]](t, rec)
+	got := ids(page.Items)
+	if len(got) == 0 || got[0] != "p1" {
+		t.Fatalf("items = %v, want p1 first (in progress via its playlist)", got)
+	}
+	for _, id := range got {
+		if id == "c1" {
+			t.Errorf("c1 listed although it is in no source: %v", got)
+		}
+	}
+}
+
+// A PUT without playlist_ids leaves them alone — an older client's full
+// update must not wipe a feed's series — while an explicit empty list clears.
+func TestUpdateFeedPlaylistsAbsentMeansUnchanged(t *testing.T) {
+	feed := sqlc.Feed{ID: uuid.New(), Name: "Home", Sort: "newest", HideSeen: true}
+	es := newEventStore()
+	q := es.querier()
+	q.GetFeedFn = func(context.Context, sqlc.GetFeedParams) (sqlc.Feed, error) { return feed, nil }
+	q.UpdateFeedFn = func(_ context.Context, arg sqlc.UpdateFeedParams) (sqlc.Feed, error) {
+		feed.Name = arg.Name
+		return feed, nil
+	}
+	q.ListFeedChannelsFn = func(context.Context, uuid.UUID) ([]string, error) { return nil, nil }
+	q.ListFeedPlaylistsFn = func(context.Context, uuid.UUID) ([]string, error) { return []string{"PL"}, nil }
+	cleared := false
+	q.DeleteFeedPlaylistsFn = func(context.Context, uuid.UUID) error { cleared = true; return nil }
+	q.DeleteFeedChannelsFn = func(context.Context, uuid.UUID) error { return nil }
+	h := newTestServer(ta.NewFake(), q).Router()
+
+	rec := do(t, h, http.MethodPut, "/api/v1/feeds/"+feed.ID.String(), `{"name":"Still home"}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", rec.Code, rec.Body.String())
+	}
+	if cleared {
+		t.Error("PUT without playlist_ids rewrote the playlist sources")
+	}
+	if f := decode[FeedDTO](t, rec); f.PlaylistCount != 1 {
+		t.Errorf("feed = %+v, want the kept playlist reported", f)
+	}
+
+	rec = do(t, h, http.MethodPut, "/api/v1/feeds/"+feed.ID.String(), `{"name":"Still home","playlist_ids":[]}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", rec.Code, rec.Body.String())
+	}
+	if !cleared {
+		t.Error("PUT with an explicit empty playlist_ids did not clear them")
 	}
 }

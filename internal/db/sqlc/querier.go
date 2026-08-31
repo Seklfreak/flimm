@@ -12,6 +12,7 @@ import (
 
 type Querier interface {
 	AddFeedChannel(ctx context.Context, arg AddFeedChannelParams) error
+	AddFeedPlaylist(ctx context.Context, arg AddFeedPlaylistParams) error
 	CountHistory(ctx context.Context, arg CountHistoryParams) (int64, error)
 	CreateFeed(ctx context.Context, arg CreateFeedParams) (Feed, error)
 	// Removes a channel from every feed the user owns (before re-adding it to the
@@ -19,6 +20,10 @@ type Querier interface {
 	DeleteChannelFromUserFeeds(ctx context.Context, arg DeleteChannelFromUserFeedsParams) error
 	DeleteFeed(ctx context.Context, arg DeleteFeedParams) (int64, error)
 	DeleteFeedChannels(ctx context.Context, feedID uuid.UUID) error
+	DeleteFeedPlaylists(ctx context.Context, feedID uuid.UUID) error
+	// Removes a playlist from every feed the user owns (before re-adding it to
+	// the selected ones).
+	DeletePlaylistFromUserFeeds(ctx context.Context, arg DeletePlaylistFromUserFeedsParams) error
 	// Idempotent: dismissing an already-dismissed video keeps the original time,
 	// so a double tap does not look like a fresh decision.
 	DismissVideo(ctx context.Context, arg DismissVideoParams) error
@@ -38,6 +43,10 @@ type Querier interface {
 	// Every (feed, channel) membership of the user in one go, so feed lists and
 	// channel "In feeds:" badges need a single query.
 	ListFeedChannelsForUser(ctx context.Context, userID uuid.UUID) ([]ListFeedChannelsForUserRow, error)
+	ListFeedPlaylists(ctx context.Context, feedID uuid.UUID) ([]string, error)
+	// Every (feed, playlist) membership of the user in one go, so feed lists and
+	// playlist "In feeds:" badges need a single query.
+	ListFeedPlaylistsForUser(ctx context.Context, userID uuid.UUID) ([]ListFeedPlaylistsForUserRow, error)
 	ListFeeds(ctx context.Context, userID uuid.UUID) ([]Feed, error)
 	ListHistory(ctx context.Context, arg ListHistoryParams) ([]WatchEvent, error)
 	// "Continue watching": started, not finished, newest activity first.
@@ -46,6 +55,7 @@ type Querier interface {
 	ListPlaylistSettings(ctx context.Context, userID uuid.UUID) ([]PlaylistSetting, error)
 	ListWatchEventsForVideos(ctx context.Context, arg ListWatchEventsForVideosParams) ([]WatchEvent, error)
 	NextFeedChannelPosition(ctx context.Context, feedID uuid.UUID) (int32, error)
+	NextFeedPlaylistPosition(ctx context.Context, feedID uuid.UUID) (int32, error)
 	NextFeedPosition(ctx context.Context, userID uuid.UUID) (int32, error)
 	// A row with nothing set is noise; drop it so the table only holds intent.
 	PruneEmptyPlaylistSettings(ctx context.Context, userID uuid.UUID) error

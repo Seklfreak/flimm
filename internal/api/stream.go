@@ -198,8 +198,8 @@ func lessVideo(a, b ta.Video, sortKey string) bool {
 	return a.YoutubeID < b.YoutubeID
 }
 
-// streamsFor turns listOpts into one cursor per TA query: one per channel, or
-// a single unfiltered one for the everything feed.
+// streamsFor turns listOpts into one cursor per TA query: one per channel and
+// one per playlist source, or a single unfiltered one for the everything feed.
 func (s *Server) streamsFor(o listOpts) []*videoStream {
 	field, order := taSort(o.Sort)
 	watch := ""
@@ -209,9 +209,12 @@ func (s *Server) streamsFor(o listOpts) []*videoStream {
 	if o.ChannelIDs == nil {
 		return []*videoStream{newStream(ta.VideoQuery{Watch: watch, Sort: field, Order: order})}
 	}
-	out := make([]*videoStream, 0, len(o.ChannelIDs))
+	out := make([]*videoStream, 0, len(o.ChannelIDs)+len(o.PlaylistIDs))
 	for _, ch := range o.ChannelIDs {
 		out = append(out, newStream(ta.VideoQuery{Channel: ch, Watch: watch, Sort: field, Order: order}))
+	}
+	for _, pl := range o.PlaylistIDs {
+		out = append(out, newStream(ta.VideoQuery{Playlist: pl, Watch: watch, Sort: field, Order: order}))
 	}
 	return out
 }
@@ -362,6 +365,13 @@ func fingerprint(o listOpts) uint64 {
 	_, _ = fmt.Fprintf(h, "%t|%s|%s|%t|%t|%t|%t",
 		o.ChannelIDs == nil, strings.Join(ids, ","), o.Sort,
 		o.IncludeShorts, o.SubtitlesOnly, o.UnseenOnly, o.DropDismissed)
+	// Appended only when present, so cursors from before playlist sources
+	// existed (and every channel-only list's) stay valid.
+	if len(o.PlaylistIDs) > 0 {
+		pls := slices.Clone(o.PlaylistIDs)
+		slices.Sort(pls)
+		_, _ = fmt.Fprintf(h, "|pl:%s", strings.Join(pls, ","))
+	}
 	return h.Sum64()
 }
 

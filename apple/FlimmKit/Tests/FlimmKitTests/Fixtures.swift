@@ -164,6 +164,8 @@ enum Fixtures {
       "name": "Home",
       "channel_ids": ["UC-chan"],
       "channel_count": 6,
+      "playlist_ids": ["PL-9"],
+      "playlist_count": 1,
       "unseen_count": 7,
       "sort": "newest",
       "hide_seen": true,
@@ -190,6 +192,7 @@ enum Fixtures {
     {
       "id": "PL-1", "name": "A Playlist", "kind": "custom",
       "channel": null,
+      "feeds": [{ "id": "feed-1", "name": "Home" }],
       "thumb_url": "/media/thumb/playlist/PL-1",
       "video_count": 14, "total_duration": 15120,
       "seen_count": 11, "in_progress_count": 1,

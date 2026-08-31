@@ -13,6 +13,7 @@ struct PlaylistDetailView: View {
     @State private var playlist: Playlist?
     @State private var error: String?
     @State private var isBusy = false
+    @State private var showFeedsSheet = false
 
     private var summary: PlaylistSummary? { playlist?.summary }
 
@@ -51,6 +52,11 @@ struct PlaylistDetailView: View {
         .onAppear { Analytics.screen(.playlist) }
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { toolbar }
+        .sheet(isPresented: $showFeedsSheet) {
+            if let summary {
+                PlaylistFeedsSheet(playlist: summary) { await load() }
+            }
+        }
         .task { await load() }
     }
 
@@ -132,6 +138,11 @@ struct PlaylistDetailView: View {
                     get: { summary?.music ?? false },
                     set: { value in Task { await setMusic(value) } }
                 ))
+                Button {
+                    showFeedsSheet = true
+                } label: {
+                    Label("In feeds…", systemImage: "tray.full")
+                }
             } label: {
                 Image(systemName: "ellipsis.circle")
             }
@@ -192,5 +203,69 @@ struct PlaylistDetailView: View {
         items[index] = PlaylistItem(position: items[index].position, video: updated)
         playlist = Playlist(summary: current.summary, items: items)
         Task { await app.videoListStateChanged() }
+    }
+}
+
+/// The playlist's "In feeds:" control as a sheet — the mirror of
+/// `ChannelFeedsSheet`: `PUT /playlists/{id}/feeds` replaces the whole
+/// membership set, so the sheet edits a local copy and saves once.
+struct PlaylistFeedsSheet: View {
+    let playlist: PlaylistSummary
+    let onSaved: () async -> Void
+
+    @Environment(AppModel.self) private var app
+    @Environment(\.dismiss) private var dismiss
+    @State private var selection: Set<String> = []
+    @State private var isSaving = false
+
+    private var editableFeeds: [Feed] { app.feeds.filter { !$0.isEverything } }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                if editableFeeds.isEmpty {
+                    Text("No feeds yet — create one first.")
+                        .foregroundStyle(.secondary)
+                }
+                ForEach(editableFeeds) { feed in
+                    Button {
+                        if selection.contains(feed.id) { selection.remove(feed.id) } else { selection.insert(feed.id) }
+                    } label: {
+                        HStack {
+                            Text(feed.name)
+                            Spacer()
+                            if selection.contains(feed.id) {
+                                Image(systemName: "checkmark").foregroundStyle(Palette.accent)
+                            }
+                        }
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .navigationTitle(playlist.name)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") { Task { await save() } }
+                        .disabled(isSaving)
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
+        .task { selection = Set(playlist.feeds.map(\.id).filter { $0 != Feed.everythingID }) }
+    }
+
+    private func save() async {
+        isSaving = true
+        defer { isSaving = false }
+        try? await app.client.setPlaylistFeeds(playlist.id, feedIds: Array(selection))
+        // Feed membership changes what every feed list contains.
+        app.pagers.removeAll()
+        await app.refreshFeeds()
+        await onSaved()
+        dismiss()
     }
 }

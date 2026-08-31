@@ -263,6 +263,7 @@ func (s *Server) Router() http.Handler {
 			r.Get("/channels/{id}/videos", s.listChannelVideos)
 			r.Get("/channels/{id}/playlists", s.listChannelPlaylists)
 			r.Put("/channels/{id}/feeds", s.setChannelFeeds)
+			r.Post("/channels/{id}/index-playlists", s.indexChannelPlaylists)
 			r.Post("/channels/{id}/mark-seen", s.markChannelSeen)
 
 			r.Get("/videos/{id}", s.getVideo)
@@ -284,6 +285,7 @@ func (s *Server) Router() http.Handler {
 			r.Get("/playlists/pinned", s.listPinnedPlaylists)
 			r.Put("/playlists/{id}/music", s.setPlaylistMusic)
 			r.Put("/playlists/{id}/pinned", s.setPlaylistPinned)
+			r.Put("/playlists/{id}/feeds", s.setPlaylistFeeds)
 			r.Post("/playlists", s.createPlaylist)
 			r.Get("/playlists/{id}", s.getPlaylist)
 			r.Patch("/playlists/{id}", s.renamePlaylist)

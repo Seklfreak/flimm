@@ -68,10 +68,12 @@ func (s *Server) search(w http.ResponseWriter, r *http.Request) {
 	}
 	unseen := r.URL.Query().Get("unseen") == "true"
 
-	// Feed restriction: nil = no restriction, empty = everything feed.
-	var allowedChannels map[string]bool
+	// Feed restriction: nil = no restriction, empty = everything feed. A feed
+	// admits a video through either source kind — its channels, or playlist
+	// membership.
+	var allowedChannels, allowedPlaylists map[string]bool
 	if feedID := r.URL.Query().Get("feed"); feedID != "" && feedID != everythingFeedID {
-		_, chans, err := s.loadFeed(r.Context(), uid, feedID)
+		_, chans, pls, err := s.loadFeed(r.Context(), uid, feedID)
 		if err != nil {
 			s.writeDBError(w, "load feed", err)
 			return
@@ -79,6 +81,10 @@ func (s *Server) search(w http.ResponseWriter, r *http.Request) {
 		allowedChannels = map[string]bool{}
 		for _, c := range chans {
 			allowedChannels[c] = true
+		}
+		allowedPlaylists = map[string]bool{}
+		for _, p := range pls {
+			allowedPlaylists[p] = true
 		}
 	}
 
@@ -117,7 +123,7 @@ func (s *Server) search(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	videos, err := s.searchVideos(r.Context(), uid, merged, allowedChannels, unseen)
+	videos, err := s.searchVideos(r.Context(), uid, merged, allowedChannels, allowedPlaylists, unseen)
 	if err != nil {
 		s.writeTAError(w, "search videos", err)
 		return
@@ -181,7 +187,7 @@ func (s *Server) search(w http.ResponseWriter, r *http.Request) {
 // searchVideos merges title hits and subtitle hits (grouped per video),
 // resolving videos only known from subtitle hits, then applies the unseen
 // and feed filters.
-func (s *Server) searchVideos(ctx context.Context, uid uuid.UUID, res ta.SearchResult, allowed map[string]bool, unseen bool) ([]searchVideo, error) {
+func (s *Server) searchVideos(ctx context.Context, uid uuid.UUID, res ta.SearchResult, allowed, allowedPlaylists map[string]bool, unseen bool) ([]searchVideo, error) {
 	hits := map[string][]subtitleHit{}
 	var order []string
 	byID := map[string]ta.Video{}
@@ -229,7 +235,7 @@ func (s *Server) searchVideos(ctx context.Context, uid uuid.UUID, res ta.SearchR
 		if !ok {
 			continue
 		}
-		if allowed != nil && !allowed[v.Channel.ChannelID] {
+		if allowed != nil && !allowed[v.Channel.ChannelID] && !inAnyPlaylist(v, allowedPlaylists) {
 			continue
 		}
 		vids = append(vids, v)
@@ -251,6 +257,16 @@ func (s *Server) searchVideos(ctx context.Context, uid uuid.UUID, res ta.SearchR
 		out = append(out, searchVideo{Video: it, SubtitleHits: h})
 	}
 	return out, nil
+}
+
+// inAnyPlaylist reports whether the video belongs to one of the playlists.
+func inAnyPlaylist(v ta.Video, playlists map[string]bool) bool {
+	for _, pid := range v.Playlist {
+		if playlists[pid] {
+			return true
+		}
+	}
+	return false
 }
 
 func containsStr(ss []string, s string) bool {

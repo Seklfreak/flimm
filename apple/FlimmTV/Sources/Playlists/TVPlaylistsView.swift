@@ -1,7 +1,7 @@
 import FlimmKit
 import SwiftUI
 
-/// Custom playlists and the ones archived from channels, pinned first. A pin is
+/// Custom playlists and the channel playlists the viewer took up, pinned first. A pin is
 /// Flimm's own per-user state, so it follows the account here from wherever it
 /// was set.
 struct TVPlaylistsView: View {

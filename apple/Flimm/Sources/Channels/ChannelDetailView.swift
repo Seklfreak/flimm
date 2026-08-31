@@ -15,6 +15,9 @@ struct ChannelDetailView: View {
     @State private var channelView: ChannelView = .all
     @State private var error: String?
     @State private var showFeedPicker = false
+    /// Set once the admin asked TA to index this channel's playlists; the
+    /// discovery runs archive-side, so there is nothing to await here.
+    @State private var seriesIndexRequested = false
 
     var body: some View {
         ScrollView {
@@ -22,6 +25,12 @@ struct ChannelDetailView: View {
                 if let channel {
                     header(channel)
                     if !playlists.isEmpty { playlistStrip }
+                    if seriesIndexRequested && playlists.isEmpty {
+                        Text("Asked TubeArchivist to index this channel's playlists — the discovery runs there and can take a few minutes.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 16)
+                    }
                     Picker("Show", selection: $channelView) {
                         Text("All").tag(ChannelView.all)
                         Text("Unseen").tag(ChannelView.unseen)
@@ -79,6 +88,14 @@ struct ChannelDetailView: View {
                     Label("Shuffle", systemImage: "shuffle")
                 }
                 .disabled(pager?.items.isEmpty != false)
+                if playlists.isEmpty, app.me?.isAdmin == true, !seriesIndexRequested {
+                    Button {
+                        seriesIndexRequested = true
+                        Task { try? await app.client.indexChannelPlaylists(channelId) }
+                    } label: {
+                        Label("Find series (index playlists)", systemImage: "sparkle.magnifyingglass")
+                    }
+                }
                 Button {
                     Task { await markSeen() }
                 } label: {

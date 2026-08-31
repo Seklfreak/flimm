@@ -62,3 +62,33 @@ WHERE fc.feed_id = f.id AND f.user_id = $1 AND fc.channel_id = $2;
 
 -- name: NextFeedChannelPosition :one
 SELECT COALESCE(MAX(position), -1)::int + 1 FROM feed_channels WHERE feed_id = $1;
+
+-- name: ListFeedPlaylistsForUser :many
+-- Every (feed, playlist) membership of the user in one go, so feed lists and
+-- playlist "In feeds:" badges need a single query.
+SELECT fp.feed_id, fp.playlist_id, fp.position, f.name AS feed_name
+FROM feed_playlists fp
+JOIN feeds f ON f.id = fp.feed_id
+WHERE f.user_id = $1
+ORDER BY f.position, fp.position;
+
+-- name: ListFeedPlaylists :many
+SELECT playlist_id FROM feed_playlists WHERE feed_id = $1 ORDER BY position;
+
+-- name: DeleteFeedPlaylists :exec
+DELETE FROM feed_playlists WHERE feed_id = $1;
+
+-- name: AddFeedPlaylist :exec
+INSERT INTO feed_playlists (feed_id, playlist_id, position)
+VALUES ($1, $2, $3)
+ON CONFLICT (feed_id, playlist_id) DO UPDATE SET position = EXCLUDED.position;
+
+-- name: DeletePlaylistFromUserFeeds :exec
+-- Removes a playlist from every feed the user owns (before re-adding it to
+-- the selected ones).
+DELETE FROM feed_playlists fp
+USING feeds f
+WHERE fp.feed_id = f.id AND f.user_id = $1 AND fp.playlist_id = $2;
+
+-- name: NextFeedPlaylistPosition :one
+SELECT COALESCE(MAX(position), -1)::int + 1 FROM feed_playlists WHERE feed_id = $1;

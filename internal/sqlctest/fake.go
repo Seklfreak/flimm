@@ -14,48 +14,54 @@ import (
 type FakeQuerier struct {
 	sqlc.Querier // embedded; unset methods panic on call
 
-	AddFeedChannelFn             func(context.Context, sqlc.AddFeedChannelParams) error
-	CountHistoryFn               func(context.Context, sqlc.CountHistoryParams) (int64, error)
-	CreateFeedFn                 func(context.Context, sqlc.CreateFeedParams) (sqlc.Feed, error)
-	DeleteChannelFromUserFeedsFn func(context.Context, sqlc.DeleteChannelFromUserFeedsParams) error
-	DeleteFeedFn                 func(context.Context, sqlc.DeleteFeedParams) (int64, error)
-	DeleteFeedChannelsFn         func(context.Context, uuid.UUID) error
-	DismissVideoFn               func(context.Context, sqlc.DismissVideoParams) error
-	UndismissVideoFn             func(context.Context, sqlc.UndismissVideoParams) error
-	ListDismissedForVideosFn     func(context.Context, sqlc.ListDismissedForVideosParams) ([]string, error)
-	ListCachedFn                 func(context.Context, sqlc.ListCachedParams) ([]sqlc.ExternalCache, error)
-	UpsertCachedFn               func(context.Context, sqlc.UpsertCachedParams) error
-	WatchTotalsFn                func(context.Context, sqlc.WatchTotalsParams) (sqlc.WatchTotalsRow, error)
-	WatchTopChannelsFn           func(context.Context, sqlc.WatchTopChannelsParams) ([]sqlc.WatchTopChannelsRow, error)
-	WatchByHourFn                func(context.Context, sqlc.WatchByHourParams) ([]sqlc.WatchByHourRow, error)
-	WatchByWeekdayFn             func(context.Context, sqlc.WatchByWeekdayParams) ([]sqlc.WatchByWeekdayRow, error)
-	WatchByMonthFn               func(context.Context, sqlc.WatchByMonthParams) ([]sqlc.WatchByMonthRow, error)
-	GetFeedFn                    func(context.Context, sqlc.GetFeedParams) (sqlc.Feed, error)
-	GetPrefsFn                   func(context.Context, uuid.UUID) ([]byte, error)
-	GetUserFn                    func(context.Context, uuid.UUID) (sqlc.User, error)
-	GetWatchEventFn              func(context.Context, sqlc.GetWatchEventParams) (sqlc.WatchEvent, error)
-	HideHistoryEntryFn           func(context.Context, sqlc.HideHistoryEntryParams) (int64, error)
-	ListFeedChannelsFn           func(context.Context, uuid.UUID) ([]string, error)
-	ListFeedChannelsForUserFn    func(context.Context, uuid.UUID) ([]sqlc.ListFeedChannelsForUserRow, error)
-	ListFeedsFn                  func(context.Context, uuid.UUID) ([]sqlc.Feed, error)
-	ListHistoryFn                func(context.Context, sqlc.ListHistoryParams) ([]sqlc.WatchEvent, error)
-	ListInProgressFn             func(context.Context, sqlc.ListInProgressParams) ([]sqlc.WatchEvent, error)
-	ListPinnedPlaylistsFn        func(context.Context, uuid.UUID) ([]sqlc.PlaylistSetting, error)
-	ListPlaylistSettingsFn       func(context.Context, uuid.UUID) ([]sqlc.PlaylistSetting, error)
-	ListWatchEventsForVideosFn   func(context.Context, sqlc.ListWatchEventsForVideosParams) ([]sqlc.WatchEvent, error)
-	PruneEmptyPlaylistSettingsFn func(context.Context, uuid.UUID) error
-	SetPlaylistMusicFn           func(context.Context, sqlc.SetPlaylistMusicParams) error
-	SetPlaylistPinnedFn          func(context.Context, sqlc.SetPlaylistPinnedParams) error
-	NextFeedChannelPositionFn    func(context.Context, uuid.UUID) (int32, error)
-	NextFeedPositionFn           func(context.Context, uuid.UUID) (int32, error)
-	ResetPositionFn              func(context.Context, sqlc.ResetPositionParams) error
-	SetFeedPositionFn            func(context.Context, sqlc.SetFeedPositionParams) error
-	SetWatchedFn                 func(context.Context, sqlc.SetWatchedParams) (sqlc.WatchEvent, error)
-	UnpinFeedsFn                 func(context.Context, uuid.UUID) error
-	UpdateFeedFn                 func(context.Context, sqlc.UpdateFeedParams) (sqlc.Feed, error)
-	UpsertPrefsFn                func(context.Context, sqlc.UpsertPrefsParams) error
-	UpsertProgressFn             func(context.Context, sqlc.UpsertProgressParams) (sqlc.WatchEvent, error)
-	UpsertUserFn                 func(context.Context, sqlc.UpsertUserParams) (sqlc.User, error)
+	AddFeedChannelFn              func(context.Context, sqlc.AddFeedChannelParams) error
+	CountHistoryFn                func(context.Context, sqlc.CountHistoryParams) (int64, error)
+	CreateFeedFn                  func(context.Context, sqlc.CreateFeedParams) (sqlc.Feed, error)
+	DeleteChannelFromUserFeedsFn  func(context.Context, sqlc.DeleteChannelFromUserFeedsParams) error
+	DeleteFeedFn                  func(context.Context, sqlc.DeleteFeedParams) (int64, error)
+	DeleteFeedChannelsFn          func(context.Context, uuid.UUID) error
+	AddFeedPlaylistFn             func(context.Context, sqlc.AddFeedPlaylistParams) error
+	DeleteFeedPlaylistsFn         func(context.Context, uuid.UUID) error
+	DeletePlaylistFromUserFeedsFn func(context.Context, sqlc.DeletePlaylistFromUserFeedsParams) error
+	ListFeedPlaylistsFn           func(context.Context, uuid.UUID) ([]string, error)
+	ListFeedPlaylistsForUserFn    func(context.Context, uuid.UUID) ([]sqlc.ListFeedPlaylistsForUserRow, error)
+	NextFeedPlaylistPositionFn    func(context.Context, uuid.UUID) (int32, error)
+	DismissVideoFn                func(context.Context, sqlc.DismissVideoParams) error
+	UndismissVideoFn              func(context.Context, sqlc.UndismissVideoParams) error
+	ListDismissedForVideosFn      func(context.Context, sqlc.ListDismissedForVideosParams) ([]string, error)
+	ListCachedFn                  func(context.Context, sqlc.ListCachedParams) ([]sqlc.ExternalCache, error)
+	UpsertCachedFn                func(context.Context, sqlc.UpsertCachedParams) error
+	WatchTotalsFn                 func(context.Context, sqlc.WatchTotalsParams) (sqlc.WatchTotalsRow, error)
+	WatchTopChannelsFn            func(context.Context, sqlc.WatchTopChannelsParams) ([]sqlc.WatchTopChannelsRow, error)
+	WatchByHourFn                 func(context.Context, sqlc.WatchByHourParams) ([]sqlc.WatchByHourRow, error)
+	WatchByWeekdayFn              func(context.Context, sqlc.WatchByWeekdayParams) ([]sqlc.WatchByWeekdayRow, error)
+	WatchByMonthFn                func(context.Context, sqlc.WatchByMonthParams) ([]sqlc.WatchByMonthRow, error)
+	GetFeedFn                     func(context.Context, sqlc.GetFeedParams) (sqlc.Feed, error)
+	GetPrefsFn                    func(context.Context, uuid.UUID) ([]byte, error)
+	GetUserFn                     func(context.Context, uuid.UUID) (sqlc.User, error)
+	GetWatchEventFn               func(context.Context, sqlc.GetWatchEventParams) (sqlc.WatchEvent, error)
+	HideHistoryEntryFn            func(context.Context, sqlc.HideHistoryEntryParams) (int64, error)
+	ListFeedChannelsFn            func(context.Context, uuid.UUID) ([]string, error)
+	ListFeedChannelsForUserFn     func(context.Context, uuid.UUID) ([]sqlc.ListFeedChannelsForUserRow, error)
+	ListFeedsFn                   func(context.Context, uuid.UUID) ([]sqlc.Feed, error)
+	ListHistoryFn                 func(context.Context, sqlc.ListHistoryParams) ([]sqlc.WatchEvent, error)
+	ListInProgressFn              func(context.Context, sqlc.ListInProgressParams) ([]sqlc.WatchEvent, error)
+	ListPinnedPlaylistsFn         func(context.Context, uuid.UUID) ([]sqlc.PlaylistSetting, error)
+	ListPlaylistSettingsFn        func(context.Context, uuid.UUID) ([]sqlc.PlaylistSetting, error)
+	ListWatchEventsForVideosFn    func(context.Context, sqlc.ListWatchEventsForVideosParams) ([]sqlc.WatchEvent, error)
+	PruneEmptyPlaylistSettingsFn  func(context.Context, uuid.UUID) error
+	SetPlaylistMusicFn            func(context.Context, sqlc.SetPlaylistMusicParams) error
+	SetPlaylistPinnedFn           func(context.Context, sqlc.SetPlaylistPinnedParams) error
+	NextFeedChannelPositionFn     func(context.Context, uuid.UUID) (int32, error)
+	NextFeedPositionFn            func(context.Context, uuid.UUID) (int32, error)
+	ResetPositionFn               func(context.Context, sqlc.ResetPositionParams) error
+	SetFeedPositionFn             func(context.Context, sqlc.SetFeedPositionParams) error
+	SetWatchedFn                  func(context.Context, sqlc.SetWatchedParams) (sqlc.WatchEvent, error)
+	UnpinFeedsFn                  func(context.Context, uuid.UUID) error
+	UpdateFeedFn                  func(context.Context, sqlc.UpdateFeedParams) (sqlc.Feed, error)
+	UpsertPrefsFn                 func(context.Context, sqlc.UpsertPrefsParams) error
+	UpsertProgressFn              func(context.Context, sqlc.UpsertProgressParams) (sqlc.WatchEvent, error)
+	UpsertUserFn                  func(context.Context, sqlc.UpsertUserParams) (sqlc.User, error)
 }
 
 func (f *FakeQuerier) AddFeedChannel(ctx context.Context, arg sqlc.AddFeedChannelParams) error {
@@ -76,6 +82,30 @@ func (f *FakeQuerier) DeleteChannelFromUserFeeds(ctx context.Context, arg sqlc.D
 
 func (f *FakeQuerier) DeleteFeed(ctx context.Context, arg sqlc.DeleteFeedParams) (int64, error) {
 	return f.DeleteFeedFn(ctx, arg)
+}
+
+func (f *FakeQuerier) AddFeedPlaylist(ctx context.Context, arg sqlc.AddFeedPlaylistParams) error {
+	return f.AddFeedPlaylistFn(ctx, arg)
+}
+
+func (f *FakeQuerier) DeleteFeedPlaylists(ctx context.Context, feedID uuid.UUID) error {
+	return f.DeleteFeedPlaylistsFn(ctx, feedID)
+}
+
+func (f *FakeQuerier) DeletePlaylistFromUserFeeds(ctx context.Context, arg sqlc.DeletePlaylistFromUserFeedsParams) error {
+	return f.DeletePlaylistFromUserFeedsFn(ctx, arg)
+}
+
+func (f *FakeQuerier) ListFeedPlaylists(ctx context.Context, feedID uuid.UUID) ([]string, error) {
+	return f.ListFeedPlaylistsFn(ctx, feedID)
+}
+
+func (f *FakeQuerier) ListFeedPlaylistsForUser(ctx context.Context, userID uuid.UUID) ([]sqlc.ListFeedPlaylistsForUserRow, error) {
+	return f.ListFeedPlaylistsForUserFn(ctx, userID)
+}
+
+func (f *FakeQuerier) NextFeedPlaylistPosition(ctx context.Context, feedID uuid.UUID) (int32, error) {
+	return f.NextFeedPlaylistPositionFn(ctx, feedID)
 }
 
 func (f *FakeQuerier) DeleteFeedChannels(ctx context.Context, feedID uuid.UUID) error {

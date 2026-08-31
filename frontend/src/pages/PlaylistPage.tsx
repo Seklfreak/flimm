@@ -2,9 +2,10 @@ import { useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
-import { usePlaylist, useSetPlaylistMusic, useSetPlaylistPinned, useSetWatched } from "@/lib/queries";
+import { invalidateFeedish, usePlaylist, useSetPlaylistMusic, useSetPlaylistPinned, useSetWatched } from "@/lib/queries";
 import { ccLabel, fmtDuration, fmtDurationLong, plural } from "@/lib/format";
 import { CheckIcon, EmptyState, ErrorState, HeadphonesIcon, PinIcon, Spinner } from "@/components/ui";
+import { InFeedsControl } from "@/components/InFeedsControl";
 import { VideoRow } from "@/components/VideoRow";
 import { watchHref } from "@/components/VideoCard";
 import { PlaylistStack } from "./PlaylistsPage";
@@ -161,6 +162,14 @@ export default function PlaylistPage() {
             >
               <PinIcon />
             </button>
+            <InFeedsControl
+              feedIds={p.feeds.map((f) => f.id)}
+              onSave={async (ids) => {
+                await api.setPlaylistFeeds(p.id, ids);
+                await qc.invalidateQueries({ queryKey: ["playlists", p.id] });
+                invalidateFeedish(qc);
+              }}
+            />
             {isCustom && !editing && (
               <button
                 className="btn md:ml-auto"

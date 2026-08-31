@@ -26,7 +26,12 @@ import (
 // single channel).
 type listOpts struct {
 	// ChannelIDs to fan out over; nil = no channel filter (everything).
-	ChannelIDs    []string
+	ChannelIDs []string
+	// PlaylistIDs are additional sources next to the channels: a feed can
+	// hold a single playlist — a channel's series — without following the
+	// whole channel. The list is the union of both kinds, deduplicated.
+	// Ignored when ChannelIDs is nil: everything already covers them.
+	PlaylistIDs   []string
 	Sort          string // newest|oldest|shortest|longest
 	IncludeShorts bool
 	SubtitlesOnly bool
@@ -207,9 +212,12 @@ func (s *Server) buildList(ctx context.Context, uid uuid.UUID, o listOpts) ([]Vi
 	}
 	queries := []ta.VideoQuery{{Watch: watch, Sort: field, Order: order}}
 	if o.ChannelIDs != nil {
-		queries = make([]ta.VideoQuery, 0, len(o.ChannelIDs))
+		queries = make([]ta.VideoQuery, 0, len(o.ChannelIDs)+len(o.PlaylistIDs))
 		for _, ch := range o.ChannelIDs {
 			queries = append(queries, ta.VideoQuery{Channel: ch, Watch: watch, Sort: field, Order: order})
+		}
+		for _, pl := range o.PlaylistIDs {
+			queries = append(queries, ta.VideoQuery{Playlist: pl, Watch: watch, Sort: field, Order: order})
 		}
 	}
 	var mu sync.Mutex
@@ -274,22 +282,30 @@ func (s *Server) buildList(ctx context.Context, uid uuid.UUID, o listOpts) ([]Vi
 }
 
 // continueList is the "continue watching" view: in-progress events (newest
-// first), restricted to channelIDs when given, resolved against TA.
-func (s *Server) continueList(ctx context.Context, uid uuid.UUID, channelIDs []string, includeShorts bool) ([]VideoSummary, error) {
+// first), restricted to the list's sources when it has any, resolved against
+// TA. A playlist source cannot be checked from the event alone — watch events
+// carry a channel id, not playlist memberships — so those events are kept
+// through to the resolve step, where the video document says which playlists
+// it is in.
+func (s *Server) continueList(ctx context.Context, uid uuid.UUID, o listOpts) ([]VideoSummary, error) {
 	events, err := s.q.ListInProgress(ctx, sqlc.ListInProgressParams{UserID: uid, Limit: maxListVideos})
 	if err != nil {
 		return nil, err
 	}
 	var allowed map[string]bool
-	if channelIDs != nil {
+	if o.ChannelIDs != nil {
 		allowed = map[string]bool{}
-		for _, id := range channelIDs {
+		for _, id := range o.ChannelIDs {
 			allowed[id] = true
 		}
 	}
+	inPlaylists := map[string]bool{}
+	for _, id := range o.PlaylistIDs {
+		inPlaylists[id] = true
+	}
 	var picked []sqlc.WatchEvent
 	for _, ev := range events {
-		if allowed != nil && !allowed[ev.ChannelID] {
+		if allowed != nil && !allowed[ev.ChannelID] && len(inPlaylists) == 0 {
 			continue
 		}
 		picked = append(picked, ev)
@@ -304,7 +320,16 @@ func (s *Server) continueList(ctx context.Context, uid uuid.UUID, channelIDs []s
 		if err != nil {
 			return err
 		}
-		if !includeShorts && v.Kind() == "short" {
+		if allowed != nil && !allowed[ev.ChannelID] {
+			member := false
+			for _, pid := range v.Playlist {
+				member = member || inPlaylists[pid]
+			}
+			if !member {
+				return nil
+			}
+		}
+		if !o.IncludeShorts && v.Kind() == "short" {
 			return nil
 		}
 		out[i] = summarize(*v, &ev)

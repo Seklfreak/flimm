@@ -252,6 +252,9 @@ export interface Feed {
   name: string;
   channel_ids: string[];
   channel_count: number;
+  /** Playlist sources: single series next to whole channels; the feed is the union. */
+  playlist_ids: string[];
+  playlist_count: number;
   unseen_count: number;
   sort: FeedSort;
   hide_seen: boolean;
@@ -268,6 +271,7 @@ export const EVERYTHING_ID = "everything";
 export interface FeedInput {
   name: string;
   channel_ids: string[];
+  playlist_ids: string[];
   sort: FeedSort;
   hide_seen: boolean;
   include_shorts: boolean;
@@ -290,6 +294,8 @@ export interface PlaylistSummary {
   pinned: boolean;
   /** A music playlist: audio-only playback, and no watch state is recorded or reported. Seeds `audio=1` on every link into it. */
   music: boolean;
+  /** Feeds holding this playlist as a source — the "In feeds:" badge. */
+  feeds: FeedRef[];
 }
 
 export interface Playlist extends PlaylistSummary {
@@ -478,6 +484,8 @@ export const api = {
   setChannelFeeds: (id: string, feed_ids: string[]) =>
     req<void>(`/channels/${id}/feeds`, json("PUT", { feed_ids })),
   markChannelSeen: (id: string) => req<void>(`/channels/${id}/mark-seen`, { method: "POST" }),
+  /** Admin only: asks TubeArchivist to index the channel's playlists (the prerequisite for series feed sources). The discovery runs as a TA task. */
+  indexChannelPlaylists: (id: string) => req<void>(`/channels/${id}/index-playlists`, { method: "POST" }),
 
   video: (id: string) => req<Video>(`/videos/${id}`),
   upNext: (id: string, ctx: PlayContext, page: number) =>
@@ -528,6 +536,8 @@ export const api = {
   setPlaylistMusic: (id: string, music: boolean) =>
     req<void>(`/playlists/${id}/music`, json("PUT", { music })),
   playlist: (id: string) => req<Playlist>(`/playlists/${id}`),
+  setPlaylistFeeds: (id: string, feed_ids: string[]) =>
+    req<void>(`/playlists/${id}/feeds`, json("PUT", { feed_ids })),
   createPlaylist: (name: string) => req<PlaylistSummary>("/playlists", json("POST", { name })),
   renamePlaylist: (id: string, name: string) =>
     req<PlaylistSummary>(`/playlists/${id}`, json("PATCH", { name })),

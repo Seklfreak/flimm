@@ -211,6 +211,8 @@ type FeedDTO struct {
 	Name          string    `json:"name"`
 	ChannelIDs    []string  `json:"channel_ids"`
 	ChannelCount  int       `json:"channel_count"`
+	PlaylistIDs   []string  `json:"playlist_ids"`
+	PlaylistCount int       `json:"playlist_count"`
 	UnseenCount   int       `json:"unseen_count"`
 	Sort          string    `json:"sort"`
 	HideSeen      bool      `json:"hide_seen"`
@@ -246,6 +248,9 @@ type PlaylistSummary struct {
 	// carries no watch state: songs are replayed, so "seen" is meaningless.
 	Pinned bool `json:"pinned"`
 	Music  bool `json:"music"`
+	// Feeds that hold this playlist as a source — the same badge channels
+	// carry, backing the "In feeds:" control.
+	Feeds []FeedRef `json:"feeds"`
 }
 
 type PlaylistItem struct {
@@ -659,15 +664,20 @@ func summaryFromEvent(ev sqlc.WatchEvent) VideoSummary {
 	return out
 }
 
-func feedDTO(f sqlc.Feed, channelIDs []string, unseen int) FeedDTO {
+func feedDTO(f sqlc.Feed, channelIDs, playlistIDs []string, unseen int) FeedDTO {
 	if channelIDs == nil {
 		channelIDs = []string{}
+	}
+	if playlistIDs == nil {
+		playlistIDs = []string{}
 	}
 	return FeedDTO{
 		ID:            f.ID.String(),
 		Name:          f.Name,
 		ChannelIDs:    channelIDs,
 		ChannelCount:  len(channelIDs),
+		PlaylistIDs:   playlistIDs,
+		PlaylistCount: len(playlistIDs),
 		UnseenCount:   unseen,
 		Sort:          f.Sort,
 		HideSeen:      f.HideSeen,

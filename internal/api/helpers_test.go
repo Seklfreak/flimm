@@ -64,6 +64,12 @@ func (es *eventStore) upsertSetting(id string, apply func(*sqlc.PlaylistSetting)
 
 func (es *eventStore) querier() *sqlctest.FakeQuerier {
 	return &sqlctest.FakeQuerier{
+		// Feed playlist sources default to none, so the many feed tests that
+		// predate them keep working; tests about them override these.
+		ListFeedPlaylistsFn: func(context.Context, uuid.UUID) ([]string, error) { return nil, nil },
+		ListFeedPlaylistsForUserFn: func(context.Context, uuid.UUID) ([]sqlc.ListFeedPlaylistsForUserRow, error) {
+			return nil, nil
+		},
 		ListCachedFn: func(_ context.Context, arg sqlc.ListCachedParams) ([]sqlc.ExternalCache, error) {
 			es.mu.Lock()
 			defer es.mu.Unlock()

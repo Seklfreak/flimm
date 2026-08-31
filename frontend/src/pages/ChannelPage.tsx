@@ -1,10 +1,11 @@
 import { useState } from "react";
 import { Link, useParams } from "react-router";
 import { useQueryClient } from "@tanstack/react-query";
-import { api, EVERYTHING_ID, type PlaylistSummary } from "@/lib/api";
-import { invalidateFeedish, invalidateWatchState, useChannel, useChannelPlaylists, useChannelVideos, useFeeds } from "@/lib/queries";
+import { api, type PlaylistSummary } from "@/lib/api";
+import { invalidateFeedish, invalidateWatchState, useChannel, useChannelPlaylists, useChannelVideos, useMe } from "@/lib/queries";
 import { plural, relativeDay } from "@/lib/format";
-import { Avatar, CheckIcon, EmptyState, ErrorState, InfiniteSentinel, Popover, Segmented, Spinner } from "@/components/ui";
+import { Avatar, EmptyState, ErrorState, InfiniteSentinel, Segmented, Spinner } from "@/components/ui";
+import { InFeedsControl } from "@/components/InFeedsControl";
 import { VideoCard, VideoGrid } from "@/components/VideoCard";
 import { PlaylistCard } from "@/pages/PlaylistsPage";
 
@@ -18,6 +19,10 @@ export default function ChannelPage() {
   const playlists = useChannelPlaylists(id, tab === "playlists");
   const qc = useQueryClient();
   const [marking, setMarking] = useState(false);
+  const me = useMe();
+  // "requested" survives until the page is left: TubeArchivist discovers the
+  // playlists in a background task, so there is nothing to await here.
+  const [indexRequested, setIndexRequested] = useState(false);
 
   if (channel.isError) return <ErrorState message={channel.error.message} retry={() => channel.refetch()} />;
   const c = channel.data;
@@ -55,7 +60,14 @@ export default function ChannelPage() {
           </div>
           {c && (
             <div className="flex items-center gap-2">
-              <InFeedsControl channelId={c.id} feedIds={c.feeds.map((f) => f.id)} />
+              <InFeedsControl
+                feedIds={c.feeds.map((f) => f.id)}
+                onSave={async (ids) => {
+                  await api.setChannelFeeds(c.id, ids);
+                  await qc.invalidateQueries({ queryKey: ["channels", c.id] });
+                  invalidateFeedish(qc);
+                }}
+              />
               <button className="seg" onClick={() => void markAll()} disabled={marking || c.unseen_count === 0}>
                 {marking ? "Marking…" : "Mark all seen"}
               </button>
@@ -77,7 +89,26 @@ export default function ChannelPage() {
           playlists.isLoading ? (
             <Spinner label="Loading playlists…" />
           ) : (playlists.data ?? []).length === 0 ? (
-            <EmptyState title="No playlists archived from this channel" />
+            <div className="flex flex-col items-center gap-3">
+              <EmptyState
+                title="No playlists archived from this channel"
+                hint={me.data?.is_admin ? "TubeArchivist has not indexed this channel's playlists (series)." : undefined}
+              />
+              {me.data?.is_admin &&
+                (indexRequested ? (
+                  <p className="meta">Asked TubeArchivist to index them — the discovery runs there and can take a few minutes. Check back later.</p>
+                ) : (
+                  <button
+                    className="btn"
+                    onClick={() => {
+                      setIndexRequested(true);
+                      api.indexChannelPlaylists(id).catch(() => setIndexRequested(false));
+                    }}
+                  >
+                    Find series (index playlists)
+                  </button>
+                ))}
+            </div>
           ) : (
             <VideoGrid>
               {(playlists.data ?? []).map((p: PlaylistSummary) => (
@@ -104,61 +135,5 @@ export default function ChannelPage() {
         )}
       </div>
     </div>
-  );
-}
-
-// "In feeds: Home, DevOps ▾" — multi-select popover → PUT /channels/:id/feeds.
-function InFeedsControl({ channelId, feedIds }: { channelId: string; feedIds: string[] }) {
-  const feeds = useFeeds();
-  const qc = useQueryClient();
-  const [anchor, setAnchor] = useState<HTMLButtonElement | null>(null);
-  const [open, setOpen] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const custom = (feeds.data ?? []).filter((f) => f.id !== EVERYTHING_ID);
-  const selected = new Set(feedIds.filter((id) => id !== EVERYTHING_ID));
-  const label = custom.filter((f) => selected.has(f.id)).map((f) => f.name);
-
-  const toggle = async (id: string) => {
-    const next = new Set(selected);
-    if (next.has(id)) next.delete(id);
-    else next.add(id);
-    setSaving(true);
-    try {
-      await api.setChannelFeeds(channelId, [...next]);
-      await qc.invalidateQueries({ queryKey: ["channels", channelId] });
-      invalidateFeedish(qc);
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <>
-      <button
-        ref={setAnchor}
-        onClick={() => setOpen((o) => !o)}
-        aria-haspopup="listbox"
-        aria-expanded={open}
-        className="flex items-center gap-2 rounded-full border-[1.5px] border-hair-2 px-3.5 py-[9px] text-[13px] font-bold"
-      >
-        <span className="max-w-[220px] truncate">In feeds: {label.length > 0 ? label.join(", ") : "none"}</span>
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M6 9l6 6 6-6" /></svg>
-      </button>
-      {open && (
-        <Popover anchor={anchor} onClose={() => setOpen(false)}>
-          <div className="pop" role="listbox" aria-multiselectable>
-            {custom.length === 0 && (
-              <Link to="/feeds/new" className="pop-item text-white no-underline">New feed…</Link>
-            )}
-            {custom.map((f) => (
-              <button key={f.id} role="option" aria-selected={selected.has(f.id)} className={`pop-item ${selected.has(f.id) ? "on" : ""}`} onClick={() => void toggle(f.id)} disabled={saving}>
-                <span>{f.name}</span>
-                {selected.has(f.id) && <CheckIcon size={14} />}
-              </button>
-            ))}
-          </div>
-        </Popover>
-      )}
-    </>
   );
 }

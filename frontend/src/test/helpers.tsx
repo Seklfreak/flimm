@@ -72,6 +72,7 @@ export function playlist(over: Partial<PlaylistSummary> = {}): PlaylistSummary {
     resume_video_id: null,
     pinned: false,
     music: false,
+    feeds: [],
     ...over,
   };
 }
@@ -125,6 +126,8 @@ export function feed(over: Partial<Feed> = {}): Feed {
     name: "Home",
     channel_ids: ["UC1"],
     channel_count: 6,
+    playlist_ids: [],
+    playlist_count: 0,
     unseen_count: 7,
     sort: "newest",
     hide_seen: true,

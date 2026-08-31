@@ -126,11 +126,14 @@ func NewCatalogue() *Catalogue {
 		}
 	}
 
-	// Two channel playlists and one custom one, so both kinds have something
-	// behind them.
+	// Two whole-channel playlists, one *partial* one and a custom one. The
+	// partial playlist is the point of the series feature: a feed holding it
+	// must show fewer videos than one holding its channel, which is only
+	// checkable when the two sets differ.
 	c.Playlists = []ta.Playlist{
 		c.channelPlaylist("PL-fake-workshop", "Workshop basics", "UC-fake-workshop"),
 		c.channelPlaylist("PL-fake-signals", "Signals, in order", "UC-fake-signals"),
+		c.partialPlaylist("PL-fake-night", "Night sides", "UC-fake-tapes", 2),
 		{
 			PlaylistID:          "PL-fake-custom",
 			PlaylistName:        "Saved for later",
@@ -142,6 +145,23 @@ func NewCatalogue() *Catalogue {
 				{YoutubeID: videoID("UC-fake-tapes", 1), Title: "Rain on a tin roof", Uploader: "Field Tapes", Idx: 1, Downloaded: true},
 			},
 		},
+	}
+	// A real TubeArchivist stamps playlist membership onto each video
+	// document; the codepaths that read it (feed sources, search scoping)
+	// need the fake to do the same.
+	byID := map[string]int{}
+	for i, v := range c.Videos {
+		byID[v.YoutubeID] = i
+	}
+	for _, p := range c.Playlists {
+		if p.PlaylistType == "custom" {
+			continue
+		}
+		for _, e := range p.PlaylistEntries {
+			if i, ok := byID[e.YoutubeID]; ok {
+				c.Videos[i].Playlist = append(c.Videos[i].Playlist, p.PlaylistID)
+			}
+		}
 	}
 	return c
 }
@@ -260,6 +280,17 @@ func (c *Catalogue) channelPlaylist(id, name, channelID string) ta.Playlist {
 	if len(p.PlaylistEntries) > 0 {
 		p.PlaylistThumbnail = "/media/" + channelID + "/" + p.PlaylistEntries[0].YoutubeID + ".jpg"
 	}
+	return p
+}
+
+// partialPlaylist is a series: the first n of a channel's videos, so a feed
+// sourcing it differs visibly from one sourcing the channel.
+func (c *Catalogue) partialPlaylist(id, name, channelID string, n int) ta.Playlist {
+	p := c.channelPlaylist(id, name, channelID)
+	if len(p.PlaylistEntries) > n {
+		p.PlaylistEntries = p.PlaylistEntries[:n]
+	}
+	p.PlaylistDescription = "A series inside " + c.channelName(channelID) + ": part of the channel, not all of it."
 	return p
 }
 

@@ -114,6 +114,7 @@ func playlistShell(p *ta.Playlist) *PlaylistSummary {
 		Name:     p.PlaylistName,
 		Kind:     playlistKind(*p),
 		ThumbURL: playlistThumbURL(p.PlaylistID),
+		Feeds:    []FeedRef{},
 	}
 	if p.PlaylistChannelID != "" {
 		out.Channel = &PlaylistChannelRef{ID: p.PlaylistChannelID, Name: p.PlaylistChannel}
@@ -192,6 +193,34 @@ func (s *Server) playlistSummaries(ctx context.Context, uid uuid.UUID, lists []t
 	return out, err
 }
 
+// playlistFeedRefs maps playlist id → feeds holding it as a source, the same
+// badge channels carry.
+func (s *Server) playlistFeedRefs(ctx context.Context, uid uuid.UUID) (map[string][]FeedRef, error) {
+	rows, err := s.q.ListFeedPlaylistsForUser(ctx, uid)
+	if err != nil {
+		return nil, err
+	}
+	out := map[string][]FeedRef{}
+	for _, r := range rows {
+		out[r.PlaylistID] = append(out[r.PlaylistID], FeedRef{ID: r.FeedID.String(), Name: r.FeedName})
+	}
+	return out, nil
+}
+
+// attachPlaylistFeeds stamps summaries with the feeds that hold them.
+func (s *Server) attachPlaylistFeeds(ctx context.Context, uid uuid.UUID, items []PlaylistSummary) error {
+	refs, err := s.playlistFeedRefs(ctx, uid)
+	if err != nil {
+		return err
+	}
+	for i := range items {
+		if r := refs[items[i].ID]; r != nil {
+			items[i].Feeds = r
+		}
+	}
+	return nil
+}
+
 // playlistSettings is the user's per-playlist state, for stamping onto
 // summaries. Absent means every setting is off.
 func (s *Server) playlistSettings(ctx context.Context, uid uuid.UUID) (map[string]sqlc.PlaylistSetting, error) {
@@ -268,7 +297,71 @@ func (s *Server) listPinnedPlaylists(w http.ResponseWriter, r *http.Request) {
 		sum.Music = row.Music
 		out = append(out, *sum)
 	}
+	if err := s.attachPlaylistFeeds(r.Context(), uid, out); err != nil {
+		s.writeDBError(w, "list feed playlists", err)
+		return
+	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+// setPlaylistFeeds is the playlist's "In feeds:" control: replaces the
+// playlist's feed-source memberships with the given set of the user's feeds.
+// The mirror of setChannelFeeds, with the same 404-not-403 scoping.
+func (s *Server) setPlaylistFeeds(w http.ResponseWriter, r *http.Request) {
+	uid := currentUserID(r.Context())
+	id := chi.URLParam(r, "id")
+	var req struct {
+		FeedIDs []string `json:"feed_ids"`
+	}
+	if err := decodeBody(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	feedIDs := make([]uuid.UUID, 0, len(req.FeedIDs))
+	for _, raw := range dedupe(req.FeedIDs) {
+		if raw == everythingFeedID {
+			continue
+		}
+		fid, err := uuid.Parse(raw)
+		if err != nil {
+			writeError(w, http.StatusNotFound, "not found")
+			return
+		}
+		if _, err := s.q.GetFeed(r.Context(), sqlc.GetFeedParams{ID: fid, UserID: uid}); err != nil {
+			s.writeDBError(w, "get feed", err)
+			return
+		}
+		feedIDs = append(feedIDs, fid)
+	}
+	err := s.withTx(r.Context(), func(q sqlc.Querier) error {
+		if err := q.DeletePlaylistFromUserFeeds(r.Context(), sqlc.DeletePlaylistFromUserFeedsParams{UserID: uid, PlaylistID: id}); err != nil {
+			return err
+		}
+		for _, fid := range feedIDs {
+			pos, err := q.NextFeedPlaylistPosition(r.Context(), fid)
+			if err != nil {
+				return err
+			}
+			if err := q.AddFeedPlaylist(r.Context(), sqlc.AddFeedPlaylistParams{FeedID: fid, PlaylistID: id, Position: pos}); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		s.writeDBError(w, "set playlist feeds", err)
+		return
+	}
+	refs, err := s.playlistFeedRefs(r.Context(), uid)
+	if err != nil {
+		s.writeDBError(w, "list feed playlists", err)
+		return
+	}
+	feeds := refs[id]
+	if feeds == nil {
+		feeds = []FeedRef{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"feeds": feeds})
 }
 
 func (s *Server) setPlaylistPinned(w http.ResponseWriter, r *http.Request) {
@@ -320,6 +413,23 @@ func (s *Server) listPlaylists(w http.ResponseWriter, r *http.Request) {
 		s.writeTAError(w, "list playlists", err)
 		return
 	}
+	settings, err := s.playlistSettings(r.Context(), uid)
+	if err != nil {
+		s.writeDBError(w, "list playlist settings", err)
+		return
+	}
+	// A channel's own playlists belong to its channel page. One shows up here
+	// only once the viewer has taken it up — pinned it, or marked it music —
+	// so an archive that indexes every playlist a prolific channel owns cannot
+	// flood this page with lists nobody asked for.
+	kept := lists[:0]
+	for _, p := range lists {
+		st := settings[p.PlaylistID]
+		if p.PlaylistType == "custom" || st.Pinned || st.Music {
+			kept = append(kept, p)
+		}
+	}
+	lists = kept
 	sort.SliceStable(lists, func(i, j int) bool {
 		ci, cj := lists[i].PlaylistType == "custom", lists[j].PlaylistType == "custom"
 		if ci != cj {
@@ -334,14 +444,13 @@ func (s *Server) listPlaylists(w http.ResponseWriter, r *http.Request) {
 		s.writeTAError(w, "playlist summaries", err)
 		return
 	}
-	settings, err := s.playlistSettings(r.Context(), uid)
-	if err != nil {
-		s.writeDBError(w, "list playlist settings", err)
-		return
-	}
 	for i := range items {
 		st := settings[items[i].ID]
 		items[i].Pinned, items[i].Music = st.Pinned, st.Music
+	}
+	if err := s.attachPlaylistFeeds(r.Context(), uid, items); err != nil {
+		s.writeDBError(w, "list feed playlists", err)
+		return
 	}
 	writeJSON(w, http.StatusOK, Page[PlaylistSummary]{Items: items, Page: p.Page, PageSize: p.Size, Total: window.Total})
 }
@@ -386,6 +495,14 @@ func (s *Server) getPlaylist(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	sum.Pinned, sum.Music = settings[sum.ID].Pinned, settings[sum.ID].Music
+	refs, err := s.playlistFeedRefs(r.Context(), uid)
+	if err != nil {
+		s.writeDBError(w, "list feed playlists", err)
+		return
+	}
+	if r := refs[sum.ID]; r != nil {
+		sum.Feeds = r
+	}
 	if sum.Music {
 		clearWatchState(sum, items)
 	}

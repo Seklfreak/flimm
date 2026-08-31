@@ -97,7 +97,11 @@ export default function FeedPage({ editing = false }: { editing?: boolean }) {
         meta={
           f && (
             <>
-              {plural(f.unseen_count, "unseen", "unseen")} · {f.id === EVERYTHING_ID ? `all ${plural(f.channel_count, "channel")}` : plural(f.channel_count, "channel")}
+              {plural(f.unseen_count, "unseen", "unseen")}
+              {f.id === EVERYTHING_ID ? <> · all {plural(f.channel_count, "channel")}</> : <>
+                {(f.channel_count > 0 || f.playlist_count === 0) && <> · {plural(f.channel_count, "channel")}</>}
+                {f.playlist_count > 0 && <> · {plural(f.playlist_count, "series", "series")}</>}
+              </>}
               {" · "}
               <Link to={`/feeds/${f.id}/edit`} className="!font-medium !text-accent">
                 {f.id === EVERYTHING_ID ? "options" : "edit feed"}

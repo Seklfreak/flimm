@@ -252,6 +252,8 @@ video differ.
   "name": "Home",
   "channel_ids": ["UC…"],              // empty + id "everything" = all channels
   "channel_count": 6,
+  "playlist_ids": ["PL…"],             // playlist sources: single series next to whole channels
+  "playlist_count": 1,
   "unseen_count": 7,
   "sort": "newest|oldest|shortest|longest",
   "hide_seen": true,
@@ -265,10 +267,18 @@ video differ.
 `everything` is built-in: read-only except `sort`/`hide_seen`/`include_shorts`
 (stored in prefs), always last.
 
-`unseen_count` is TubeArchivist's unwatched total for the feed's channels. It
+A feed's videos are the **union of its sources** — whole channels
+(`channel_ids`) and single playlists (`playlist_ids`, a channel's series),
+deduplicated. On `POST`/`PUT`, `playlist_ids` left out entirely means "keep
+them as they are" (so a client built before playlist sources existed cannot
+wipe them with a full `PUT`); an explicit empty list clears them.
+
+`unseen_count` is TubeArchivist's unwatched total for the feed's sources. It
 is a **hint, not the list's length**: TA knows nothing about the feed's own
-filters (shorts, subtitles-only) or about videos the user dismissed, so it can
-read higher than `GET /feeds/{id}/videos?view=unseen` reports as its `total`.
+filters (shorts, subtitles-only) or about videos the user dismissed, and a
+video that is in a member channel *and* a member playlist is counted twice, so
+it can read higher than `GET /feeds/{id}/videos?view=unseen` reports as its
+`total`.
 
 ### PlaylistSummary
 ```json
@@ -281,7 +291,8 @@ read higher than `GET /feeds/{id}/videos?view=unseen` reports as its `total`.
   "progress": 0.78,
   "resume_video_id": "yt-id" | null,   // first in-progress, else first unseen
   "pinned": false,                     // shown in the client's sidebar
-  "music": false                       // a music playlist: audio-only, and no watch state
+  "music": false,                      // a music playlist: audio-only, and no watch state
+  "feeds": [{ "id": "…", "name": "…" }] // feeds holding this playlist as a source
 }
 ```
 
@@ -411,9 +422,9 @@ its default — send the whole map back, which is what the settings screens do.
 | Method | Path | Notes |
 |---|---|---|
 | GET | `/feeds` | all feeds incl. `everything`, ordered by `position`, with unseen counts |
-| POST | `/feeds` | body: name, channel_ids, options → Feed (201) |
+| POST | `/feeds` | body: name, channel_ids, playlist_ids, options → Feed (201) |
 | GET | `/feeds/{id}` | |
-| PUT | `/feeds/{id}` | full update; `pinned:true` unpins the others |
+| PUT | `/feeds/{id}` | full update (`playlist_ids` absent = unchanged); `pinned:true` unpins the others |
 | DELETE | `/feeds/{id}` | 204; never touches channels/videos |
 | POST | `/feeds/reorder` | `{ "ids": [...] }` |
 | GET | `/feeds/{id}/videos` | query `view=unseen\|all` (default: feed's `hide_seen` → unseen else all), paged. **`view=unseen` opens with the videos the viewer is part-way through**, most recently played first, then the rest of the unseen feed; each appears once, and paging carries across the join. `view=continue` is accepted for clients built before that and answers with those in-progress videos alone |
@@ -428,6 +439,7 @@ its default — send the whole map back, which is what the settings screens do.
 | GET | `/channels/{id}/playlists` | PlaylistSummary[] |
 | PUT | `/channels/{id}/feeds` | `{ "feed_ids": [...] }` — the "In feeds:" control |
 | POST | `/channels/{id}/mark-seen` | 204 |
+| POST | `/channels/{id}/index-playlists` | **admin only** (`ADMIN_EMAILS`; 403 otherwise): asks TubeArchivist to index the channel's own playlists — the prerequisite for series feed sources. Sets the channel's `index_playlists` overwrite (instance-wide TA state) and queues TA's discovery task, which also stamps membership onto already-downloaded videos; 204, and the playlists appear once the task lands |
 
 ### Videos
 | Method | Path | Notes |
@@ -538,7 +550,8 @@ Clients treat an empty list as "no chapter UI", never as an error.
 | GET | `/playlists/pinned` | PlaylistSummary[] the user pinned to the sidebar, in `position` order; unpaged |
 | PUT | `/playlists/{id}/pinned` | `{ "pinned": true\|false }` → 204. Pinning appends to the end; unpinning closes the gap |
 | PUT | `/playlists/{id}/music` | `{ "music": true\|false }` → 204. Marks the playlist as music: audio-only playback and no watch state (see below) |
-| GET | `/playlists` | query `kind=custom\|channel`, paged PlaylistSummary; custom first |
+| PUT | `/playlists/{id}/feeds` | `{ "feed_ids": [...] }` — the playlist's "In feeds:" control, mirroring the channel one |
+| GET | `/playlists` | query `kind=custom\|channel`, paged PlaylistSummary; custom first. A channel playlist is listed only once the user has taken it up (pinned it or marked it music); a channel's full set is `GET /channels/{id}/playlists` |
 | POST | `/playlists` | `{ "name" }` → TA `/playlist/custom/` (201) |
 | GET | `/playlists/{id}` | PlaylistSummary + `items: [{ "position", "video": VideoSummary }]` |
 | PATCH | `/playlists/{id}` | `{ "name" }` custom only (rename is client-side + TA re-create if TA has no rename; document limitation) |
@@ -1177,11 +1190,12 @@ height of every video up front.
 
 | Flimm | TubeArchivist |
 |---|---|
-| video list for feed/channel | `GET /api/video/?channel=&watch=&sort=&order=&type=&page=` (fan out per channel for feeds; merge + sort in backend; cache per user 30 s) |
+| video list for feed/channel | `GET /api/video/?channel=&playlist=&watch=&sort=&order=&type=&page=` (fan out per channel and per playlist source for feeds; merge + dedupe + sort in backend; cache per user 30 s) |
 | unseen counts | `GET /api/video/?channel=<id>&watch=unwatched&page_size=1` total hits, cached 60 s per channel |
 | detail | `GET /api/video/{id}/`, `/nav/`, `/similar/`, `/comment/` |
 | progress | `POST/DELETE /api/video/{id}/progress/` |
 | watched | `POST /api/watched/ { id, is_watched }` (also accepts channel/playlist ids) |
+| index channel playlists (admin) | `POST /api/channel/{id}/` with `channel_overwrites: { index_playlists: true }` — TA stores the overwrite and queues its discovery task |
 | channels | `GET /api/channel/`, `/api/channel/{id}/`, `/aggs/`, `/nav/`, `/api/channel/search/?q=` |
 | playlists | `GET /api/playlist/?type=custom\|regular&channel=`, `POST /api/playlist/custom/`, `POST /api/playlist/custom/{id}/`, `DELETE /api/playlist/{id}/` |
 | search | `GET /api/search/?query=` (prefixes `video:`, `channel:`, `playlist:`, `full:` + `lang:`) |

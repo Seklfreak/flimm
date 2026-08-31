@@ -329,6 +329,19 @@ func (f *Fake) ChannelStats(ctx context.Context, channelID string) (*ChannelStat
 	return s, nil
 }
 
+func (f *Fake) IndexChannelPlaylists(_ context.Context, channelID string) error {
+	if f.Err != nil {
+		return f.Err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if _, ok := f.Channels[channelID]; !ok {
+		return ErrNotFound
+	}
+	f.Calls = append(f.Calls, "index-playlists:"+channelID)
+	return nil
+}
+
 func (f *Fake) ListPlaylists(_ context.Context, kind, channelID string) ([]Playlist, error) {
 	if f.Err != nil {
 		return nil, f.Err

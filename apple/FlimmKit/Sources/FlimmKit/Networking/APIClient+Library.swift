@@ -100,6 +100,13 @@ extension APIClient {
         try await discard(.post, "/channels/\(esc(id))/mark-seen")
     }
 
+    /// Admin only: asks TubeArchivist to index the channel's playlists — the
+    /// archive-side prerequisite for series feed sources. The discovery runs
+    /// as a TA task; the playlists appear whenever it lands.
+    public func indexChannelPlaylists(_ id: String) async throws {
+        try await discard(.post, "/channels/\(esc(id))/index-playlists")
+    }
+
     // MARK: - Playlists
 
     /// Unpaged, in pin order. Only playlists that still resolve in
@@ -117,6 +124,12 @@ extension APIClient {
     /// recorded or reported.
     public func setPlaylistMusic(_ id: String, music: Bool) async throws {
         try await discard(.put, "/playlists/\(esc(id))/music", body: MusicBody(music: music))
+    }
+
+    /// The playlist's "In feeds:" control — replaces which feeds hold it as a
+    /// source, mirroring ``setChannelFeeds``.
+    public func setPlaylistFeeds(_ id: String, feedIds: [String]) async throws {
+        try await discard(.put, "/playlists/\(esc(id))/feeds", body: FeedIDList(feedIds: feedIds))
     }
 
     /// Custom playlists come first.

@@ -64,6 +64,7 @@ func (s *Server) Handler() http.Handler {
 	// The channel total the everything feed reads (see ta.ChannelCount);
 	// without it GET /feeds 404s against the fake.
 	mux.HandleFunc("GET /api/stats/channel/", s.channelStats)
+	mux.HandleFunc("POST /api/channel/{id}/", s.updateChannel)
 	mux.HandleFunc("GET /api/playlist/", s.listPlaylists)
 	mux.HandleFunc("POST /api/playlist/custom/", s.createPlaylist)
 	mux.HandleFunc("POST /api/playlist/custom/{id}/", s.playlistAction)
@@ -313,6 +314,29 @@ func (s *Server) getChannel(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) channelStats(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"doc_count": len(s.catalogue.Channels)})
+}
+
+// updateChannel accepts the channel_overwrites write behind Flimm's admin
+// "index this channel's series" control. The fake's catalogue is fixed, so
+// there is nothing to discover; acknowledging the write is what lets the
+// flow be walked end to end against the dev stack.
+func (s *Server) updateChannel(w http.ResponseWriter, r *http.Request) {
+	known := false
+	for _, ch := range s.catalogue.Channels {
+		known = known || ch.ChannelID == r.PathValue("id")
+	}
+	if !known {
+		notFound(w)
+		return
+	}
+	var body struct {
+		ChannelOverwrites map[string]any `json:"channel_overwrites"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "bad body", http.StatusBadRequest)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"channel_overwrites": body.ChannelOverwrites})
 }
 
 func (s *Server) listPlaylists(w http.ResponseWriter, r *http.Request) {

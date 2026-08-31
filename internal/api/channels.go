@@ -215,7 +215,29 @@ func (s *Server) listChannelPlaylists(w http.ResponseWriter, r *http.Request) {
 		s.writeTAError(w, "playlist summaries", err)
 		return
 	}
+	if err := s.attachPlaylistFeeds(r.Context(), uid, out); err != nil {
+		s.writeDBError(w, "list feed playlists", err)
+		return
+	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+// indexChannelPlaylists asks TubeArchivist to index the channel's own
+// playlists — the archive-side prerequisite for series feeds. Admin-only:
+// the overwrite it flips is instance-wide TA state, shared by every user of
+// the archive, and TA warns it slows the indexing of new videos. 204 like
+// every other side-effect endpoint here — the discovery runs as a TA task
+// and lands whenever it lands.
+func (s *Server) indexChannelPlaylists(w http.ResponseWriter, r *http.Request) {
+	if !isAdmin(r.Context()) {
+		writeError(w, http.StatusForbidden, "admin only")
+		return
+	}
+	if err := s.ta.IndexChannelPlaylists(r.Context(), chi.URLParam(r, "id")); err != nil {
+		s.writeTAError(w, "index channel playlists", err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // setChannelFeeds is the "In feeds:" control: replaces the channel's feed

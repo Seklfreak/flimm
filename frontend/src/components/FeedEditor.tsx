@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router";
 import { EVERYTHING_ID, type ChannelSummary, type Feed, type FeedInput, type FeedSort } from "@/lib/api";
-import { useAllChannels, useDeleteFeed, useSaveFeed, useUpdatePrefs, usePrefs } from "@/lib/queries";
+import { useAllChannels, useChannelPlaylists, useDeleteFeed, useSaveFeed, useUpdatePrefs, usePrefs } from "@/lib/queries";
 import { plural } from "@/lib/format";
 import { trackFeedCreated } from "@/lib/analytics";
 import { Avatar, CheckIcon, Modal, SearchBox, Segmented, Spinner, Toggle } from "./ui";
@@ -28,6 +28,8 @@ export function FeedEditor({ feed, onClose }: { feed?: Feed; onClose: () => void
 
   const [name, setName] = useState(feed?.name ?? "");
   const [selected, setSelected] = useState<Set<string>>(() => new Set(feed?.channel_ids ?? []));
+  // Playlist sources — single series picked from a channel's disclosure row.
+  const [selectedSeries, setSelectedSeries] = useState<Set<string>>(() => new Set(feed?.playlist_ids ?? []));
   const [sort, setSort] = useState<FeedSort>(isEverything ? (prefs?.everything_sort ?? "newest") : (feed?.sort ?? "newest"));
   const [hideSeen, setHideSeen] = useState(isEverything ? (prefs?.everything_hide_seen ?? true) : (feed?.hide_seen ?? true));
   const [shorts, setShorts] = useState(isEverything ? (prefs?.everything_include_shorts ?? false) : (feed?.include_shorts ?? false));
@@ -50,8 +52,15 @@ export function FeedEditor({ feed, onClose }: { feed?: Feed; onClose: () => void
       else n.add(id);
       return n;
     });
+  const toggleSeries = (id: string) =>
+    setSelectedSeries((s) => {
+      const n = new Set(s);
+      if (n.has(id)) n.delete(id);
+      else n.add(id);
+      return n;
+    });
 
-  const canSave = isEverything || (name.trim().length > 0 && selected.size > 0);
+  const canSave = isEverything || (name.trim().length > 0 && selected.size + selectedSeries.size > 0);
 
   const onSave = async () => {
     setError(null);
@@ -64,6 +73,7 @@ export function FeedEditor({ feed, onClose }: { feed?: Feed; onClose: () => void
       const input: FeedInput = {
         name: name.trim(),
         channel_ids: [...selected],
+        playlist_ids: [...selectedSeries],
         sort,
         hide_seen: hideSeen,
         include_shorts: shorts,
@@ -127,12 +137,19 @@ export function FeedEditor({ feed, onClose }: { feed?: Feed; onClose: () => void
             <div className="flex items-center justify-between">
               <span className="sec">
                 Channels · {selected.size} of {all.length}
+                {selectedSeries.size > 0 && <> · Series · {selectedSeries.size}</>}
               </span>
               <div className="flex gap-2.5 text-[12px] font-bold">
                 <button className="text-accent" onClick={() => setSelected(new Set(all.map((c) => c.id)))}>
                   Select all
                 </button>
-                <button className="text-muted-2" onClick={() => setSelected(new Set())}>
+                <button
+                  className="text-muted-2"
+                  onClick={() => {
+                    setSelected(new Set());
+                    setSelectedSeries(new Set());
+                  }}
+                >
                   Clear
                 </button>
               </div>
@@ -143,7 +160,15 @@ export function FeedEditor({ feed, onClose }: { feed?: Feed; onClose: () => void
                 <Spinner label="Loading channels…" />
               ) : (
                 visible.map((c) => (
-                  <ChannelPickRow key={c.id} channel={c} selected={selected.has(c.id)} onToggle={() => toggle(c.id)} currentFeedId={feed?.id} />
+                  <ChannelPickRow
+                    key={c.id}
+                    channel={c}
+                    selected={selected.has(c.id)}
+                    onToggle={() => toggle(c.id)}
+                    currentFeedId={feed?.id}
+                    selectedSeries={selectedSeries}
+                    onToggleSeries={toggleSeries}
+                  />
                 ))
               )}
               {!channels.isLoading && visible.length === 0 && <p className="meta py-4">No channels match.</p>}
@@ -216,32 +241,89 @@ function ChannelPickRow({
   selected,
   onToggle,
   currentFeedId,
+  selectedSeries,
+  onToggleSeries,
 }: {
   channel: ChannelSummary;
   selected: boolean;
   onToggle: () => void;
   currentFeedId?: string;
+  selectedSeries: Set<string>;
+  onToggleSeries: (id: string) => void;
 }) {
+  const [showSeries, setShowSeries] = useState(false);
+  // Fetched only once the disclosure is opened, so the picker costs nothing
+  // for the channels nobody expands.
+  const series = useChannelPlaylists(channel.id, showSeries);
   const others = channel.feeds.filter((f) => f.id !== currentFeedId && f.id !== EVERYTHING_ID);
   const hint = others.length > 0 ? `also in ${others.map((f) => f.name).join(", ")}` : "not in a feed";
+  const pickedHere = (series.data ?? []).filter((p) => selectedSeries.has(p.id)).length;
   return (
-    <button
-      type="button"
-      role="checkbox"
-      aria-checked={selected}
-      onClick={onToggle}
-      className="flex items-center gap-3 rounded-[10px] px-2 py-2.5 text-left hover:bg-raised/70"
-    >
-      <span className={`flex h-[22px] w-[22px] flex-none items-center justify-center rounded-[7px] text-white ${selected ? "bg-accent" : "border-[1.5px] border-hair-2"}`}>
-        {selected && <CheckIcon size={12} />}
-      </span>
-      <Avatar src={channel.thumb_url} name={channel.name} size={36} />
-      <span className="flex min-w-0 flex-1 flex-col gap-px">
-        <span className="truncate text-[14px] font-extrabold">{channel.name}</span>
-        <span className="meta text-[12px]">
-          {plural(channel.video_count, "video")} · {hint}
-        </span>
-      </span>
-    </button>
+    <div className="flex flex-col">
+      <div className="flex items-center gap-1">
+        <button
+          type="button"
+          role="checkbox"
+          aria-checked={selected}
+          onClick={onToggle}
+          className="flex min-w-0 flex-1 items-center gap-3 rounded-[10px] px-2 py-2.5 text-left hover:bg-raised/70"
+        >
+          <span className={`flex h-[22px] w-[22px] flex-none items-center justify-center rounded-[7px] text-white ${selected ? "bg-accent" : "border-[1.5px] border-hair-2"}`}>
+            {selected && <CheckIcon size={12} />}
+          </span>
+          <Avatar src={channel.thumb_url} name={channel.name} size={36} />
+          <span className="flex min-w-0 flex-1 flex-col gap-px">
+            <span className="truncate text-[14px] font-extrabold">{channel.name}</span>
+            <span className="meta text-[12px]">
+              {plural(channel.video_count, "video")} · {hint}
+            </span>
+          </span>
+        </button>
+        <button
+          type="button"
+          aria-expanded={showSeries}
+          onClick={() => setShowSeries((o) => !o)}
+          className={`flex flex-none items-center gap-1 rounded-[8px] px-2 py-1.5 text-[12px] font-bold ${pickedHere > 0 ? "text-accent" : "text-muted-2"} hover:bg-raised/70`}
+        >
+          {pickedHere > 0 ? `${pickedHere} series` : "Series"}
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className={showSeries ? "rotate-180" : ""}><path d="M6 9l6 6 6-6" /></svg>
+        </button>
+      </div>
+      {showSeries && (
+        <div className="mb-1 ml-[13px] flex flex-col border-l-[1.5px] border-hair pl-4">
+          {series.isLoading && <Spinner label="Loading series…" />}
+          {!series.isLoading && (series.data ?? []).length === 0 && (
+            <p className="meta py-2 text-[12px]">No series archived for this channel.</p>
+          )}
+          {(series.data ?? []).map((p) => {
+            const on = selectedSeries.has(p.id);
+            const alsoIn = p.feeds.filter((f) => f.id !== currentFeedId);
+            return (
+              <button
+                key={p.id}
+                type="button"
+                role="checkbox"
+                aria-checked={on}
+                disabled={selected}
+                onClick={() => onToggleSeries(p.id)}
+                title={selected ? "Already in the feed through the whole channel" : undefined}
+                className={`flex items-center gap-3 rounded-[10px] px-2 py-2 text-left hover:bg-raised/70 ${selected ? "opacity-45" : ""}`}
+              >
+                <span className={`flex h-[18px] w-[18px] flex-none items-center justify-center rounded-[6px] text-white ${on ? "bg-accent" : "border-[1.5px] border-hair-2"}`}>
+                  {on && <CheckIcon size={10} />}
+                </span>
+                <span className="flex min-w-0 flex-1 flex-col gap-px">
+                  <span className="truncate text-[13px] font-bold">{p.name}</span>
+                  <span className="meta text-[12px]">
+                    {plural(p.video_count, "video")}
+                    {alsoIn.length > 0 && <> · also in {alsoIn.map((f) => f.name).join(", ")}</>}
+                  </span>
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
   );
 }

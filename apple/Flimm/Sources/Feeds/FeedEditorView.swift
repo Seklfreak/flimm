@@ -13,6 +13,9 @@ struct FeedEditorView: View {
 
     @State private var name = ""
     @State private var channelIds: Set<String> = []
+    /// Playlist sources — single series picked from a channel, without
+    /// following the whole channel.
+    @State private var playlistIds: Set<String> = []
     @State private var sort: FeedSort = .newest
     @State private var hideSeen = true
     @State private var includeShorts = false
@@ -41,8 +44,19 @@ struct FeedEditorView: View {
                 } label: {
                     LabeledContent("Channels", value: Fmt.plural(channelIds.count, "channel"))
                 }
-                if channelIds.isEmpty {
-                    Text("A feed with no channels shows nothing. Pick at least one.")
+            }
+            Section("Series") {
+                NavigationLink {
+                    SeriesPickerView(selection: $playlistIds, fullChannelIds: channelIds)
+                } label: {
+                    LabeledContent("Series", value: playlistIds.isEmpty ? "None" : "\(playlistIds.count) series")
+                }
+                if channelIds.isEmpty && playlistIds.isEmpty {
+                    Text("A feed with no channels or series shows nothing. Pick at least one.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text("A series is one of a channel's playlists — the feed follows it without the rest of the channel.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
@@ -93,6 +107,7 @@ struct FeedEditorView: View {
         hasLoaded = true
         name = feed.name
         channelIds = Set(feed.channelIds)
+        playlistIds = Set(feed.playlistIds)
         sort = feed.sort
         hideSeen = feed.hideSeen
         includeShorts = feed.includeShorts
@@ -106,6 +121,7 @@ struct FeedEditorView: View {
         let input = FeedInput(
             name: name.trimmingCharacters(in: .whitespaces),
             channelIds: Array(channelIds),
+            playlistIds: Array(playlistIds),
             sort: sort,
             hideSeen: hideSeen,
             includeShorts: includeShorts,
@@ -172,9 +188,13 @@ struct FeedManagerView: View {
                             }
                             Text(feed.name)
                             Spacer()
-                            Text(Fmt.plural(feed.channelCount, "channel"))
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                            Text(
+                                feed.playlistCount > 0
+                                    ? "\(Fmt.plural(feed.channelCount, "channel")) · \(feed.playlistCount) series"
+                                    : Fmt.plural(feed.channelCount, "channel")
+                            )
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                         }
                     }
                     .deleteDisabled(feed.isEverything)

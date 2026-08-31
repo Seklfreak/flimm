@@ -35,6 +35,8 @@ public struct PlaylistSummary: Codable, Sendable, Hashable, Identifiable {
     /// A music playlist: audio-only playback and no watch state, recorded or
     /// reported. Seeds `audio=1` on every link into it.
     public let music: Bool
+    /// Feeds holding this playlist as a source — the "In feeds:" badge.
+    public let feeds: [FeedRef]
 
     public init(
         id: String,
@@ -49,7 +51,8 @@ public struct PlaylistSummary: Codable, Sendable, Hashable, Identifiable {
         progress: Double = 0,
         resumeVideoId: String? = nil,
         pinned: Bool = false,
-        music: Bool = false
+        music: Bool = false,
+        feeds: [FeedRef] = []
     ) {
         self.id = id
         self.name = name
@@ -64,6 +67,7 @@ public struct PlaylistSummary: Codable, Sendable, Hashable, Identifiable {
         self.resumeVideoId = resumeVideoId
         self.pinned = pinned
         self.music = music
+        self.feeds = feeds
     }
 
     public init(from decoder: any Decoder) throws {
@@ -81,6 +85,7 @@ public struct PlaylistSummary: Codable, Sendable, Hashable, Identifiable {
         resumeVideoId = try c.decodeIfPresent(String.self, forKey: .resumeVideoId)
         pinned = try c.decode(.pinned, or: false)
         music = try c.decode(.music, or: false)
+        feeds = try c.decode(.feeds, or: [])
     }
 }
 
