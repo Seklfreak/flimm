@@ -24,10 +24,11 @@ final class WatchModel {
     private(set) var nav: Nav?
     private(set) var chapters: [Chapter] = []
     /// The backwards half of the up-next panel: what already played before
-    /// this video in its context, closest first. Loaded only when the
-    /// panel's "Previous" section is unfolded.
+    /// this video in its context, closest first. The first page loads with
+    /// the other sidecars; "Show earlier" pages further back.
     private(set) var previous: [VideoSummary] = []
-    private var previousLoaded = false
+    private(set) var hasMorePrevious = false
+    private var previousPage = 0
 
     private(set) var upNext: [VideoSummary] = [] {
         // A load, a dismissal or an undo: the lock screen has to agree.
@@ -278,13 +279,14 @@ final class WatchModel {
         async let chapterList = fetchChapters()
         async let navigation = fetchNav()
         async let next = fetchUpNext()
-        let (loadedChapters, loadedNav, loadedNext) = await (chapterList, navigation, next)
+        async let prev = fetchPrevious(page: 0)
+        let (loadedChapters, loadedNav, loadedNext, loadedPrev) = await (chapterList, navigation, next, prev)
         chapters = loadedChapters
         nav = loadedNav
         upNext = loadedNext
-        // A new video means new history; the section refills when reopened.
-        previous = []
-        previousLoaded = false
+        previous = loadedPrev?.items ?? []
+        hasMorePrevious = loadedPrev?.hasMore ?? false
+        previousPage = 1
         await loadSubtitles(detail)
         await loadArtwork(detail)
     }
@@ -302,14 +304,6 @@ final class WatchModel {
 
     private func fetchUpNext() async -> [VideoSummary] {
         (try? await client.upNext(videoId, context: context))?.items ?? []
-    }
-
-    /// Fills ``previous`` on demand — the section is folded away by default,
-    /// and a video whose history nobody unfolds costs no request.
-    func loadPrevious() async {
-        guard hasContext, !previousLoaded else { return }
-        previousLoaded = true
-        previous = (try? await client.upNext(videoId, context: context, before: true))?.items ?? []
     }
 
     private func loadSubtitles(_ detail: Video) async {
@@ -578,6 +572,27 @@ final class WatchModel {
             rate: engine.isPlaying ? prefs.playbackSpeed : 0,
             artwork: artwork
         ), force: force)
+    }
+}
+
+// MARK: - Previous paging
+
+/// The backwards half of the panel. In an extension for the same reason the
+/// wiring below is: the class body stays about what a watching session *is*.
+extension WatchModel {
+    private func fetchPrevious(page: Int) async -> Page<VideoSummary>? {
+        guard hasContext else { return nil }
+        return try? await client.upNext(videoId, context: context, before: true, page: page)
+    }
+
+    /// Pages further back once "Show earlier" outruns what is loaded.
+    func loadMorePrevious() async {
+        guard hasMorePrevious else { return }
+        hasMorePrevious = false
+        guard let page = await fetchPrevious(page: previousPage) else { return }
+        previous += page.items
+        hasMorePrevious = page.hasMore
+        previousPage += 1
     }
 }
 

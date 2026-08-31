@@ -56,15 +56,12 @@ export default function WatchPage() {
   const feeds = useFeeds();
   const upNext = useUpNext(id, ctx);
   const upNextItems = useMemo(() => (upNext.data?.pages ?? []).flatMap((p) => p.items), [upNext.data]);
-  // The backwards half of the panel, fetched only once it is unfolded. The
-  // fold survives stepping to the next video — someone reading history is
-  // still reading it there.
-  const [prevOpen, setPrevOpen] = useState(false);
+
   // Neighbours in the playlist/feed/channel the video was opened from. Only
   // requested when there is such a context; without one there is nothing to
   // step through and the player hides the buttons.
   const hasContext = Boolean(ctx.feed || ctx.playlist || ctx.channel);
-  const previous = usePreviousInContext(id, ctx, hasContext && prevOpen);
+  const previous = usePreviousInContext(id, ctx, hasContext);
   const previousItems = useMemo(() => (previous.data?.pages ?? []).flatMap((p) => p.items), [previous.data]);
   const nav = useQuery({
     queryKey: keys.nav(id, ctx),
@@ -244,12 +241,10 @@ export default function WatchPage() {
           hasContext
             ? {
                 items: previousItems,
-                isLoading: prevOpen && previous.isLoading,
+                isLoading: previous.isLoading,
                 hasNextPage: !!previous.hasNextPage,
                 isFetchingNextPage: previous.isFetchingNextPage,
                 fetchNextPage: () => void previous.fetchNextPage(),
-                open: prevOpen,
-                onToggle: () => setPrevOpen((o) => !o),
               }
             : undefined
         }

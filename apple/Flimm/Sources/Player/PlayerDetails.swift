@@ -138,9 +138,9 @@ struct UpNextList: View {
     /// Set right after "Not interested" drops a row — what the undo banner
     /// acts on. Same shape as ``VideoList``'s, for the same reason.
     @State private var pendingUndo: PendingDismiss?
-    /// Whether the "Previous" half is unfolded. Sticky across steps — someone
-    /// reading history is still reading it on the next video.
-    @State private var showPrevious = false
+    /// How many of the previous videos are shown; starts at two, "Show
+    /// earlier" walks further back.
+    @State private var visiblePrevious = 2
 
     private struct PendingDismiss: Identifiable {
         let video: VideoSummary
@@ -166,31 +166,38 @@ struct UpNextList: View {
                     .foregroundStyle(.secondary)
             }
             if model.hasContext {
-                Button {
-                    withAnimation { showPrevious.toggle() }
-                } label: {
-                    Label("Previous", systemImage: showPrevious ? "chevron.down" : "chevron.right")
-                        .font(.subheadline.weight(.semibold))
+                Text("Previous")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                if model.previous.isEmpty {
+                    Text("Nothing before this one.")
+                        .font(.footnote)
                         .foregroundStyle(.secondary)
-                }
-                .buttonStyle(.plain)
-                if showPrevious {
-                    if model.previous.isEmpty {
-                        Text("Nothing before this one.")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                    } else {
-                        ForEach(model.previous) { video in
-                            Button {
-                                Task { await model.go(to: video.id) }
-                            } label: {
-                                row(video)
-                            }
-                            .buttonStyle(.plain)
+                } else {
+                    ForEach(model.previous.prefix(visiblePrevious)) { video in
+                        Button {
+                            Task { await model.go(to: video.id) }
+                        } label: {
+                            row(video)
                         }
+                        .buttonStyle(.plain)
+                        // What was already watched recedes; the row a viewer
+                        // would go back for keeps its full weight.
+                        .opacity(video.watched ? 0.45 : 1)
                     }
-                    Divider()
+                    if model.previous.count > visiblePrevious || model.hasMorePrevious {
+                        Button("Show earlier") {
+                            visiblePrevious += 10
+                            if model.previous.count < visiblePrevious {
+                                Task { await model.loadMorePrevious() }
+                            }
+                        }
+                        .font(.footnote.weight(.semibold))
+                        .buttonStyle(.plain)
+                        .foregroundStyle(Palette.accent)
+                    }
                 }
+                Divider()
             }
             // The anchor: where the viewer is in the context, so the
             // history above and the queue below read as one list.
@@ -228,11 +235,8 @@ struct UpNextList: View {
                 }
             }
         }
-        // Loads on unfold, and again after a step to another video (which
-        // resets the model's list); a no-op while already loaded.
-        .task(id: showPrevious ? model.upNext.first?.id ?? "start" : nil) {
-            if showPrevious { await model.loadPrevious() }
-        }
+        // A step to another video starts a fresh history: show two again.
+        .onChange(of: model.video?.id) { _, _ in visiblePrevious = 2 }
     }
 
     // MARK: - Dismiss / undo

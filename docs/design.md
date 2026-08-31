@@ -160,9 +160,11 @@ touches anything but the pin.
   The choice lives on the device, not in the account: a phone on cellular and
   a desktop on a 4K panel want different answers from the same login.
 - *Up next* follows the context the video was opened from (feed, playlist or
-  channel), falling back to similar videos. The same panel can unfold
-  **Previous** — what came before the video in that context, closest first —
-  so a playlist opened in the middle can be walked backwards too. It offers *Not interested* like
+  channel), falling back to similar videos. The same panel always carries
+  **Previous** — what came before the video in that context, closest first,
+  watched entries dimmed: two rows tall, with the history further back a
+  scroll (web) or a *Show earlier* (phone) away — so a playlist opened in the
+  middle can be walked backwards too. It offers *Not interested* like
   any other list — the video leaves the list, since up next never contains a
   dismissed one, and the slot it leaves behind is the way back. On the web the
   whole sidebar collapses, remembered per browser: a layout choice the phone
