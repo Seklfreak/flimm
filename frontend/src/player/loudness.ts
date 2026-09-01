@@ -16,15 +16,24 @@ export function volumeFor(gainDB: number | undefined): number {
   return Math.max(Math.pow(10, gainDB / 20), 0);
 }
 
+/** How often to ask while the pass runs, and while someone is watching it. */
+const POLL = 4000;
+const WATCHED_POLL = 1500;
+
 /**
  * Asks for a video's measurement, and keeps asking while it is being made.
  *
- * The first request is what starts the analysis pass, so this polls a few
- * times and then settles: a measurement that is not ready this time will be
- * next time, and playing at the archived level in the meantime is exactly what
- * the player did before the feature existed.
+ * The first request is what starts the analysis pass, so this polls until
+ * there is an answer: a measurement that is not ready yet will be shortly, and
+ * playing at the archived level in the meantime is exactly what the player did
+ * before the feature existed.
+ *
+ * `watched` quickens it while the playback stats panel is showing the pass's
+ * progress — a number that moves once every four seconds is a number nobody
+ * can tell from a stuck one. Only the panel's own reader passes it, so the
+ * gain's reader keeps the ordinary cadence.
  */
-export function useLoudness(videoId: string, enabled: boolean) {
+export function useLoudness(videoId: string, enabled: boolean, watched = false) {
   return useQuery({
     queryKey: ["videos", videoId, "loudness"],
     queryFn: () => api.loudness(videoId),
@@ -33,7 +42,8 @@ export function useLoudness(videoId: string, enabled: boolean) {
     retry: false,
     refetchInterval: (query) => {
       const state = (query.state.data as Loudness | undefined)?.state;
-      return state === "pending" || state === "running" ? 4000 : false;
+      if (state !== "pending" && state !== "running") return false;
+      return watched ? WATCHED_POLL : POLL;
     },
   });
 }

@@ -349,7 +349,10 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(function Player(
   // Scrub previews, once the player is actually playing: asking for the track
   // is what starts a full decode of the file server-side, and a video someone
   // opened and closed again does not need one.
-  const preview = usePreviewTiles(video.preview_url, playing || time > 0);
+  // `showStats` quickens both polls below: the panel is the only reader that
+  // wants a percentage to move, and the gaps are otherwise sized for nobody
+  // waiting on the answer.
+  const preview = usePreviewTiles(video.preview_url, playing || time > 0, showStats);
   // Loudness normalisation: the server measures the video and says how far to
   // turn it down, and the element's volume is where that lands. Asking starts
   // the measurement, so it waits for playback like the previews do.
@@ -358,7 +361,7 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(function Player(
   // The same query the line above runs on, read for the stats panel. React
   // Query hands back the one cached answer, so this is a second reader and not
   // a second request.
-  const loudness = useLoudness(video.id, loudnessOn && (playing || time > 0)).data;
+  const loudness = useLoudness(video.id, loudnessOn && (playing || time > 0), showStats).data;
   const sponsorActions = prefs.sponsor_actions ?? {};
   useSponsorSkip(el, video.sponsorblock, prefs.skip_sponsors, sponsorActions);
   // A category the viewer set to "ask" is a button, not a jump: offered while

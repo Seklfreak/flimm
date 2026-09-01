@@ -114,4 +114,59 @@ describe("usePreviewTiles", () => {
     await act(async () => void (await vi.advanceTimersByTimeAsync(300_000)));
     expect(fetchMock.mock.calls.length).toBe(settled);
   });
+
+  // The gaps grow because nothing is waiting on the sheet. Something is, when
+  // the stats panel is showing the derivation's percentage.
+  it("asks often while the panel is watching, and at once when it opens", async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi.fn().mockResolvedValue({ ok: false, json: async () => ({ state: "running", progress: 0.2 }) });
+    vi.stubGlobal("fetch", fetchMock);
+    const { rerender } = renderHook(({ watched }) => usePreviewTiles(trackURL, true, watched), {
+      initialProps: { watched: false },
+    });
+
+    // Out to the minute-long gaps first, so opening the panel has a long
+    // pending timer to cut short.
+    await act(async () => void (await vi.advanceTimersByTimeAsync(120_000)));
+    const before = fetchMock.mock.calls.length;
+
+    await act(async () => rerender({ watched: true }));
+    expect(fetchMock.mock.calls.length).toBe(before + 1);
+
+    await act(async () => void (await vi.advanceTimersByTimeAsync(6_000)));
+    // Four gaps of 1.5s, give or take where the awaits land.
+    expect(fetchMock.mock.calls.length).toBeGreaterThanOrEqual(before + 4);
+  });
+
+  // Asking is what restarts a failed derivation, so hurrying one would spawn a
+  // full decode every second and a half instead of reporting a number.
+  it("does not hurry a job that failed", async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi.fn().mockResolvedValue({ ok: false, json: async () => ({ state: "failed", progress: 0 }) });
+    vi.stubGlobal("fetch", fetchMock);
+    renderHook(() => usePreviewTiles(trackURL, true, true));
+
+    await act(async () => void (await vi.advanceTimersByTimeAsync(3_000)));
+    // The first ask, and the 4s ladder gap still pending — not two more.
+    expect(fetchMock.mock.calls.length).toBe(1);
+  });
+
+  // A sheet already on the scrubber must survive the panel opening: restarting
+  // the load would blank it and fetch the same immutable answer again.
+  it("keeps the tiles it has when the panel opens", async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, text: async () => track });
+    vi.stubGlobal("fetch", fetchMock);
+    const { result, rerender } = renderHook(({ watched }) => usePreviewTiles(trackURL, true, watched), {
+      initialProps: { watched: false },
+    });
+    await act(async () => void (await vi.advanceTimersByTimeAsync(0)));
+    expect(result.current.tiles).toHaveLength(3);
+
+    const settled = fetchMock.mock.calls.length;
+    await act(async () => rerender({ watched: true }));
+    await act(async () => void (await vi.advanceTimersByTimeAsync(10_000)));
+    expect(result.current.tiles).toHaveLength(3);
+    expect(fetchMock.mock.calls.length).toBe(settled);
+  });
 });

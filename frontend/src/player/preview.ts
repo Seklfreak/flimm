@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { HLSState } from "@/lib/api";
 
 // Scrub previews: the picture above the scrubber while you drag it.
@@ -99,13 +99,31 @@ const IDLE_PREVIEW: PreviewStatus = { tiles: [], state: null, progress: 0, asked
  * longer than three quarters of a minute to derive never reached the scrubber
  * it was made for, however long the video stayed on screen. Nothing waits on
  * it either way: the player is already playing.
+ *
+ * `watched` says someone is *reading* the answer — the playback stats panel is
+ * open — which is the one case where the gaps are the wrong shape. They grow
+ * because nothing is waiting on the sheet; a percentage nobody sees move is
+ * not a percentage. It only quickens a run that is actually running: a failed
+ * job is restarted by the very act of asking, so hurrying that would be a
+ * derivation every second and a half rather than a number.
  */
-export function usePreviewTiles(trackURL: string | undefined, mediaReady: boolean): PreviewStatus {
+export function usePreviewTiles(trackURL: string | undefined, mediaReady: boolean, watched = false): PreviewStatus {
   const [status, setStatus] = useState<PreviewStatus>(IDLE_PREVIEW);
+  // Read when the next gap is chosen rather than depended on, because opening
+  // the panel must not restart the load — that would blank a sheet the
+  // scrubber already has and ask the server for it again.
+  const watchedRef = useRef(watched);
+  watchedRef.current = watched;
+  // Set by the effect below, so opening the panel can bring the next ask
+  // forward instead of waiting out a minute-long gap that is already pending.
+  const askNow = useRef<(() => void) | null>(null);
+
   useEffect(() => {
     setStatus(IDLE_PREVIEW);
+    askNow.current = null;
     if (!trackURL || !mediaReady) return;
     let cancelled = false;
+    let settled = false;
     let attempt = 0;
     let timer: number | undefined;
 
@@ -116,6 +134,7 @@ export function usePreviewTiles(trackURL: string | undefined, mediaReady: boolea
         if (cancelled) return;
         if (res.ok) {
           const tiles = parsePreviewTrack(await res.text(), trackURL);
+          settled = true;
           setStatus({ tiles, state: "done", progress: 1, asked: attempt + 1 });
           return;
         }
@@ -125,15 +144,38 @@ export function usePreviewTiles(trackURL: string | undefined, mediaReady: boolea
       }
       if (cancelled) return;
       setStatus({ tiles: [], ...pending, asked: attempt + 1 });
-      timer = window.setTimeout(load, RETRY_GAPS[Math.min(attempt++, RETRY_GAPS.length - 1)]);
+      timer = window.setTimeout(load, nextGap(attempt++, watchedRef.current, pending.state));
+    };
+    askNow.current = () => {
+      if (cancelled || settled) return;
+      window.clearTimeout(timer);
+      void load();
     };
     void load();
     return () => {
       cancelled = true;
+      askNow.current = null;
       if (timer) window.clearTimeout(timer);
     };
   }, [trackURL, mediaReady]);
+
+  // Only the *opening* of the panel brings an ask forward. Firing on mount as
+  // well would double the first request of every video opened with the panel
+  // already up — and for a preview, asking is what starts the work.
+  const wasWatched = useRef(watched);
+  useEffect(() => {
+    const opened = watched && !wasWatched.current;
+    wasWatched.current = watched;
+    if (opened) askNow.current?.();
+  }, [watched]);
+
   return status;
+}
+
+/** How long to wait before asking again, given who is waiting for the answer. */
+function nextGap(attempt: number, watched: boolean, state: HLSState | null): number {
+  if (watched && state === "running") return WATCHED_GAP;
+  return RETRY_GAPS[Math.min(attempt, RETRY_GAPS.length - 1)];
 }
 
 /**
@@ -159,3 +201,6 @@ const STATES: HLSState[] = ["pending", "running", "done", "failed"];
 // whole file, so the gaps grow; the last one is then held, and asking stops
 // only when the player closes.
 const RETRY_GAPS = [4000, 10000, 30000, 60000];
+// The gap while the stats panel is open. Fast enough that the percentage
+// visibly moves, and still one small request rather than a stream of them.
+const WATCHED_GAP = 1500;

@@ -89,7 +89,10 @@ which is why they are admin-gated like series indexing.
   gate chose that*. Every derivation counts up the same way — "deriving · 42%"
   means the same thing whether it came from a transcode counting its own
   segments or a scan reading ffmpeg's frame counter — because a wait with no
-  number on it is indistinguishable from a wedge.
+  number on it is indistinguishable from a wedge. Opening the panel is also
+  what makes those numbers *move*: the scans are polled on gaps that grow to a
+  minute, sized for nobody waiting on the answer, and while someone is reading
+  them they are asked for every second and a half instead.
   It reads and never decides: every line comes from the value the player
   itself runs on, so it cannot disagree with the picture it describes. Web
   only for now — a deliberate scope, not a platform left behind: the
