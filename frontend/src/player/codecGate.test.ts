@@ -238,7 +238,7 @@ describe("archivePlays", () => {
 describe("decide", () => {
   it("plays the archive on auto when the browser decodes it — no transcode", () => {
     const v = videoDetail({ streams: [stream("avc1")], hls_variants: [rung(1080), rung(720)] });
-    expect(decide(v, "auto", false, caps())).toEqual({ kind: "native", url: v.media_url });
+    expect(decide(v, "auto", false, caps())).toEqual({ kind: "native", url: v.media_url, reason: "archive-decodes" });
   });
 
   it("plays a rendition on auto when the archive does not decode here", () => {
@@ -268,7 +268,7 @@ describe("decide", () => {
 
   it("audio-only never touches the video track", () => {
     const d = decide(av1Video(), "auto", true, caps());
-    expect(d).toEqual({ kind: "native", url: "/media/audio/vid1.webm" });
+    expect(d).toEqual({ kind: "native", url: "/media/audio/vid1.webm", reason: "audio-only" });
   });
 
   it("plays the archive when the server reports no streams at all", () => {
@@ -282,7 +282,7 @@ describe("decide", () => {
       hls_state: "pending",
     });
     const d = decide(v, "auto", false, caps());
-    expect(d).toEqual({ kind: "hls", url: "/media/hls/vid1/index.m3u8", variant: null });
+    expect(d).toEqual({ kind: "hls", url: "/media/hls/vid1/index.m3u8", variant: null, reason: "default-rendition" });
   });
 
   it("prefers a playable archive over a ladder this browser cannot decode", () => {
@@ -294,7 +294,24 @@ describe("decide", () => {
   it("shows the codec wall only when nothing decodes and there is no rendition", () => {
     const v = videoDetail({ streams: [stream("av01")] });
     const d = decide(v, "auto", false, caps());
-    expect(d).toEqual({ kind: "audioOnly", issue: { videoCodec: "av01", audioAvailable: true } });
+    expect(d).toEqual({ kind: "audioOnly", issue: { videoCodec: "av01", audioAvailable: true }, reason: "nothing-plays" });
+  });
+
+  // The reason travels with the decision because the stats panel reports it
+  // verbatim. Working it out a second time from the same inputs is how a
+  // panel ends up disagreeing with the picture it is describing.
+  it("says which branch answered", () => {
+    const plays = videoDetail({ streams: [stream("avc1", 1080)], hls_variants: [rung(1080), rung(720)] });
+    expect(decide(plays, "auto", false, caps()).reason).toBe("archive-decodes");
+    expect(decide(plays, 720, false, caps()).reason).toBe("quality-picked");
+    expect(decide(plays, 1080, false, caps()).reason).toBe("archive-is-enough");
+    expect(decide(av1Video(), "auto", false, caps()).reason).toBe("no-decoder");
+    expect(decide(videoDetail(), "auto", false, caps()).reason).toBe("codecs-unknown");
+
+    // A rung this browser cannot decode is no rung at all.
+    const hevcOnly = videoDetail({ streams: [stream("avc1", 2160)], hls_variants: [rung(2160), rung(1440)] });
+    const noHevc = caps({ decodes: { h264: true, hevc: false, av1: false, vp9: false, vp8: false } });
+    expect(decide(hevcOnly, 1440, false, noHevc).reason).toBe("no-rung");
   });
 
   it("is unplayable when even the audio rendition is missing", () => {

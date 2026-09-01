@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import type { HLSState } from "@/lib/api";
 
 // Scrub previews: the picture above the scrubber while you drag it.
 //
@@ -72,6 +73,19 @@ export function tileAt(tiles: PreviewTile[], time: number): PreviewTile | undefi
   return best ?? tiles[0];
 }
 
+/** What the scrubber has, and what the server last said about getting it. */
+export interface PreviewStatus {
+  tiles: PreviewTile[];
+  /** The derivation's state as the server reports it, or `null` before the
+   *  first answer and when a 404 carried nothing readable. */
+  state: HLSState | null;
+  /** How many times the track has been asked for — the shape of the wait,
+   *  which is otherwise invisible. */
+  asked: number;
+}
+
+const IDLE_PREVIEW: PreviewStatus = { tiles: [], state: null, asked: 0 };
+
 /**
  * Loads a video's preview track, if the server has derived one.
  *
@@ -82,27 +96,31 @@ export function tileAt(tiles: PreviewTile[], time: number): PreviewTile | undefi
  * it was made for, however long the video stayed on screen. Nothing waits on
  * it either way: the player is already playing.
  */
-export function usePreviewTiles(trackURL: string | undefined, mediaReady: boolean): PreviewTile[] {
-  const [tiles, setTiles] = useState<PreviewTile[]>([]);
+export function usePreviewTiles(trackURL: string | undefined, mediaReady: boolean): PreviewStatus {
+  const [status, setStatus] = useState<PreviewStatus>(IDLE_PREVIEW);
   useEffect(() => {
-    setTiles([]);
+    setStatus(IDLE_PREVIEW);
     if (!trackURL || !mediaReady) return;
     let cancelled = false;
     let attempt = 0;
     let timer: number | undefined;
 
     const load = async () => {
+      let state: HLSState | null = null;
       try {
         const res = await fetch(trackURL, { credentials: "include" });
         if (cancelled) return;
         if (res.ok) {
-          setTiles(parsePreviewTrack(await res.text(), trackURL));
+          const tiles = parsePreviewTrack(await res.text(), trackURL);
+          setStatus({ tiles, state: "done", asked: attempt + 1 });
           return;
         }
+        state = await derivationState(res);
       } catch {
-        /* offline, or the player is being torn down; try again if there is one left */
+        /* offline, or the player is being torn down; the next gap asks again */
       }
       if (cancelled) return;
+      setStatus({ tiles: [], state, asked: attempt + 1 });
       timer = window.setTimeout(load, RETRY_GAPS[Math.min(attempt++, RETRY_GAPS.length - 1)]);
     };
     void load();
@@ -111,8 +129,25 @@ export function usePreviewTiles(trackURL: string | undefined, mediaReady: boolea
       if (timer) window.clearTimeout(timer);
     };
   }, [trackURL, mediaReady]);
-  return tiles;
+  return status;
 }
+
+/**
+ * The job state a 404 carries. A body that is not the JSON the server sends —
+ * a proxy's error page, say — is simply no answer, which is what `null` is
+ * for: "asked, told nothing".
+ */
+async function derivationState(res: Response): Promise<HLSState | null> {
+  try {
+    const body: unknown = await res.json();
+    const state = (body as { state?: unknown })?.state;
+    return typeof state === "string" && STATES.includes(state as HLSState) ? (state as HLSState) : null;
+  } catch {
+    return null;
+  }
+}
+
+const STATES: HLSState[] = ["pending", "running", "done", "failed"];
 
 // How long to wait before asking again, in ms. A sheet is one decode of the
 // whole file, so the gaps grow; the last one is then held, and asking stops

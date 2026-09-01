@@ -91,18 +91,23 @@ describe("usePreviewTiles", () => {
   // arrived a minute late reached nobody.
   it("keeps asking until the derivation lands", async () => {
     vi.useFakeTimers();
-    const fetchMock = vi.fn().mockResolvedValue({ ok: false });
+    const notReady = { ok: false, json: async () => ({ error: "preview not ready", state: "running" }) };
+    const fetchMock = vi.fn().mockResolvedValue(notReady);
     vi.stubGlobal("fetch", fetchMock);
     const { result } = renderHook(() => usePreviewTiles(trackURL, true));
 
     // Past the last of the growing gaps, with nothing but 404s so far.
     for (let i = 0; i < 8; i++) await act(async () => void (await vi.advanceTimersByTimeAsync(60_000)));
     expect(fetchMock.mock.calls.length).toBeGreaterThan(4);
-    expect(result.current).toEqual([]);
+    expect(result.current.tiles).toEqual([]);
+    // The 404 says which of "still working" and "gave up" this is.
+    expect(result.current.state).toBe("running");
+    expect(result.current.asked).toBe(fetchMock.mock.calls.length);
 
     fetchMock.mockResolvedValue({ ok: true, text: async () => track });
     await act(async () => void (await vi.advanceTimersByTimeAsync(60_000)));
-    expect(result.current).toHaveLength(3);
+    expect(result.current.tiles).toHaveLength(3);
+    expect(result.current.state).toBe("done");
 
     // And then it stops: the answer is on disk and immutable.
     const settled = fetchMock.mock.calls.length;

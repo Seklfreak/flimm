@@ -49,6 +49,11 @@ func TestPreviewServesTrackAndSheet(t *testing.T) {
 	if rec.Header().Get("Cache-Control") != "no-store" {
 		t.Errorf("a not-yet answer must not be cached: %q", rec.Header().Get("Cache-Control"))
 	}
+	// A scrubber with no pictures has two very different causes, and the
+	// playback stats panel is only useful if it can tell them apart.
+	if !strings.Contains(rec.Body.String(), `"state":"running"`) {
+		t.Errorf("the not-yet answer should say the job is running: %s", rec.Body.String())
+	}
 
 	track := getUntilReady(t, h, "/media/preview/v1/preview.vtt")
 	if track.Code != http.StatusOK {

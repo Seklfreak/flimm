@@ -654,7 +654,7 @@ prefix would be a match-all there).
 | `GET /media/hls/{id}/master.m3u8`, `/index.m3u8`, `/init.mp4`, `/seg00000.m4s` | the same files without a height: a **legacy alias** for the 1080p rendition, kept for clients written before the ladder. It serves that rendition's cache entry rather than one of its own. New clients use `hls_variants` |
 | `GET /media/subtitles/{id}/{lang}.vtt` | TA subtitle track |
 | `GET /media/frame/{id}/{ms}.jpg` | derived: one still, cut on first request and cached — what a DeArrow thumbnail resolves to |
-| `GET /media/preview/{id}/preview.vtt` | derived: the scrub-preview track (`text/vtt`), one cue per still, each pointing at its rectangle of the sheet as `sheet.jpg#xywh=x,y,w,h`. The first request **starts the derivation** and answers **404** (`Cache-Control: no-store`) until both files are on disk; a client scrubs without pictures and asks again |
+| `GET /media/preview/{id}/preview.vtt` | derived: the scrub-preview track (`text/vtt`), one cue per still, each pointing at its rectangle of the sheet as `sheet.jpg#xywh=x,y,w,h`. The first request **starts the derivation** and answers **404** (`Cache-Control: no-store`) until both files are on disk; a client scrubs without pictures and asks again. The 404 body is `{"error": "preview not ready", "state": "pending\|running\|done\|failed"}` — the job's own state, so a client can tell a wait from a failure |
 | `GET /media/preview/{id}/sheet.jpg` | derived: the sprite sheet those cues cut from (`image/jpeg`). Same 404-until-ready rule. Both are `private, max-age=86400, immutable` once served |
 | `GET /media/thumb/video/{id}` | TA `/cache/videos/…` |
 | `GET /media/thumb/channel/{id}` and `/media/thumb/channel/{id}/banner` | TA `/cache/channels/…` |
@@ -1052,6 +1052,12 @@ only ask once playback has actually begun. Asking is what starts it: the first
 request is a 404 and the answer arrives on a later one. Clients keep asking,
 with growing gaps up to a minute, for as long as the player is open. Nothing
 waits on it; a scrubber with no stills is still a scrubber.
+
+That 404 carries the derivation's `state`. A scrubber with no pictures has two
+very different causes — still being made, or the job failed — and they are
+indistinguishable from how long the client has been asking, which is exactly
+the question the web player's playback stats panel — see
+[design.md](design.md#player-resume-and-seen-state) — is there to answer.
 
 It runs in the **scan lane**, not behind `MEDIA_TRANSCODE_JOBS`. Both are
 ffmpeg over the same file, but a scan is a decode that produces a few hundred

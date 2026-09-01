@@ -322,13 +322,19 @@ func (s *Server) mediaPreview(w http.ResponseWriter, r *http.Request) {
 	}
 	name := previewName(id)
 	src := taMediaPath(v.MediaURL)
-	s.mediaCache.StartScan(name, media.Preview(s.ffmpegPath, v.Player.Duration, s.log,
+	state := s.mediaCache.StartScan(name, media.Preview(s.ffmpegPath, v.Player.Duration, s.log,
 		s.rangeSource(src)))
 	dir := s.mediaCache.Dir(name)
 	if !media.PreviewReady(dir) {
-		// Being made, or it failed. Either way there is nothing to show yet.
+		// Being made, or it failed. Either way there is nothing to show yet —
+		// but which of the two it is is the whole question when a scrubber has
+		// no pictures, so the 404 carries the job's state rather than making
+		// the client guess from how long it has been asking.
 		w.Header().Set("Cache-Control", "no-store")
-		writeError(w, http.StatusNotFound, "preview not ready")
+		writeJSON(w, http.StatusNotFound, map[string]string{
+			"error": "preview not ready",
+			"state": string(state),
+		})
 		return
 	}
 	s.mediaCache.TouchDir(name)

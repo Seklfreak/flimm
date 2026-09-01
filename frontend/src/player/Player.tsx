@@ -6,7 +6,7 @@ import { trackPlay } from "@/lib/analytics";
 import { CUE_LINE, cueFontSize, cueLineOverChrome, useCueLift, useCueSize } from "./cueSize";
 import { usePreviewTiles } from "./preview";
 import { playbackEnd } from "./playbackEnd";
-import { useLoudnessGain } from "./loudness";
+import { useLoudness, useLoudnessGain } from "./loudness";
 import { CheckIcon, HeadphonesIcon, MediaImg, Popover, Spinner } from "@/components/ui";
 import { useChapters } from "@/lib/queries";
 import { useSponsorSkip } from "./useSponsorSkip";
@@ -14,6 +14,7 @@ import { useProgressHeartbeat } from "./useProgressHeartbeat";
 import { useStallReport } from "./useStallReport";
 import { useRendition } from "./useRendition";
 import { Scrubber } from "./Scrubber";
+import { PlaybackStats } from "./PlaybackStats";
 import { currentChapterIndex, highlightToOffer, nextChapterStart, prevChapterStart, segmentToOffer, sponsorCategoryLabel } from "./chapterMath";
 import { HLS_CONFIG, loadHls } from "./hls";
 import {
@@ -105,6 +106,9 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(function Player(
   const [muted, setMuted] = useState(false);
   const [resumedFrom, setResumedFrom] = useState<number | null>(null);
   const [menu, setMenu] = useState<"cc" | "speed" | "quality" | null>(null);
+  // What the player is doing, on screen. Off by default and per session: it is
+  // a thing to reach for when something looks wrong, not a thing to live with.
+  const [showStats, setShowStats] = useState(false);
   const [ccAnchor, setCcAnchor] = useState<HTMLButtonElement | null>(null);
   const [speedAnchor, setSpeedAnchor] = useState<HTMLButtonElement | null>(null);
   const [qualityAnchor, setQualityAnchor] = useState<HTMLButtonElement | null>(null);
@@ -345,11 +349,16 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(function Player(
   // Scrub previews, once the player is actually playing: asking for the track
   // is what starts a full decode of the file server-side, and a video someone
   // opened and closed again does not need one.
-  const previewTiles = usePreviewTiles(video.preview_url, playing || time > 0);
+  const preview = usePreviewTiles(video.preview_url, playing || time > 0);
   // Loudness normalisation: the server measures the video and says how far to
   // turn it down, and the element's volume is where that lands. Asking starts
   // the measurement, so it waits for playback like the previews do.
-  useLoudnessGain(el, video.id, prefs.normalize_loudness !== false && (playing || time > 0));
+  const loudnessOn = prefs.normalize_loudness !== false;
+  useLoudnessGain(el, video.id, loudnessOn && (playing || time > 0));
+  // The same query the line above runs on, read for the stats panel. React
+  // Query hands back the one cached answer, so this is a second reader and not
+  // a second request.
+  const loudness = useLoudness(video.id, loudnessOn && (playing || time > 0)).data;
   const sponsorActions = prefs.sponsor_actions ?? {};
   useSponsorSkip(el, video.sponsorblock, prefs.skip_sponsors, sponsorActions);
   // A category the viewer set to "ask" is a button, not a jump: offered while
@@ -543,392 +552,423 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(function Player(
   // reads as a broken player rather than a loading one.
 
   return (
-    <div
-      ref={wrapRef}
-      className="group relative aspect-video w-full overflow-hidden rounded-2xl bg-black text-white"
-      onMouseMove={bumpIdle}
-      onPointerDown={bumpIdle}
-      style={{ cursor: showControls ? "default" : "none" }}
-    >
-      {/* No `src` prop: the effect above owns the element's source, because
-          hls.js assigns one of its own and React would fight it. */}
-      <video
-        ref={setEl}
-        className={`h-full w-full ${audioOnly ? "invisible" : ""}`}
-        playsInline
-        preload="metadata"
-        onClick={togglePlay}
-        onPlay={(e) => {
-          setPlaying(true);
-          setEnded(false);
-          // HAVE_FUTURE_DATA or better means there is a frame to show.
-          setWaiting(e.currentTarget.readyState < 3);
-          if (reportedPlayRef.current !== video.id) {
-            reportedPlayRef.current = video.id;
-            trackPlay(video.type, audioOnly);
-          }
-        }}
-        onPause={() => setPlaying(false)}
-        onWaiting={() => setWaiting(true)}
-        onStalled={() => setWaiting(true)}
-        onPlaying={() => setWaiting(false)}
-        onCanPlay={() => setWaiting(false)}
-        onLoadedData={() => setWaiting(false)}
-        onTimeUpdate={(e) => setTime(e.currentTarget.currentTime)}
-        onDurationChange={(e) => setDuration(e.currentTarget.duration || video.duration)}
-        onVolumeChange={(e) => setMuted(e.currentTarget.muted)}
-        onEnded={() => {
-          // The page navigates on the same rule when autoplay takes over, so
-          // the card is raised only for an ending that stays put.
-          if (playbackEnd(prefs.autoplay, !!upNext) === "finished") setEnded(true);
-          onEnded();
-        }}
-        onSeeking={() => setEnded(false)}
-        onError={() => {
-          // hls.js reports its own errors (and clears the element's src while
-          // recovering), so only the direct path answers here.
-          if (isHls && !caps.nativeHLS) return;
-          // Likely an expired media cookie: refresh it once and reload. Retry
-          // the `?from`-bearing URL so a native-HLS resume keeps its offset.
-          if (!playerSource) return;
-          void retryMediaUrl(playerSource).then((next) => {
-            if (next) setRetryUrl(next);
-            else setError(audioOnly ? "Could not load the audio." : "Could not load the video.");
-          });
-        }}
-      >
-        {video.subtitles.map((t) => (
-          <track key={`${t.source}-${t.lang}`} kind="subtitles" srcLang={t.lang} label={trackLabel(t)} src={t.url} default={activeTrack === t} />
-        ))}
-      </video>
-
-      {/* Same aspect box as the video, so toggling audio mode never reflows
-          the page — only what's painted inside it changes. */}
-      {audioOnly && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 px-6 text-center" onClick={togglePlay}>
-          <div className="aspect-square h-full max-h-[65%] overflow-hidden rounded-2xl bg-thumb shadow-modal">
-            {video.thumb_url && <MediaImg src={video.thumb_url} alt="" className="h-full w-full object-cover" />}
-          </div>
-          <div className="flex max-w-md flex-col gap-1">
-            <p className="truncate text-[16px] font-extrabold text-white">{video.title}</p>
-            <p className="truncate text-[13px] font-semibold text-white/70">{video.channel.name}</p>
-          </div>
-        </div>
-      )}
-
-      {error && (
-        <div className="absolute inset-0 flex items-center justify-center text-sm font-semibold text-white/80">{error}</div>
-      )}
-
-      {/* The codec wall. Only a server with no compatible rendition at all
-          gets here — otherwise the gate has already picked one. */}
-      {!error && (decision.kind === "audioOnly" || decision.kind === "unplayable") && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 px-8 text-center">
-          <p className="text-sm font-semibold text-white/85">
-            This video's codec ({decision.issue.videoCodec}) can't be played in this browser.
-          </p>
-          {decision.issue.audioAvailable ? (
-            <button className="btn pri" onClick={onToggleAudioOnly}>
-              <HeadphonesIcon size={14} />
-              Play audio only
-            </button>
-          ) : (
-            <p className="text-[13px] font-medium text-white/60">There is no compatible version to fall back to.</p>
-          )}
-        </div>
-      )}
-
-      {/* A rendition that has produced nothing yet. The playlist is a complete
-          VOD list from the first request, so this comes down as soon as there
-          is a frame — long before the transcode finishes. */}
-      {!error && isHls && rendition.preparing && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-center">
-          <Spinner />
-          <p className="text-[13px] font-semibold text-white/80">
-            Preparing a compatible version…
-            {rendition.progress !== null ? ` ${Math.round(rendition.progress * 100)}%` : ""}
-          </p>
-        </div>
-      )}
-
-      {/* "Jump to the highlight": a SponsorBlock point of interest is offered,
-          never taken for the viewer, and offered whatever `skip_sponsors`
-          says — this is a click, not a skip. It goes as soon as playback
-          reaches it, and does not wait for the controls: a highlight nobody
-          sees is a highlight nobody uses. */}
-      {highlight && (
-        <button
-          className="absolute right-3.5 top-3.5 flex items-center gap-1.5 rounded-full bg-[rgba(23,24,26,0.85)] py-1.5 pl-3 pr-3 text-[12px] font-bold"
-          onClick={() => seekTo(highlight.start)}
-        >
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-            <path d="M12 2l2.2 5.8L20 10l-5.8 2.2L12 18l-2.2-5.8L4 10l5.8-2.2z" />
-          </svg>
-          <span>Jump to the highlight</span>
-          <span className="font-semibold text-white/60">{fmtDuration(highlight.start)}</span>
-        </button>
-      )}
-
-      {/* "Skip the intro": the other half of a per-category setting. The
-          viewer asked to be offered this one rather than have it taken, so it
-          sits where the highlight does and disappears with the segment. */}
-      {offer && (
-        <button
-          className="absolute bottom-16 right-3.5 flex items-center gap-1.5 rounded-full bg-[rgba(23,24,26,0.85)] py-1.5 pl-3 pr-3 text-[12px] font-bold"
-          onClick={() => seekTo(offer.end)}
-        >
-          <span>Skip {sponsorCategoryLabel(offer.category).toLowerCase()}</span>
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden="true">
-            <path d="M5 5l7 7-7 7M13 5l7 7-7 7" />
-          </svg>
-        </button>
-      )}
-
-      {/* Buffering, on every path — not just the transcoded one. The archive
-          streams straight from the server and can take a moment on a cold
-          cache or a slow link; without this the player shows a black box and
-          a frozen 0:00, which is indistinguishable from a failure. */}
-      {!error && waiting && !(isHls && rendition.preparing) && (
-        <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-          <Spinner />
-        </div>
-      )}
-
-      {resumedFrom !== null && (
-        <div className="absolute left-3.5 top-3.5 flex items-center gap-2 rounded-full bg-[rgba(23,24,26,0.85)] py-1.5 pl-3 pr-2.5 text-[12px] font-bold">
-          <span>Resumed from {fmtDuration(resumedFrom)}</span>
-          <button
-            className="text-accent-soft"
-            onClick={() => {
-              void onStartOver().then(() => {
-                startPosRef.current = 0;
-                if (el) el.currentTime = 0;
-                setResumedFrom(null);
-              });
-            }}
-          >
-            Start over
-          </button>
-        </div>
-      )}
-
-      {/* The end of the video, said out loud. Without it a finished video is a
-          still frame, which is exactly what a paused one looks like. It sits
-          above the picture but below the control bar (which follows it in the
-          DOM), so scrubbing back out of it stays one click away, and any of
-          play, seek or a new video takes it down again. */}
-      {ended && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black/70 px-5 pb-20 text-center">
-          <p className="flex items-center gap-2 text-[13px] font-bold uppercase tracking-[0.14em] text-white/65">
-            <CheckIcon size={14} />
-            Finished
-          </p>
-          {upNext && (
-            <button
-              className="flex w-full max-w-xs items-center gap-2.5 rounded-xl bg-white/10 p-2 text-left transition-colors hover:bg-white/20"
-              onClick={upNext.onPlay}
-            >
-              <div className="aspect-video w-20 flex-none overflow-hidden rounded-lg bg-thumb">
-                {upNext.video.thumb_url && <MediaImg src={upNext.video.thumb_url} alt="" className="h-full w-full object-cover" />}
-              </div>
-              <span className="flex min-w-0 flex-col gap-0.5">
-                <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-white/55">Up next</span>
-                <span className="line-clamp-2 text-[12.5px] font-extrabold leading-snug text-white">{upNext.video.title}</span>
-                <span className="truncate text-[12px] font-semibold text-white/60">{upNext.video.channel.name}</span>
-              </span>
-            </button>
-          )}
-          <button className="btn" onClick={replay}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden="true">
-              <path d="M4 12a8 8 0 1 1 3 6.2" />
-              <path d="M4 18v-6h6" />
-            </svg>
-            Replay
-          </button>
-        </div>
-      )}
-
+    <>
       <div
-        ref={setControlBar}
-        className={`absolute inset-x-0 bottom-0 flex flex-col gap-2.5 bg-gradient-to-t from-black/75 to-transparent px-4 pb-3 pt-6 transition-opacity ${showControls ? "opacity-100" : "opacity-0"}`}
+        ref={wrapRef}
+        className="group relative aspect-video w-full overflow-hidden rounded-2xl bg-black text-white"
+        onMouseMove={bumpIdle}
+        onPointerDown={bumpIdle}
+        style={{ cursor: showControls ? "default" : "none" }}
       >
-        <Scrubber
-          time={time}
-          duration={duration}
-          chapters={chapters}
-          sponsorblock={video.sponsorblock}
-          onSeek={seekTo}
-          preview={previewTiles}
-        />
-        <div className="flex items-center gap-4 text-[12px] font-bold">
-          {nav && (
-            <button onClick={nav.onPrev} disabled={!nav.onPrev} aria-label="Previous video" className="disabled:opacity-35">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M7 5h2v14H7zM19 5v14l-9-7z" /></svg>
-            </button>
-          )}
-          <button onClick={togglePlay} aria-label={playing ? "Pause" : "Play"}>
-            {playing ? (
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M6 4h4v16H6zM14 4h4v16h-4z" /></svg>
-            ) : (
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M7 4l12 8-12 8z" /></svg>
-            )}
-          </button>
-          <button onClick={() => seekBy(-10)} aria-label="Back 10 seconds">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 12a8 8 0 1 1 3 6.2" /><path d="M4 18v-6h6" /></svg>
-          </button>
-          <button onClick={() => seekBy(10)} aria-label="Forward 10 seconds">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 12a8 8 0 1 0-3 6.2" /><path d="M20 18v-6h-6" /></svg>
-          </button>
-          {nav && (
-            <button onClick={nav.onNext} disabled={!nav.onNext} aria-label="Next video" className="disabled:opacity-35">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M15 5h2v14h-2zM5 5l9 7-9 7z" /></svg>
-            </button>
-          )}
-          <span className="tabular-nums">
-            {fmtDuration(time)} / {fmtDuration(duration)}
-          </span>
-          {currentChapter && (
-            <span className="min-w-0 max-w-[160px] truncate text-white/70 sm:max-w-[300px]" title={currentChapter.title}>
-              · {currentChapter.title}
-            </span>
-          )}
-          <div className="ml-auto flex items-center gap-4">
-            {!audioOnly && (
-              <button
-                ref={setCcAnchor}
-                onClick={() => setMenu(menu === "cc" ? null : "cc")}
-                aria-label="Subtitles"
-                aria-expanded={menu === "cc"}
-                className={`rounded px-[7px] py-[3px] text-[11px] font-extrabold ${activeTrack ? "bg-white text-[#17181a]" : "border border-white/60"}`}
-              >
-                CC
-              </button>
-            )}
-            <button ref={setSpeedAnchor} onClick={() => setMenu(menu === "speed" ? null : "speed")} aria-label="Playback speed" aria-expanded={menu === "speed"}>
-              {fmtSpeed(prefs.playback_speed)}
-            </button>
-            {!audioOnly && ladder.length > 0 && (
-              <button
-                ref={setQualityAnchor}
-                onClick={() => setMenu(menu === "quality" ? null : "quality")}
-                aria-label="Video quality"
-                aria-expanded={menu === "quality"}
-              >
-                {qualityLabel(quality)}
-              </button>
-            )}
-            <button
-              onClick={() => {
-                if (el) startPosRef.current = el.currentTime;
-                firstLoadRef.current = false;
-                onToggleAudioOnly();
-              }}
-              aria-label={audioOnly ? "Switch to video" : "Switch to audio only"}
-              aria-pressed={audioOnly}
-              className={`rounded px-[7px] py-[3px] ${audioOnly ? "bg-white text-[#17181a]" : ""}`}
-            >
-              <HeadphonesIcon size={16} />
-            </button>
-            <button
-              onClick={() => {
-                if (el) {
-                  el.muted = !el.muted;
-                  setMuted(el.muted);
-                }
-              }}
-              aria-label={muted ? "Unmute" : "Mute"}
-            >
-              {muted ? (
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 9h4l5-4v14l-5-4H4z" /><path d="M17 9l4 6M21 9l-4 6" /></svg>
-              ) : (
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 9h4l5-4v14l-5-4H4z" /><path d="M16 9a4 4 0 0 1 0 6" /></svg>
-              )}
-            </button>
-            {!audioOnly && (
-              <button onClick={toggleFullscreen} aria-label="Fullscreen">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" /></svg>
-              </button>
-            )}
-          </div>
-        </div>
-      </div>
+        {/* No `src` prop: the effect above owns the element's source, because
+            hls.js assigns one of its own and React would fight it. */}
+        <video
+          ref={setEl}
+          className={`h-full w-full ${audioOnly ? "invisible" : ""}`}
+          playsInline
+          preload="metadata"
+          onClick={togglePlay}
+          onPlay={(e) => {
+            setPlaying(true);
+            setEnded(false);
+            // HAVE_FUTURE_DATA or better means there is a frame to show.
+            setWaiting(e.currentTarget.readyState < 3);
+            if (reportedPlayRef.current !== video.id) {
+              reportedPlayRef.current = video.id;
+              trackPlay(video.type, audioOnly);
+            }
+          }}
+          onPause={() => setPlaying(false)}
+          onWaiting={() => setWaiting(true)}
+          onStalled={() => setWaiting(true)}
+          onPlaying={() => setWaiting(false)}
+          onCanPlay={() => setWaiting(false)}
+          onLoadedData={() => setWaiting(false)}
+          onTimeUpdate={(e) => setTime(e.currentTarget.currentTime)}
+          onDurationChange={(e) => setDuration(e.currentTarget.duration || video.duration)}
+          onVolumeChange={(e) => setMuted(e.currentTarget.muted)}
+          onEnded={() => {
+            // The page navigates on the same rule when autoplay takes over, so
+            // the card is raised only for an ending that stays put.
+            if (playbackEnd(prefs.autoplay, !!upNext) === "finished") setEnded(true);
+            onEnded();
+          }}
+          onSeeking={() => setEnded(false)}
+          onError={() => {
+            // hls.js reports its own errors (and clears the element's src while
+            // recovering), so only the direct path answers here.
+            if (isHls && !caps.nativeHLS) return;
+            // Likely an expired media cookie: refresh it once and reload. Retry
+            // the `?from`-bearing URL so a native-HLS resume keeps its offset.
+            if (!playerSource) return;
+            void retryMediaUrl(playerSource).then((next) => {
+              if (next) setRetryUrl(next);
+              else setError(audioOnly ? "Could not load the audio." : "Could not load the video.");
+            });
+          }}
+        >
+          {video.subtitles.map((t) => (
+            <track key={`${t.source}-${t.lang}`} kind="subtitles" srcLang={t.lang} label={trackLabel(t)} src={t.url} default={activeTrack === t} />
+          ))}
+        </video>
 
-      {!audioOnly && menu === "cc" && (
-        <Popover anchor={ccAnchor} onClose={() => setMenu(null)} width={220}>
-          <div className="pop">
-            <span className="sec px-2.5 pb-1 pt-1.5 !text-muted-3">Subtitles</span>
-            <button className={`pop-item ${!activeTrack ? "on" : ""}`} onClick={() => onPrefs({ subtitle_lang: SUBTITLE_OFF })}>
-              <span>Off</span>
-              {!activeTrack && <CheckIcon size={14} />}
-            </button>
-            {video.subtitles.map((t) => (
-              <button key={`${t.source}-${t.lang}`} className={`pop-item ${activeTrack === t ? "on" : ""}`} onClick={() => onPrefs({ subtitle_lang: t.lang })}>
-                <span>{langName(t.lang)}</span>
-                {activeTrack === t ? <CheckIcon size={14} /> : t.source === "auto" ? <span className="text-[11px] text-[#c9c6bd]">auto</span> : null}
-              </button>
-            ))}
-            {video.subtitles.length === 0 && <span className="px-2.5 py-2 text-[#c9c6bd]">No subtitles archived</span>}
-            <div className="mt-1 flex items-center justify-between border-t border-white/15 px-2.5 pt-2.5 text-[#c9c6bd]">
-              <span>Size</span>
-              <span className="flex gap-1">
-                {SIZES.map((s) => (
-                  <button key={s} onClick={() => onPrefs({ subtitle_size: s })} className={`rounded px-1.5 py-0.5 capitalize ${prefs.subtitle_size === s ? "bg-white/15 text-white" : ""}`}>
-                    {s}
-                  </button>
-                ))}
-              </span>
+        {/* Same aspect box as the video, so toggling audio mode never reflows
+            the page — only what's painted inside it changes. */}
+        {audioOnly && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 px-6 text-center" onClick={togglePlay}>
+            <div className="aspect-square h-full max-h-[65%] overflow-hidden rounded-2xl bg-thumb shadow-modal">
+              {video.thumb_url && <MediaImg src={video.thumb_url} alt="" className="h-full w-full object-cover" />}
+            </div>
+            <div className="flex max-w-md flex-col gap-1">
+              <p className="truncate text-[16px] font-extrabold text-white">{video.title}</p>
+              <p className="truncate text-[13px] font-semibold text-white/70">{video.channel.name}</p>
             </div>
           </div>
-        </Popover>
-      )}
-      {menu === "speed" && (
-        <Popover anchor={speedAnchor} onClose={() => setMenu(null)} width={160}>
-          <div className="pop">
-            <span className="sec px-2.5 pb-1 pt-1.5 !text-muted-3">Speed</span>
-            {SPEEDS.map((s) => (
-              <button key={s} className={`pop-item ${prefs.playback_speed === s ? "on" : ""}`} onClick={() => onPrefs({ playback_speed: s })}>
-                <span>{fmtSpeed(s)}</span>
-                {prefs.playback_speed === s && <CheckIcon size={14} />}
+        )}
+
+        {error && (
+          <div className="absolute inset-0 flex items-center justify-center text-sm font-semibold text-white/80">{error}</div>
+        )}
+
+        {/* The codec wall. Only a server with no compatible rendition at all
+            gets here — otherwise the gate has already picked one. */}
+        {!error && (decision.kind === "audioOnly" || decision.kind === "unplayable") && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 px-8 text-center">
+            <p className="text-sm font-semibold text-white/85">
+              This video's codec ({decision.issue.videoCodec}) can't be played in this browser.
+            </p>
+            {decision.issue.audioAvailable ? (
+              <button className="btn pri" onClick={onToggleAudioOnly}>
+                <HeadphonesIcon size={14} />
+                Play audio only
               </button>
-            ))}
+            ) : (
+              <p className="text-[13px] font-medium text-white/60">There is no compatible version to fall back to.</p>
+            )}
           </div>
-        </Popover>
-      )}
-      {!audioOnly && menu === "quality" && (
-        <Popover anchor={qualityAnchor} onClose={() => setMenu(null)} width={230}>
-          <div className="pop">
-            <span className="sec px-2.5 pb-1 pt-1.5 !text-muted-3">Quality</span>
-            <button className={`pop-item ${quality === "auto" ? "on" : ""}`} onClick={() => changeQuality("auto")}>
-              <span>Auto</span>
-              {quality === "auto" && <CheckIcon size={14} />}
+        )}
+
+        {/* A rendition that has produced nothing yet. The playlist is a complete
+            VOD list from the first request, so this comes down as soon as there
+            is a frame — long before the transcode finishes. */}
+        {!error && isHls && rendition.preparing && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-center">
+            <Spinner />
+            <p className="text-[13px] font-semibold text-white/80">
+              Preparing a compatible version…
+              {rendition.progress !== null ? ` ${Math.round(rendition.progress * 100)}%` : ""}
+            </p>
+          </div>
+        )}
+
+        {/* "Jump to the highlight": a SponsorBlock point of interest is offered,
+            never taken for the viewer, and offered whatever `skip_sponsors`
+            says — this is a click, not a skip. It goes as soon as playback
+            reaches it, and does not wait for the controls: a highlight nobody
+            sees is a highlight nobody uses. */}
+        {highlight && (
+          <button
+            className="absolute right-3.5 top-3.5 flex items-center gap-1.5 rounded-full bg-[rgba(23,24,26,0.85)] py-1.5 pl-3 pr-3 text-[12px] font-bold"
+            onClick={() => seekTo(highlight.start)}
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <path d="M12 2l2.2 5.8L20 10l-5.8 2.2L12 18l-2.2-5.8L4 10l5.8-2.2z" />
+            </svg>
+            <span>Jump to the highlight</span>
+            <span className="font-semibold text-white/60">{fmtDuration(highlight.start)}</span>
+          </button>
+        )}
+
+        {/* "Skip the intro": the other half of a per-category setting. The
+            viewer asked to be offered this one rather than have it taken, so it
+            sits where the highlight does and disappears with the segment. */}
+        {offer && (
+          <button
+            className="absolute bottom-16 right-3.5 flex items-center gap-1.5 rounded-full bg-[rgba(23,24,26,0.85)] py-1.5 pl-3 pr-3 text-[12px] font-bold"
+            onClick={() => seekTo(offer.end)}
+          >
+            <span>Skip {sponsorCategoryLabel(offer.category).toLowerCase()}</span>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden="true">
+              <path d="M5 5l7 7-7 7M13 5l7 7-7 7" />
+            </svg>
+          </button>
+        )}
+
+        {/* Buffering, on every path — not just the transcoded one. The archive
+            streams straight from the server and can take a moment on a cold
+            cache or a slow link; without this the player shows a black box and
+            a frozen 0:00, which is indistinguishable from a failure. */}
+        {!error && waiting && !(isHls && rendition.preparing) && (
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+            <Spinner />
+          </div>
+        )}
+
+        {resumedFrom !== null && (
+          <div className="absolute left-3.5 top-3.5 flex items-center gap-2 rounded-full bg-[rgba(23,24,26,0.85)] py-1.5 pl-3 pr-2.5 text-[12px] font-bold">
+            <span>Resumed from {fmtDuration(resumedFrom)}</span>
+            <button
+              className="text-accent-soft"
+              onClick={() => {
+                void onStartOver().then(() => {
+                  startPosRef.current = 0;
+                  if (el) el.currentTime = 0;
+                  setResumedFrom(null);
+                });
+              }}
+            >
+              Start over
             </button>
-            {/* What Auto plays when the archive decodes here: the original
-                file, full quality, and nothing for the server to transcode.
-                A label, not a choice — "Auto" above already is it. */}
-            {sourcePlays && (
-              <span className="px-2.5 pb-1 pl-5 text-[11px] text-[#c9c6bd]">
-                Source{sourceHeight > 0 ? ` · ${sourceHeight}p` : ""}
-                {sourceCodec ? ` · ${codecLabel(sourceCodec)}` : ""}
+          </div>
+        )}
+
+        {/* The end of the video, said out loud. Without it a finished video is a
+            still frame, which is exactly what a paused one looks like. It sits
+            above the picture but below the control bar (which follows it in the
+            DOM), so scrubbing back out of it stays one click away, and any of
+            play, seek or a new video takes it down again. */}
+        {ended && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black/70 px-5 pb-20 text-center">
+            <p className="flex items-center gap-2 text-[13px] font-bold uppercase tracking-[0.14em] text-white/65">
+              <CheckIcon size={14} />
+              Finished
+            </p>
+            {upNext && (
+              <button
+                className="flex w-full max-w-xs items-center gap-2.5 rounded-xl bg-white/10 p-2 text-left transition-colors hover:bg-white/20"
+                onClick={upNext.onPlay}
+              >
+                <div className="aspect-video w-20 flex-none overflow-hidden rounded-lg bg-thumb">
+                  {upNext.video.thumb_url && <MediaImg src={upNext.video.thumb_url} alt="" className="h-full w-full object-cover" />}
+                </div>
+                <span className="flex min-w-0 flex-col gap-0.5">
+                  <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-white/55">Up next</span>
+                  <span className="line-clamp-2 text-[12.5px] font-extrabold leading-snug text-white">{upNext.video.title}</span>
+                  <span className="truncate text-[12px] font-semibold text-white/60">{upNext.video.channel.name}</span>
+                </span>
+              </button>
+            )}
+            <button className="btn" onClick={replay}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden="true">
+                <path d="M4 12a8 8 0 1 1 3 6.2" />
+                <path d="M4 18v-6h6" />
+              </svg>
+              Replay
+            </button>
+          </div>
+        )}
+
+        <div
+          ref={setControlBar}
+          className={`absolute inset-x-0 bottom-0 flex flex-col gap-2.5 bg-gradient-to-t from-black/75 to-transparent px-4 pb-3 pt-6 transition-opacity ${showControls ? "opacity-100" : "opacity-0"}`}
+        >
+          <Scrubber
+            time={time}
+            duration={duration}
+            chapters={chapters}
+            sponsorblock={video.sponsorblock}
+            onSeek={seekTo}
+            preview={preview.tiles}
+          />
+          <div className="flex items-center gap-4 text-[12px] font-bold">
+            {nav && (
+              <button onClick={nav.onPrev} disabled={!nav.onPrev} aria-label="Previous video" className="disabled:opacity-35">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M7 5h2v14H7zM19 5v14l-9-7z" /></svg>
+              </button>
+            )}
+            <button onClick={togglePlay} aria-label={playing ? "Pause" : "Play"}>
+              {playing ? (
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M6 4h4v16H6zM14 4h4v16h-4z" /></svg>
+              ) : (
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M7 4l12 8-12 8z" /></svg>
+              )}
+            </button>
+            <button onClick={() => seekBy(-10)} aria-label="Back 10 seconds">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 12a8 8 0 1 1 3 6.2" /><path d="M4 18v-6h6" /></svg>
+            </button>
+            <button onClick={() => seekBy(10)} aria-label="Forward 10 seconds">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 12a8 8 0 1 0-3 6.2" /><path d="M20 18v-6h-6" /></svg>
+            </button>
+            {nav && (
+              <button onClick={nav.onNext} disabled={!nav.onNext} aria-label="Next video" className="disabled:opacity-35">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M15 5h2v14h-2zM5 5l9 7-9 7z" /></svg>
+              </button>
+            )}
+            <span className="tabular-nums">
+              {fmtDuration(time)} / {fmtDuration(duration)}
+            </span>
+            {currentChapter && (
+              <span className="min-w-0 max-w-[160px] truncate text-white/70 sm:max-w-[300px]" title={currentChapter.title}>
+                · {currentChapter.title}
               </span>
             )}
-            {ladder.map((v) => (
-              <button key={v.height} className={`pop-item ${quality === v.height ? "on" : ""}`} onClick={() => changeQuality(v.height)}>
-                <span>
-                  {v.height}p{codecFamily(v.codec) === "hevc" ? " · HEVC" : ""}
-                </span>
-                <span className="flex items-center gap-1.5">
-                  {variantHint(v.state) && <span className="text-[11px] text-[#c9c6bd]">{variantHint(v.state)}</span>}
-                  {quality === v.height && <CheckIcon size={14} />}
-                </span>
+            <div className="ml-auto flex items-center gap-4">
+              {!audioOnly && (
+                <button
+                  ref={setCcAnchor}
+                  onClick={() => setMenu(menu === "cc" ? null : "cc")}
+                  aria-label="Subtitles"
+                  aria-expanded={menu === "cc"}
+                  className={`rounded px-[7px] py-[3px] text-[11px] font-extrabold ${activeTrack ? "bg-white text-[#17181a]" : "border border-white/60"}`}
+                >
+                  CC
+                </button>
+              )}
+              <button ref={setSpeedAnchor} onClick={() => setMenu(menu === "speed" ? null : "speed")} aria-label="Playback speed" aria-expanded={menu === "speed"}>
+                {fmtSpeed(prefs.playback_speed)}
               </button>
-            ))}
-            <span className="mt-1 block border-t border-white/15 px-2.5 pt-2 text-[11px] text-[#c9c6bd]">
-              Kept on this device only.
-            </span>
+              {!audioOnly && ladder.length > 0 && (
+                <button
+                  ref={setQualityAnchor}
+                  onClick={() => setMenu(menu === "quality" ? null : "quality")}
+                  aria-label="Video quality"
+                  aria-expanded={menu === "quality"}
+                >
+                  {qualityLabel(quality)}
+                </button>
+              )}
+              <button
+                onClick={() => {
+                  if (el) startPosRef.current = el.currentTime;
+                  firstLoadRef.current = false;
+                  onToggleAudioOnly();
+                }}
+                aria-label={audioOnly ? "Switch to video" : "Switch to audio only"}
+                aria-pressed={audioOnly}
+                className={`rounded px-[7px] py-[3px] ${audioOnly ? "bg-white text-[#17181a]" : ""}`}
+              >
+                <HeadphonesIcon size={16} />
+              </button>
+              <button
+                onClick={() => {
+                  if (el) {
+                    el.muted = !el.muted;
+                    setMuted(el.muted);
+                  }
+                }}
+                aria-label={muted ? "Unmute" : "Mute"}
+              >
+                {muted ? (
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 9h4l5-4v14l-5-4H4z" /><path d="M17 9l4 6M21 9l-4 6" /></svg>
+                ) : (
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 9h4l5-4v14l-5-4H4z" /><path d="M16 9a4 4 0 0 1 0 6" /></svg>
+                )}
+              </button>
+              <button
+                onClick={() => setShowStats((on) => !on)}
+                aria-label="Playback stats"
+                aria-pressed={showStats}
+                className={`rounded px-[7px] py-[3px] ${showStats ? "bg-white text-[#17181a]" : ""}`}
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden="true">
+                  <path d="M4 20V10M10 20V4M16 20v-7M22 20H2" />
+                </svg>
+              </button>
+              {!audioOnly && (
+                <button onClick={toggleFullscreen} aria-label="Fullscreen">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" /></svg>
+                </button>
+              )}
+            </div>
           </div>
-        </Popover>
+        </div>
+
+        {!audioOnly && menu === "cc" && (
+          <Popover anchor={ccAnchor} onClose={() => setMenu(null)} width={220}>
+            <div className="pop">
+              <span className="sec px-2.5 pb-1 pt-1.5 !text-muted-3">Subtitles</span>
+              <button className={`pop-item ${!activeTrack ? "on" : ""}`} onClick={() => onPrefs({ subtitle_lang: SUBTITLE_OFF })}>
+                <span>Off</span>
+                {!activeTrack && <CheckIcon size={14} />}
+              </button>
+              {video.subtitles.map((t) => (
+                <button key={`${t.source}-${t.lang}`} className={`pop-item ${activeTrack === t ? "on" : ""}`} onClick={() => onPrefs({ subtitle_lang: t.lang })}>
+                  <span>{langName(t.lang)}</span>
+                  {activeTrack === t ? <CheckIcon size={14} /> : t.source === "auto" ? <span className="text-[11px] text-[#c9c6bd]">auto</span> : null}
+                </button>
+              ))}
+              {video.subtitles.length === 0 && <span className="px-2.5 py-2 text-[#c9c6bd]">No subtitles archived</span>}
+              <div className="mt-1 flex items-center justify-between border-t border-white/15 px-2.5 pt-2.5 text-[#c9c6bd]">
+                <span>Size</span>
+                <span className="flex gap-1">
+                  {SIZES.map((s) => (
+                    <button key={s} onClick={() => onPrefs({ subtitle_size: s })} className={`rounded px-1.5 py-0.5 capitalize ${prefs.subtitle_size === s ? "bg-white/15 text-white" : ""}`}>
+                      {s}
+                    </button>
+                  ))}
+                </span>
+              </div>
+            </div>
+          </Popover>
+        )}
+        {menu === "speed" && (
+          <Popover anchor={speedAnchor} onClose={() => setMenu(null)} width={160}>
+            <div className="pop">
+              <span className="sec px-2.5 pb-1 pt-1.5 !text-muted-3">Speed</span>
+              {SPEEDS.map((s) => (
+                <button key={s} className={`pop-item ${prefs.playback_speed === s ? "on" : ""}`} onClick={() => onPrefs({ playback_speed: s })}>
+                  <span>{fmtSpeed(s)}</span>
+                  {prefs.playback_speed === s && <CheckIcon size={14} />}
+                </button>
+              ))}
+            </div>
+          </Popover>
+        )}
+        {!audioOnly && menu === "quality" && (
+          <Popover anchor={qualityAnchor} onClose={() => setMenu(null)} width={230}>
+            <div className="pop">
+              <span className="sec px-2.5 pb-1 pt-1.5 !text-muted-3">Quality</span>
+              <button className={`pop-item ${quality === "auto" ? "on" : ""}`} onClick={() => changeQuality("auto")}>
+                <span>Auto</span>
+                {quality === "auto" && <CheckIcon size={14} />}
+              </button>
+              {/* What Auto plays when the archive decodes here: the original
+                  file, full quality, and nothing for the server to transcode.
+                  A label, not a choice — "Auto" above already is it. */}
+              {sourcePlays && (
+                <span className="px-2.5 pb-1 pl-5 text-[11px] text-[#c9c6bd]">
+                  Source{sourceHeight > 0 ? ` · ${sourceHeight}p` : ""}
+                  {sourceCodec ? ` · ${codecLabel(sourceCodec)}` : ""}
+                </span>
+              )}
+              {ladder.map((v) => (
+                <button key={v.height} className={`pop-item ${quality === v.height ? "on" : ""}`} onClick={() => changeQuality(v.height)}>
+                  <span>
+                    {v.height}p{codecFamily(v.codec) === "hevc" ? " · HEVC" : ""}
+                  </span>
+                  <span className="flex items-center gap-1.5">
+                    {variantHint(v.state) && <span className="text-[11px] text-[#c9c6bd]">{variantHint(v.state)}</span>}
+                    {quality === v.height && <CheckIcon size={14} />}
+                  </span>
+                </button>
+              ))}
+              <span className="mt-1 block border-t border-white/15 px-2.5 pt-2 text-[11px] text-[#c9c6bd]">
+                Kept on this device only.
+              </span>
+            </div>
+          </Popover>
+        )}
+      </div>
+
+      {/* Below the box, not over it: the readings are a page's worth and the
+          player is a few hundred pixels tall. See PlaybackStats. */}
+      {showStats && (
+        <PlaybackStats
+          video={video}
+          el={el}
+          caps={caps}
+          decision={{ kind: decision.kind, reason: decision.reason, url }}
+          variant={variant}
+          rendition={rendition}
+          preview={preview}
+          loudness={loudness}
+          loudnessEnabled={loudnessOn}
+          audioOnly={audioOnly}
+          startedAt={startPosRef.current}
+          onClose={() => setShowStats(false)}
+        />
       )}
-    </div>
+    </>
   );
 });
 

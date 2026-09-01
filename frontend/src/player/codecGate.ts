@@ -258,7 +258,34 @@ export interface CodecIssue {
   audioAvailable: boolean;
 }
 
-export type Decision =
+/**
+ * Why the gate landed where it did — the branch of `decide` that answered.
+ *
+ * It travels with the decision rather than being worked out again from the
+ * same inputs: a second copy of this reasoning is a copy that drifts, and the
+ * playback stats panel exists precisely to be believed.
+ */
+export type PlaybackReason =
+  /** Audio-only mode: the video track is not touched at all. */
+  | "audio-only"
+  /** The server reported no `streams`, so there is nothing to gate on. */
+  | "codecs-unknown"
+  /** The archive decodes here and quality is `auto`: the original file. */
+  | "archive-decodes"
+  /** An explicit pick at or above the source's own height buys nothing. */
+  | "archive-is-enough"
+  /** A height was asked for, and a rung matched it. */
+  | "quality-picked"
+  /** Nothing in the archive decodes here, so a rung is the only way to watch. */
+  | "no-decoder"
+  /** No rung matched, but the archive plays. */
+  | "no-rung"
+  /** No ladder at all (an older server), only the default rendition. */
+  | "default-rendition"
+  /** Nothing plays here: no decoder, no rendition, no derived audio. */
+  | "nothing-plays";
+
+export type Decision = { reason: PlaybackReason } & (
   /** Play `media_url`: the archive decodes here and costs the server nothing. */
   | { kind: "native"; url: string }
   /** Play a rendition: nothing decodes here, or a height was picked by hand. */
@@ -266,7 +293,8 @@ export type Decision =
   /** No rendition (an older server), but the audio-only one is still there. */
   | { kind: "audioOnly"; issue: CodecIssue }
   /** Nothing plays here: no decoder, no rendition, no derived audio. */
-  | { kind: "unplayable"; issue: CodecIssue };
+  | { kind: "unplayable"; issue: CodecIssue }
+);
 
 export function videoStreams(video: Video): StreamInfo[] {
   return (video.streams ?? []).filter((s) => s.type === "video");
@@ -324,25 +352,26 @@ export function decide(
   audioOnly: boolean,
   caps: DeviceCapabilities,
 ): Decision {
-  if (audioOnly) return { kind: "native", url: video.audio_url };
+  if (audioOnly) return { kind: "native", url: video.audio_url, reason: "audio-only" };
   const streams = videoStreams(video);
-  if (streams.length === 0) return { kind: "native", url: video.media_url };
+  if (streams.length === 0) return { kind: "native", url: video.media_url, reason: "codecs-unknown" };
 
   const plays = streams.some((s) => canDecode(s, caps));
-  if (plays && preference === "auto") return { kind: "native", url: video.media_url };
+  if (plays && preference === "auto") return { kind: "native", url: video.media_url, reason: "archive-decodes" };
   // An explicit pick at or above the source's own height buys nothing over the
   // archive when the archive plays — skip the transcode.
   if (plays && preference !== "auto") {
     const source = Math.max(0, ...streams.map((s) => s.height));
-    if (source > 0 && preference >= source) return { kind: "native", url: video.media_url };
+    if (source > 0 && preference >= source) return { kind: "native", url: video.media_url, reason: "archive-is-enough" };
   }
 
   const picked = pickVariant(preference, video.hls_variants, caps);
-  if (picked) return { kind: "hls", url: picked.url, variant: picked };
-  if (plays) return { kind: "native", url: video.media_url };
-  if (video.hls_url) return { kind: "hls", url: video.hls_url, variant: null };
+  if (picked) return { kind: "hls", url: picked.url, variant: picked, reason: plays ? "quality-picked" : "no-decoder" };
+  if (plays) return { kind: "native", url: video.media_url, reason: "no-rung" };
+  if (video.hls_url) return { kind: "hls", url: video.hls_url, variant: null, reason: "default-rendition" };
   return {
     kind: video.audio_url ? "audioOnly" : "unplayable",
     issue: { videoCodec: streams[0].codec, audioAvailable: Boolean(video.audio_url) },
+    reason: "nothing-plays",
   };
 }

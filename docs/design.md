@@ -79,6 +79,19 @@ which is why they are admin-gated like series indexing.
   offered back under that heading is what "up next" stopped meaning anything
   looks like. A watched video that does appear in a list is dimmed the same
   way wherever it appears, queue or history.
+- **The player can say what it is doing.** Almost everything Flimm derives is
+  invisible on purpose — a transcode the viewer never asked for, a sheet of
+  stills queued behind it, a measurement that quietly turns the volume down —
+  and each of them fails in a way that looks exactly like nothing happening.
+  A **playback stats** panel under the video says which of them are running,
+  which are ready, and above all whether what is on screen is the archived
+  file or an encode the server is paying for, *and why the gate chose that*.
+  It reads and never decides: every line comes from the value the player
+  itself runs on, so it cannot disagree with the picture it describes. Web
+  only for now — a deliberate scope, not a platform left behind: the
+  questions it answers are the ones asked while looking at a page with a
+  console open, and the Apple clients report the same conditions through
+  Sentry and the stall reports instead.
 - **A video that ends says so.** Autoplay advances only when there is
   something to advance to; any other ending — autoplay off, or the end of the
   list — leaves the player sitting on its last frame, which is exactly what a

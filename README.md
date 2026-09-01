@@ -42,6 +42,13 @@ One container image: a Go backend with the React frontend embedded.
   context-aware *Up next*, an end card when a video finishes without autoplay
   taking over (what is next, and a replay), and the archived comments (folded
   away until you ask, and no avatars fetched from Google).
+- **Playback stats** (web) — a panel under the video saying what the player is
+  actually doing: whether the archived file is playing directly or a rendition
+  is, *why* the gate chose that, how far the transcode has got, whether the
+  scrub-preview sheet and the loudness pass are ready or still being derived,
+  and what the video element itself reports (buffer ahead, dropped frames,
+  picture size). Everything the server derives is invisible by design, and
+  each of those jobs fails in a way that looks exactly like nothing happening.
 - **An even volume across channels** — each video is measured once (EBU R128)
   and the loud ones are turned down to a common target, so you stop reaching
   for the volume between one channel and the next. The measurement is made

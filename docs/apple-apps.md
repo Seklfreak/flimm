@@ -876,6 +876,16 @@ a side effect of caching.
 - Whether the derived-media cache gains a video variant (see above), and
   whether it is derived on demand or ahead of time.
 - Offline downloads: in scope or explicitly not.
+- Whether the Apple clients get the web player's **playback stats** panel
+  (which path is playing and why, the transcode's progress, the scrub-preview
+  and loudness jobs' states, the element's own counters). Deliberately web
+  only for now, and not a platform left behind: the panel answers questions
+  asked while looking at a page — usually with a server log open next to it —
+  and the same conditions reach us from the Apple clients through Sentry and
+  the stall reports. The vocabulary it needs is already on the API — the job
+  `state` a preview 404 carries, `hls_progress` on each rung, the loudness
+  `state` — so building it would be a view plus the gate reporting its own
+  reason the way the web one does, not a redesign.
 - ~~Whether tvOS gets its own simplified feed editor or defers editing to the
   other platforms.~~ **It defers.** Feeds are read-only on Apple TV and the
   screens say "Edit feeds on your phone" where the control would be. Naming a
