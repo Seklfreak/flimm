@@ -242,7 +242,11 @@ func video(channelID, channelName, id string, s spec, published time.Time) ta.Vi
 }
 
 // description carries chapter timestamps for the videos that have them, which
-// is also what exercises the description-parsing fallback.
+// is also what exercises the description-parsing fallback — and, under them,
+// the rest of what a real description is made of: links, one of them wrapped
+// in brackets and one with no scheme, and enough lines to go under a fold.
+// A description that fits in four lines never shows the "Show more" that
+// every real one has.
 func description(s spec) string {
 	if !s.chapters {
 		return "A video in the fake archive. Nothing here is real."
@@ -252,6 +256,9 @@ func description(s spec) string {
 	for i, c := range chapterMarks(s.seconds) {
 		fmt.Fprintf(&b, "%s %s\n", clock(c), []string{"Intro", "The middle bit", "Wrapping up"}[i])
 	}
+	b.WriteString("\nPlans and the full cut: https://example.com/plans (the jig itself: https://en.wikipedia.org/wiki/Jig_(tool)).\n")
+	b.WriteString("Music by www.example.org, used with permission.\n")
+	b.WriteString("Gear list, which is long and a single link: https://example.com/gear/list?items=saw,plane,chisel,marking-gauge,mallet,square,bench-hook&sort=used-most&format=long\n")
 	return b.String()
 }
 

@@ -52,7 +52,9 @@ struct RemoteScreen: View {
                 }
                 if let video = details.video {
                     description(video)
-                    CommentsSection(videoID: video.id)
+                    CommentsSection(videoID: video.id, duration: video.duration) { seconds in
+                        Task { await remote.seek(to: seconds) }
+                    }
                 } else if details.isLoading {
                     ProgressView().frame(maxWidth: .infinity)
                 } else if details.failed {
@@ -240,12 +242,16 @@ struct RemoteScreen: View {
             if !video.description.isEmpty {
                 Text("Description")
                     .font(.headline)
-                Text(video.description)
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                    .textSelection(.enabled)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                // A timestamp here seeks the television, like the chapter
+                // list above it does — the same one-way steering.
+                RichTextView(
+                    text: video.description,
+                    duration: video.duration,
+                    onSeek: { seconds in Task { await remote.seek(to: seconds) } },
+                    style: .footnote,
+                    color: .secondaryLabel
+                )
+                .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(12)
                     .background(Palette.raised, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             }

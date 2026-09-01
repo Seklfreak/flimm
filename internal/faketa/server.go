@@ -225,6 +225,19 @@ func (s *Server) comments(w http.ResponseWriter, r *http.Request) {
 			"comment_timestamp": base + 86_400,
 		},
 		{
+			// A long one, with a link and two timestamps — one inside the
+			// video and one past its end, which must stay plain text. It is
+			// what reaches a client's fold, and its wrapping of a long URL.
+			"comment_id": "c5",
+			"comment_text": "Watched this three times now. The part at 0:45 where the fence gets clamped is the one thing every other jig video skips, " +
+				"and it is exactly where mine kept drifting.\n\nFor anyone building along: the plans linked in the description are worth it, " +
+				"and the tail-board trick is also in https://example.com/forum/thread/dovetails-that-actually-close?page=3#post-17 (long thread, but read it).\n\n" +
+				"One request: a follow-up on half-blinds, the way you did the through joint at 12:30 in the other video. That one is still the clearest explanation I have seen.",
+			"comment_author":    "@builds-along",
+			"comment_likecount": 41,
+			"comment_timestamp": base + 2*86_400,
+		},
+		{
 			// No timestamp at all: an older download that only kept the
 			// relative wording. Clients have to fall back to it.
 			"comment_id":        "c3",

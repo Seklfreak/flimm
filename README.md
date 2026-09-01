@@ -40,8 +40,10 @@ One container image: a Go backend with the React frontend embedded.
   segment skipping, scrub previews (drag the scrubber and see the frame you
   are dragging to), loudness normalisation, playback speed, autoplay with
   context-aware *Up next*, an end card when a video finishes without autoplay
-  taking over (what is next, and a replay), and the archived comments (folded
-  away until you ask, and no avatars fetched from Google).
+  taking over (what is next, and a replay), and the archived comments under
+  the description (replies folded under their count, no avatars fetched from
+  Google). In both, a timestamp seeks the video and a URL opens; a long
+  description or comment folds behind "Show more".
 - **The first view is not the worst one** — scrub-preview stills and the
   loudness measurement are derived ahead of time for what is near the top of
   your feeds, so a video is already scrubbable and already levelled before

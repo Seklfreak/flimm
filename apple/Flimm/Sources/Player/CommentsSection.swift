@@ -10,6 +10,11 @@ import SwiftUI
 /// close them on every video. The web client behaves the same way.
 struct CommentsSection: View {
     let videoID: String
+    /// The video's length, so a timestamp in a comment seeks only inside it.
+    var duration: Double?
+    /// What a timestamp in a comment does. On the watch screen it seeks the
+    /// player; on the companion it seeks the television.
+    var onSeek: ((Double) -> Void)?
 
     @Environment(AppModel.self) private var app
     @State private var store = CommentsStore()
@@ -76,7 +81,7 @@ struct CommentsSection: View {
                 .foregroundStyle(.secondary)
         } else {
             ForEach(store.comments) { comment in
-                CommentThreadView(comment: comment)
+                CommentThreadView(comment: comment, duration: duration, onSeek: onSeek)
             }
             if store.hasMore {
                 Button {
@@ -99,6 +104,8 @@ struct CommentsSection: View {
 /// under every comment is what makes a comment list unreadable.
 private struct CommentThreadView: View {
     let comment: VideoComment
+    let duration: Double?
+    let onSeek: ((Double) -> Void)?
 
     @State private var showReplies = false
 
@@ -109,7 +116,7 @@ private struct CommentThreadView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            CommentBodyView(comment: comment)
+            CommentBodyView(comment: comment, duration: duration, onSeek: onSeek)
             if !comment.replies.isEmpty {
                 VStack(alignment: .leading, spacing: 10) {
                     Button {
@@ -120,7 +127,7 @@ private struct CommentThreadView: View {
                     }
                     if showReplies {
                         ForEach(comment.replies) { reply in
-                            CommentBodyView(comment: reply)
+                            CommentBodyView(comment: reply, duration: duration, onSeek: onSeek)
                         }
                     }
                 }
@@ -132,6 +139,8 @@ private struct CommentThreadView: View {
 
 private struct CommentBodyView: View {
     let comment: VideoComment
+    let duration: Double?
+    let onSeek: ((Double) -> Void)?
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
@@ -167,10 +176,7 @@ private struct CommentBodyView: View {
                             .accessibilityLabel("Hearted by the uploader")
                     }
                 }
-                Text(comment.text)
-                    .font(.subheadline)
-                    .textSelection(.enabled)
-                    .fixedSize(horizontal: false, vertical: true)
+                RichTextView(text: comment.text, duration: duration, onSeek: onSeek, style: .subheadline)
             }
             Spacer(minLength: 0)
         }

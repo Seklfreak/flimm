@@ -216,6 +216,16 @@ What is there:
     stays AVKit's. `FLIMM_OPEN_COMMENT=<n>` (Debug only) opens the nth thread
     at launch, because selecting a card needs a remote a simulator does not
     have.
+
+    **Links and timestamps are live in the hand and plain on the TV.** On the
+    phone and iPad a URL in the description or a comment opens in Safari and
+    a timestamp seeks the player — and on the companion screen it seeks the
+    television, the same one-way steering as its chapter list. Both go through
+    `RichTextView` in `Shared/`, over ``FlimmKit/RichText``'s rules, which
+    are the web client's rules too. The TV draws the same text as text: a
+    comment card is one focusable thing, and a tvOS `Text` cannot put the
+    remote's focus on a word inside it, so a "link" there would be one
+    nobody could select; and there is no browser to open a URL in anyway.
   - **The phone is the Apple TV's companion.** While something is playing on
     the television, the iPhone and iPad show a "playing on…" bar above the tab
     bar (and under the detail column on iPad) with the title, the screen's own

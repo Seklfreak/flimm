@@ -145,10 +145,20 @@ which is why they are admin-gated like series indexing.
   don't.** They come from the copy TubeArchivist downloaded — nothing is
   fetched from YouTube, and no avatar is loaded from Google's CDN, because a
   picture of a stranger is not worth telling a third party what you watch;
-  clients draw an initial. Every client keeps them folded away until asked,
-  and asking is what loads them: they are the longest thing attached to a
-  video and the least often wanted. Replies fold separately, under their
-  count.
+  clients draw an initial. They sit open under the description, because that
+  is where what is said about a video belongs, and closing the section is
+  remembered for the session so nobody closes it twice; while it is closed
+  nothing is loaded. Replies fold separately, under their count, and a long
+  comment folds like the description does, so one essay cannot push every
+  other comment off the screen.
+- **Descriptions and comments are read, not just shown.** A URL in either
+  opens; a timestamp seeks, which is the one thing a video's own page can do
+  with "the bit at 2:30" that YouTube's cannot. What counts as either is one
+  rule shared by every client (`lib/richText` on the web, `RichText` in
+  FlimmKit), including that a timestamp past the end of the video is only
+  text. The description opens folded to a few lines with a "Show more":
+  it is a paragraph and then a wall of links, and the wall goes under the
+  fold.
 - **The Apple TV's Home screen offers the pinned feed.** Focusing Flimm in the
   top row shows what is waiting in it, with a resume bar on anything
   part-watched, and selecting one plays it — the same list the app opens on,

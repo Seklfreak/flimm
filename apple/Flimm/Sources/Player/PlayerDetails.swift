@@ -104,11 +104,14 @@ struct VideoHeader: View {
 
     private var description: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(video.description)
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-                .lineLimit(descriptionExpanded ? nil : 4)
-                .fixedSize(horizontal: false, vertical: true)
+            RichTextView(
+                text: video.description,
+                duration: video.duration,
+                onSeek: { model.seek(to: $0) },
+                style: .footnote,
+                color: .secondaryLabel,
+                lineLimit: descriptionExpanded ? nil : 4
+            )
             Button(descriptionExpanded ? "Show less" : "Show more") {
                 descriptionExpanded.toggle()
             }

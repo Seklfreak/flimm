@@ -117,7 +117,7 @@ struct WatchView: View {
                     .aspectRatio(16 / 9, contentMode: .fit)
                 header(model)
                 ChapterListView(chapters: model.chapters, activeIndex: model.activeChapter) { model.seek(to: $0) }
-                CommentsSection(videoID: model.videoId)
+                CommentsSection(videoID: model.videoId, duration: model.video?.duration) { model.seek(to: $0) }
                 UpNextList(model: model, columnWidth: nil)
             }
             .padding(.horizontal, 16)
@@ -147,7 +147,7 @@ struct WatchView: View {
                         // are about what is being watched, and reading them
                         // next to "up next" put them where nothing else about
                         // this video was.
-                        CommentsSection(videoID: model.videoId)
+                        CommentsSection(videoID: model.videoId, duration: model.video?.duration) { model.seek(to: $0) }
                     }
                     .padding(.bottom, 24)
                 }

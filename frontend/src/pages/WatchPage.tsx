@@ -10,6 +10,7 @@ import { Player, SUBTITLE_OFF, langName, pickTrack, type PlayerHandle } from "@/
 import { playbackEnd } from "@/player/playbackEnd";
 import { Chapters } from "@/player/Chapters";
 import { Comments } from "@/player/Comments";
+import { Description } from "@/player/Description";
 import { AddToPlaylist } from "@/player/AddToPlaylist";
 import { UpNextPanel } from "@/player/UpNextPanel";
 
@@ -98,7 +99,7 @@ export default function WatchPage() {
     await api.startOver(id);
     invalidateWatchState(qc, id);
   }, [qc, id]);
-  const onSeekChapter = useCallback((t: number) => playerRef.current?.seek(t), []);
+  const onSeek = useCallback((t: number) => playerRef.current?.seek(t), []);
   const next = areSuggestions ? undefined : upNextItems[0];
   const playNext = useCallback(() => {
     if (next) navigate(watchHref(next, ctx));
@@ -218,12 +219,8 @@ export default function WatchPage() {
               </button>
             </div>
           </div>
-          {desc && (
-            <div className="rounded-[14px] bg-raised-2 p-4 text-[14px] font-medium leading-[1.5] text-ink-2">
-              <span className="whitespace-pre-wrap">{desc}</span>
-            </div>
-          )}
-          <Chapters chapters={chapters} activeIndex={activeChapter} onSeek={onSeekChapter} />
+          <Description text={desc} duration={v.duration} onSeek={onSeek} />
+          <Chapters chapters={chapters} activeIndex={activeChapter} onSeek={onSeek} />
           <Comments
             comments={commentPages}
             total={comments.data?.pages[0]?.total ?? 0}
@@ -231,6 +228,8 @@ export default function WatchPage() {
             hasMore={!!comments.hasNextPage}
             isFetchingMore={comments.isFetchingNextPage}
             fetchMore={() => void comments.fetchNextPage()}
+            duration={v.duration}
+            onSeek={onSeek}
             open={commentsOpen}
             onToggle={(open) => {
               commentsOpenDefault = open;
