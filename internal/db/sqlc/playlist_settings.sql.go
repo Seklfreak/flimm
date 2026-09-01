@@ -11,6 +11,32 @@ import (
 	"github.com/google/uuid"
 )
 
+const listAllPinnedPlaylists = `-- name: ListAllPinnedPlaylists :many
+SELECT DISTINCT playlist_id FROM playlist_settings WHERE pinned
+`
+
+// Every playlist anyone has pinned. A pin is one user's, but the derived media
+// is shared, so one person's pin keeps the renditions for everybody.
+func (q *Queries) ListAllPinnedPlaylists(ctx context.Context) ([]string, error) {
+	rows, err := q.db.Query(ctx, listAllPinnedPlaylists)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var playlist_id string
+		if err := rows.Scan(&playlist_id); err != nil {
+			return nil, err
+		}
+		items = append(items, playlist_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listPinnedPlaylists = `-- name: ListPinnedPlaylists :many
 SELECT user_id, playlist_id, position, created_at, pinned, music FROM playlist_settings
 WHERE user_id = $1 AND pinned

@@ -157,3 +157,22 @@ WHERE user_id = sqlc.arg(user_id)
   AND first_played_at >= sqlc.arg(since)::timestamptz
 GROUP BY 1
 ORDER BY 1;
+
+-- name: ListFinishedVideos :many
+-- Of these videos, the ones nobody is part-way through: completed by at least
+-- one viewer and in progress for none of them.
+--
+-- It asks about a given set rather than listing the whole history because the
+-- caller starts from what is on the disk, which is far smaller. `hidden` is
+-- deliberately ignored: deleting a video from your history says nothing about
+-- whether you finished it, and a hidden row still holds the position that says
+-- someone is mid-way.
+SELECT DISTINCT w.video_id FROM watch_events w
+WHERE w.video_id = ANY(sqlc.arg(video_ids)::text[])
+  AND w.completed_at IS NOT NULL
+  AND NOT EXISTS (
+      SELECT 1 FROM watch_events o
+      WHERE o.video_id = w.video_id
+        AND o.completed_at IS NULL
+        AND o.position > 0
+  );

@@ -31,3 +31,8 @@ ON CONFLICT (user_id, playlist_id) DO UPDATE SET music = EXCLUDED.music;
 -- name: PruneEmptyPlaylistSettings :exec
 -- A row with nothing set is noise; drop it so the table only holds intent.
 DELETE FROM playlist_settings WHERE user_id = $1 AND NOT pinned AND NOT music;
+
+-- name: ListAllPinnedPlaylists :many
+-- Every playlist anyone has pinned. A pin is one user's, but the derived media
+-- is shared, so one person's pin keeps the renditions for everybody.
+SELECT DISTINCT playlist_id FROM playlist_settings WHERE pinned;

@@ -749,6 +749,10 @@ func (s *Server) postProgress(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "position is required")
 		return
 	}
+	// The one thing that reaches the server while a video is simply playing:
+	// nothing else is requested once the file is buffering. The prepare job
+	// steps aside on it.
+	s.notePlayback()
 	v, err := s.ta.GetVideo(r.Context(), id)
 	if err != nil {
 		s.writeTAError(w, "get video", err)

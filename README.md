@@ -42,6 +42,20 @@ One container image: a Go backend with the React frontend embedded.
   context-aware *Up next*, an end card when a video finishes without autoplay
   taking over (what is next, and a replay), and the archived comments (folded
   away until you ask, and no avatars fetched from Google).
+- **The first view is not the worst one** — scrub-preview stills and the
+  loudness measurement are derived ahead of time for what is near the top of
+  your feeds, so a video is already scrubbable and already levelled before
+  anyone opens it. It stops while anything is playing and picks up where it
+  left off; Settings shows where it has got to. Transcodes are deliberately
+  left on demand: the two cheap derivations are about half a megabyte a video,
+  a rendition is a gigabyte and a half an hour.
+- **The disk gives itself back** — every six hours Flimm deletes the
+  transcoded renditions of videos every viewer has finished with, unless the
+  video is in a playlist someone pinned. Renditions are the expensive thing (a
+  1080p hour is a couple of gigabytes) and the cheapest to remake, so they go
+  first; the loudness measurement and the scrub-preview sheet are kept, being
+  kilobytes each and a full decode to rebuild. Nothing is lost either way — a
+  video played again simply derives again.
 - **Playback stats** (web) — a panel under the video saying what the player is
   actually doing: whether the archived file is playing directly or a rendition
   is, *why* the gate chose that, how far the transcode has got, how far the
@@ -183,7 +197,7 @@ All configuration is via environment variables.
 | `MIN_PLAY_SECONDS` | no | how long a video must play before it enters history and gets a resume position (default 15) |
 | `MEDIA_TOKEN_SECONDS` | no | how long a signed media token stays valid; default 2592000 (30 days) |
 | `MEDIA_CACHE_DIR` | no | where derived renditions are cached; default a temp dir. Must be writable — an HLS rendition of a 1080p hour is ~2–3 GB, a 2160p HEVC one ~6–8 GB |
-| `MEDIA_CACHE_MAX_BYTES` | no | cache size cap before least-recently-used eviction (default 5 GiB) |
+| `MEDIA_CACHE_MAX_BYTES` | no | cache size cap before least-recently-used eviction (default 5 GiB). Renditions of videos everyone has finished are swept every 6h anyway — see below |
 | `MEDIA_TRANSCODE_JOBS` | no | concurrent HLS transcodes (default 1), counted across every video and height; extra requests queue. Scrub-preview and loudness passes run in a lane of their own and are not counted against it |
 | `MEDIA_SEGMENT_WAIT` | no | seconds a request for an HLS segment the transcode has not produced yet waits before the client is told to come back (default 60) |
 | `MEDIA_SEEK_AHEAD_SEGMENTS` | no | how far ahead of the encoder (in 4-second segments) a segment request has to be before the running transcode is re-aimed at it (default 30, about two minutes) |

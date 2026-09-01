@@ -261,3 +261,120 @@ func (c *Cache) evict() {
 		}
 	}
 }
+
+// EntryOf reads an entry name back into the variant and the video it was
+// derived from. Both are "" for a name this package did not write.
+//
+// The layouts are all of this package's own making, so they are parsed rather
+// than guessed at: `loudness-<id>`, `audio-<id>`, `audio-aac-<id>`,
+// `preview-160x90-<id>`, `hls-<height>-<id>`, `frame-<id>-<ms>`, any of them
+// possibly with an extension. Guessing — "the eleven characters after a dash"
+// — would tie this package to what YouTube ids happen to look like, and ids
+// contain dashes of their own.
+func EntryOf(name string) (variant, video string) {
+	base := strings.TrimSuffix(name, filepath.Ext(name))
+	// Longest first: `audio-aac-<id>` also begins with `audio-`.
+	for _, v := range []string{AudioAACVariant, PreviewVariant, LoudnessVariant, AudioVariant} {
+		if rest, ok := strings.CutPrefix(base, v+"-"); ok {
+			return v, rest
+		}
+	}
+	if rest, ok := strings.CutPrefix(base, HLSVariant+"-"); ok {
+		// The rung's height sits between the variant and the video.
+		if _, id, ok := strings.Cut(rest, "-"); ok {
+			return HLSVariant, id
+		}
+		return "", ""
+	}
+	if rest, ok := strings.CutPrefix(base, FrameVariant+"-"); ok {
+		// Here the timestamp is the trailing part, so the id is what is left.
+		if cut := strings.LastIndex(rest, "-"); cut > 0 {
+			return FrameVariant, rest[:cut]
+		}
+		return "", ""
+	}
+	return "", ""
+}
+
+// Reclaimable reports whether an entry is worth deleting when the video it
+// came from is finished with.
+//
+// Only the renditions are. An HLS rung is one to eight gigabytes and an audio
+// track tens of megabytes, which is the whole reason a cleanup exists. The
+// rest — a loudness measurement of a few hundred bytes, a preview sheet of a
+// few hundred kilobytes, a single frame — costs a full decode to rebuild and
+// frees next to nothing, so deleting it is a bad trade whatever the watch
+// history says. Least-recently-used eviction still takes them if the disk
+// genuinely runs out.
+func Reclaimable(name string) bool {
+	switch v, _ := EntryOf(name); v {
+	case HLSVariant, AudioVariant, AudioAACVariant:
+		return true
+	default:
+		return false
+	}
+}
+
+// RemoveFor deletes the reclaimable derivations of these videos and reports
+// what that freed.
+//
+// An entry whose job is still running is left alone: something is writing it
+// and something else is reading it, which is a stronger claim on the disk than
+// any tidying rule. The next sweep catches it, or eviction does.
+func (c *Cache) RemoveFor(ids map[string]bool) (entries int, freed int64) {
+	if len(ids) == 0 {
+		return 0, 0
+	}
+	dir, err := os.ReadDir(c.dir)
+	if err != nil {
+		return 0, 0
+	}
+	running := c.runningDirs()
+	for _, e := range dir {
+		name := e.Name()
+		if running[name] || !Reclaimable(name) {
+			continue
+		}
+		if _, id := EntryOf(name); !ids[id] {
+			continue
+		}
+		path := filepath.Join(c.dir, name)
+		size := int64(0)
+		if e.IsDir() {
+			size, _ = dirSize(path)
+		} else if info, err := e.Info(); err == nil {
+			size = info.Size()
+		}
+		if err := os.RemoveAll(path); err != nil {
+			continue // raced with eviction or a read; the next sweep gets it
+		}
+		entries++
+		freed += size
+	}
+	return entries, freed
+}
+
+// Videos lists every video the cache holds a *reclaimable* derivation of. The
+// sweep starts here rather than from the watch history: what is on the disk is
+// hundreds of entries, and what has been watched can be tens of thousands, all
+// but a handful of which have nothing to clean up.
+func (c *Cache) Videos() []string {
+	dir, err := os.ReadDir(c.dir)
+	if err != nil {
+		return nil
+	}
+	seen := map[string]bool{}
+	ids := []string{}
+	for _, e := range dir {
+		if !Reclaimable(e.Name()) {
+			continue
+		}
+		_, id := EntryOf(e.Name())
+		if id == "" || seen[id] {
+			continue
+		}
+		seen[id] = true
+		ids = append(ids, id)
+	}
+	return ids
+}

@@ -90,6 +90,46 @@ func (q *Queries) HideHistoryEntry(ctx context.Context, arg HideHistoryEntryPara
 	return result.RowsAffected(), nil
 }
 
+const listFinishedVideos = `-- name: ListFinishedVideos :many
+SELECT DISTINCT w.video_id FROM watch_events w
+WHERE w.video_id = ANY($1::text[])
+  AND w.completed_at IS NOT NULL
+  AND NOT EXISTS (
+      SELECT 1 FROM watch_events o
+      WHERE o.video_id = w.video_id
+        AND o.completed_at IS NULL
+        AND o.position > 0
+  )
+`
+
+// Of these videos, the ones nobody is part-way through: completed by at least
+// one viewer and in progress for none of them.
+//
+// It asks about a given set rather than listing the whole history because the
+// caller starts from what is on the disk, which is far smaller. `hidden` is
+// deliberately ignored: deleting a video from your history says nothing about
+// whether you finished it, and a hidden row still holds the position that says
+// someone is mid-way.
+func (q *Queries) ListFinishedVideos(ctx context.Context, videoIds []string) ([]string, error) {
+	rows, err := q.db.Query(ctx, listFinishedVideos, videoIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var video_id string
+		if err := rows.Scan(&video_id); err != nil {
+			return nil, err
+		}
+		items = append(items, video_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listHistory = `-- name: ListHistory :many
 SELECT id, user_id, video_id, channel_id, channel_name, title, first_played_at, last_played_at, position, duration, completed_at, hidden FROM watch_events
 WHERE user_id = $1

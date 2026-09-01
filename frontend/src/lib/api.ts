@@ -160,6 +160,21 @@ export interface StreamInfo {
   bitrate: number;
 }
 
+/** `GET /prepare` — the background job that derives scrub previews and loudness
+ *  for what is near the top of the feeds, ahead of anyone opening it. */
+export interface PrepareStatus {
+  /** `paused` is running-but-waiting: something is being played, and the job
+   *  stays out of its way. */
+  state: "idle" | "running" | "paused";
+  done: number;
+  /** 0 when no pass is in flight. */
+  total: number;
+  /** The title being prepared, when there is one. */
+  video: string;
+  /** When the last pass finished; absent before the first one. */
+  prepared_at?: string;
+}
+
 export type HLSState = "pending" | "running" | "done" | "failed";
 
 /** `h264` up to 1080p, `hevc` at 1440 and 2160. An unknown value is left in
@@ -528,6 +543,7 @@ export const api = {
   // Asking is what starts the analysis pass; the answer turns up on a later
   // call, exactly like a rendition's state.
   loudness: (id: string) => req<Loudness>(`/videos/${id}/loudness`),
+  prepareStatus: () => req<PrepareStatus>("/prepare"),
   comments: (id: string, page: number) =>
     req<Page<Comment>>(`/videos/${id}/comments${qs({ page, page_size: PAGE_SIZE })}`),
   // Starts (or re-aims) a compatible rendition without waiting. `height` picks

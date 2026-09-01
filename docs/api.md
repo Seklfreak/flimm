@@ -475,6 +475,7 @@ its default — send the whole map back, which is what the settings screens do.
 | GET | `/videos/{id}/similar` | VideoSummary[] (TA similar) |
 | GET | `/videos/{id}/comments` | the archived comments, **paged by thread** — `Page<Comment>`, a comment's replies riding along with it. Normalised from what TubeArchivist indexed; see [Comments](#comments) |
 | GET | `/videos/{id}/chapters` | chapter markers for the scrubber (see below); cached per video |
+| GET | `/prepare` | what the background preparation job is doing — `{ "state": "idle\|running\|paused", "done": 7, "total": 10, "video": "A video", "prepared_at": "2026-09-01T15:07:05Z" }`. `paused` means a video is being played and the job has stepped aside. See [Derived media](#derived-media) |
 | GET | `/videos/{id}/loudness` | how loud the video is and the gain to play it at — `{ "state": "pending\|running\|done\|failed", "progress": 0.42, "gain_db": -3.9, "target_lufs": -18, "measured_lufs": -14.1, "peak_dbtp": -3.8, "range_lu": 6.1 }`. The first call **starts the measurement** and answers `running` with a gain of 0; the numbers arrive on a later call. `progress` is 0–1 through the file while it runs, and 1 once it is done. See [Loudness normalisation](#loudness-normalisation) |
 | POST | `/videos/{id}/progress` | `{ "position": 561 }` — heartbeat. Upserts watch_event; writes TA `/video/{id}/progress/`; at ≥90% (or ≤30 s remaining) marks watched, and **un-marks it** when a seen video is being watched again (see below). Returns `{ "position", "watched" }`. **Nothing is recorded below `MIN_PLAY_SECONDS`** unless the video completes or an event already exists — see below | Pass `?playlist=<id>` so the server can skip recording for music playlists.
 | POST | `/videos/{id}/stall` | `{ "position": 2472.5, "seconds": 3.1, "height": 1080, "client": "tvos" }` — the picture stopped mid-playback. 204, always: the report is fire-and-forget and never worth telling a viewer about. Anything under 0.4 s is dropped as the ordinary gap between segments. The **server** attributes it — see [Playback stalls](#playback-stalls) |
@@ -946,6 +947,48 @@ and the scrub-preview stills under [Scrub previews](#scrub-previews).
   none. A directory whose transcode is still running is never evicted. It is a
   cache in the strict sense: deleting it costs only the CPU to re-derive, so it
   can live on ephemeral storage.
+- **A job derives the cheap entries ahead of the viewer.** Every two hours the
+  server walks the head of every user's every feed — the first 60 unseen
+  videos, composed exactly as the client would list them — and derives the
+  scrub-preview sheet and the loudness measurement for anything that has
+  neither. It starts ten minutes after boot.
+
+  It **stands aside while anything is playing.** A progress heartbeat is the
+  only thing that reaches the server while a video is merely playing, so the
+  most recent one is the signal: within 45 seconds of one, the job starts no
+  new work. A derivation already running is left to finish — both passes read
+  the whole file, and killing one halfway gives the player back nothing.
+
+  `GET /prepare` reports it: `{ "state": "idle|running|paused", "done": 7,
+  "total": 10, "video": "…", "prepared_at": "…" }`. `paused` is
+  running-but-waiting, which is a different thing from stuck and is shown as
+  such. One video is prepared at a time, so the two-wide scan lane is never
+  full of work nobody asked for.
+
+  **Renditions are not prepared**, and that is a storage decision rather than a
+  policy one: a preview sheet is about half a megabyte whatever the video's
+  length and a measurement is a hundred bytes, so ten thousand videos come to
+  roughly six gigabytes. The same ten thousand as 1080p renditions would be
+  about five terabytes.
+- **A sweep gives the disk back ahead of eviction.** Every six hours the server
+  removes the *renditions* — the HLS rungs and the audio tracks — of videos
+  every viewer has finished: completed by at least one user, in progress for
+  none, and in nobody's pinned playlist. It runs five minutes after boot and is
+  not configurable.
+
+  Eviction alone throws away whatever was touched longest ago, which on a full
+  disk is as likely to be something a viewer is half-way through as something
+  they finished last month; this takes the obvious candidates first. A pin is
+  one user's, but the derived media is shared, so one person's pin keeps a
+  rendition for everybody — and a TubeArchivist that cannot be reached to read
+  the pins stops the sweep rather than reading as "nothing is pinned".
+
+  Only renditions are swept. A loudness measurement is a few hundred bytes and
+  a preview sheet a few hundred kilobytes, and each is a full decode to
+  rebuild, so deleting them frees nothing worth the cost. Eviction still takes
+  them if the disk genuinely runs out. Nothing here is authoritative: a video
+  cleaned up and then played again simply derives again, which is what lets the
+  rule be approximate.
 - Derivation reads the source from TubeArchivist over HTTP with the API token.
   The audio variants are piped into ffmpeg on stdin. The HLS variants need a
   **seekable** input — `-ss` on a pipe decodes and discards everything before

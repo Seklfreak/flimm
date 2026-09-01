@@ -224,7 +224,10 @@ renditions of one video over an evening.
   or a single 4K one. Give `MEDIA_CACHE_DIR` a volume with room — 50 GiB or
   more if 4K is going to be watched — and set the cap a little under the volume
   size; entries are evicted least-recently-used, and a rendition being watched
-  is never evicted out from under its player.
+  is never evicted out from under its player. A sweep every six hours also
+  removes the renditions of videos every viewer has finished and nobody has
+  pinned, so the cap is usually not what is doing the work — see "Derived
+  media" in [api.md](api.md).
 - **Audio-only renditions are cheap** by comparison (a remux, or an audio
   re-encode) and need none of this. A deployment whose clients never hit the
   codec wall can leave the defaults alone.

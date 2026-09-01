@@ -12,6 +12,7 @@ import (
 	"net/http/httputil"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/coreos/go-oidc/v3/oidc"
@@ -136,6 +137,11 @@ type Server struct {
 	segmentWait       time.Duration
 	seekAheadSegments int
 	mediaTokenTTL     time.Duration
+	// prepare is the background job that derives the cheap entries ahead of
+	// anyone opening a video, and lastPlayback is the signal it steps aside
+	// for — the time of the most recent progress heartbeat, from any client.
+	prepare      prepareState
+	lastPlayback atomic.Int64
 }
 
 func NewServer(o Options) *Server {
@@ -297,6 +303,8 @@ func (s *Server) Router() http.Handler {
 			r.Patch("/playlists/{id}", s.renamePlaylist)
 			r.Delete("/playlists/{id}", s.deletePlaylist)
 			r.Post("/playlists/{id}/videos", s.playlistVideoAction)
+
+			r.Get("/prepare", s.getPrepareStatus)
 
 			r.Get("/history", s.listHistory)
 			r.Get("/stats", s.getStats)

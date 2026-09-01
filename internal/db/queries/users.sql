@@ -21,3 +21,8 @@ VALUES ($1, $2, now())
 ON CONFLICT (user_id) DO UPDATE
 SET prefs = EXCLUDED.prefs,
     updated_at = now();
+
+-- name: ListUserIDs :many
+-- Every account, for the background jobs that work on everyone's behalf rather
+-- than inside one person's request.
+SELECT id FROM users ORDER BY created_at;

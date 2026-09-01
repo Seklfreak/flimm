@@ -41,6 +41,32 @@ func (q *Queries) GetUser(ctx context.Context, id uuid.UUID) (User, error) {
 	return i, err
 }
 
+const listUserIDs = `-- name: ListUserIDs :many
+SELECT id FROM users ORDER BY created_at
+`
+
+// Every account, for the background jobs that work on everyone's behalf rather
+// than inside one person's request.
+func (q *Queries) ListUserIDs(ctx context.Context) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, listUserIDs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []uuid.UUID{}
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const upsertPrefs = `-- name: UpsertPrefs :exec
 INSERT INTO user_prefs (user_id, prefs, updated_at)
 VALUES ($1, $2, now())

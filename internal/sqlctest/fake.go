@@ -30,6 +30,9 @@ type FakeQuerier struct {
 	UndismissVideoFn              func(context.Context, sqlc.UndismissVideoParams) error
 	ListDismissedForVideosFn      func(context.Context, sqlc.ListDismissedForVideosParams) ([]string, error)
 	ListCachedFn                  func(context.Context, sqlc.ListCachedParams) ([]sqlc.ExternalCache, error)
+	ListFinishedVideosFn          func(context.Context, []string) ([]string, error)
+	ListAllPinnedPlaylistsFn      func(context.Context) ([]string, error)
+	ListUserIDsFn                 func(context.Context) ([]uuid.UUID, error)
 	UpsertCachedFn                func(context.Context, sqlc.UpsertCachedParams) error
 	WatchTotalsFn                 func(context.Context, sqlc.WatchTotalsParams) (sqlc.WatchTotalsRow, error)
 	WatchTopChannelsFn            func(context.Context, sqlc.WatchTopChannelsParams) ([]sqlc.WatchTopChannelsRow, error)
@@ -148,6 +151,18 @@ func (f *FakeQuerier) ListFeedChannels(ctx context.Context, feedID uuid.UUID) ([
 
 func (f *FakeQuerier) ListFeedChannelsForUser(ctx context.Context, userID uuid.UUID) ([]sqlc.ListFeedChannelsForUserRow, error) {
 	return f.ListFeedChannelsForUserFn(ctx, userID)
+}
+
+func (f *FakeQuerier) ListFinishedVideos(ctx context.Context, ids []string) ([]string, error) {
+	return f.ListFinishedVideosFn(ctx, ids)
+}
+
+func (f *FakeQuerier) ListAllPinnedPlaylists(ctx context.Context) ([]string, error) {
+	return f.ListAllPinnedPlaylistsFn(ctx)
+}
+
+func (f *FakeQuerier) ListUserIDs(ctx context.Context) ([]uuid.UUID, error) {
+	return f.ListUserIDsFn(ctx)
 }
 
 func (f *FakeQuerier) ListFeeds(ctx context.Context, userID uuid.UUID) ([]sqlc.Feed, error) {

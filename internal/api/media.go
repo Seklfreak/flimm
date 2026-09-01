@@ -290,6 +290,19 @@ func previewTrackURL(id string) string {
 	return "/media/preview/" + id + "/" + media.PreviewTrackName
 }
 
+// startPreviewScan makes sure a video's scrub-preview sheet is being derived,
+// and reports where that stands. Asking is what starts the work, whether the
+// asker is a player or the background prepare job — which is why this is here
+// rather than inline in the handler.
+func (s *Server) startPreviewScan(v *ta.Video) media.JobState {
+	if s.mediaCache == nil || v.MediaURL == "" || v.Player.Duration <= 0 {
+		return media.StateFailed
+	}
+	name := previewName(v.YoutubeID)
+	return s.mediaCache.StartScan(name, media.Preview(s.ffmpegPath, v.Player.Duration, s.log,
+		s.rangeSource(taMediaPath(v.MediaURL)), s.mediaCache.ReportDirProgress(name)))
+}
+
 // previewPending is the 404 a client gets while the sheet is being made. It
 // carries the job's own state and how far it has got: a scrubber with no
 // pictures is otherwise indistinguishable from one whose derivation failed,
@@ -334,9 +347,7 @@ func (s *Server) mediaPreview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	name := previewName(id)
-	src := taMediaPath(v.MediaURL)
-	state := s.mediaCache.StartScan(name, media.Preview(s.ffmpegPath, v.Player.Duration, s.log,
-		s.rangeSource(src), s.mediaCache.ReportDirProgress(name)))
+	state := s.startPreviewScan(v)
 	dir := s.mediaCache.Dir(name)
 	if !media.PreviewReady(dir) {
 		// Being made, or it failed. Either way there is nothing to show yet —

@@ -6,6 +6,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/Seklfreak/flimm/internal/media"
+	"github.com/Seklfreak/flimm/internal/ta"
 )
 
 // Loudness normalisation, from the API's side.
@@ -49,9 +50,7 @@ func (s *Server) getVideoLoudness(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "not found")
 		return
 	}
-	state := s.mediaCache.StartScan(name,
-		media.Measure(s.ffmpegPath, v.Player.Duration, s.log, s.rangeSource(taMediaPath(v.MediaURL)),
-			s.mediaCache.ReportDirProgress(name)))
+	state := s.startLoudnessScan(v)
 	// Nothing to apply yet. A gain of 0 is the honest answer while the pass
 	// runs and after one that failed alike: play the video as it was archived.
 	writeJSON(w, http.StatusOK, LoudnessInfo{
@@ -59,6 +58,18 @@ func (s *Server) getVideoLoudness(w http.ResponseWriter, r *http.Request) {
 		TargetLUFS: media.TargetLUFS,
 		Progress:   s.mediaCache.DirProgress(name),
 	})
+}
+
+// startLoudnessScan makes sure a video has been measured, and reports where
+// that stands. Shared with the background prepare job for the same reason the
+// preview's starter is.
+func (s *Server) startLoudnessScan(v *ta.Video) media.JobState {
+	if s.mediaCache == nil || v.MediaURL == "" {
+		return media.StateFailed
+	}
+	name := loudnessName(v.YoutubeID)
+	return s.mediaCache.StartScan(name, media.Measure(s.ffmpegPath, v.Player.Duration, s.log,
+		s.rangeSource(taMediaPath(v.MediaURL)), s.mediaCache.ReportDirProgress(name)))
 }
 
 func loudnessResponse(l media.Loudness, state media.JobState) LoudnessInfo {

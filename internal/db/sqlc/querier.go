@@ -34,6 +34,9 @@ type Querier interface {
 	GetUser(ctx context.Context, id uuid.UUID) (User, error)
 	GetWatchEvent(ctx context.Context, arg GetWatchEventParams) (WatchEvent, error)
 	HideHistoryEntry(ctx context.Context, arg HideHistoryEntryParams) (int64, error)
+	// Every playlist anyone has pinned. A pin is one user's, but the derived media
+	// is shared, so one person's pin keeps the renditions for everybody.
+	ListAllPinnedPlaylists(ctx context.Context) ([]string, error)
 	// What is already known for these keys. One query per page, per source.
 	ListCached(ctx context.Context, arg ListCachedParams) ([]ExternalCache, error)
 	// Newest first, for the screen that lets a viewer put one back.
@@ -50,6 +53,15 @@ type Querier interface {
 	// playlist "In feeds:" badges need a single query.
 	ListFeedPlaylistsForUser(ctx context.Context, userID uuid.UUID) ([]ListFeedPlaylistsForUserRow, error)
 	ListFeeds(ctx context.Context, userID uuid.UUID) ([]Feed, error)
+	// Of these videos, the ones nobody is part-way through: completed by at least
+	// one viewer and in progress for none of them.
+	//
+	// It asks about a given set rather than listing the whole history because the
+	// caller starts from what is on the disk, which is far smaller. `hidden` is
+	// deliberately ignored: deleting a video from your history says nothing about
+	// whether you finished it, and a hidden row still holds the position that says
+	// someone is mid-way.
+	ListFinishedVideos(ctx context.Context, videoIds []string) ([]string, error)
 	ListHistory(ctx context.Context, arg ListHistoryParams) ([]WatchEvent, error)
 	// "Continue watching": started, not finished, newest activity first.
 	ListInProgress(ctx context.Context, arg ListInProgressParams) ([]WatchEvent, error)
@@ -60,6 +72,9 @@ type Querier interface {
 	ListSeriesSeen(ctx context.Context, arg ListSeriesSeenParams) ([]string, error)
 	ListSeriesWatches(ctx context.Context, feedID uuid.UUID) ([]string, error)
 	ListSeriesWatchesForUser(ctx context.Context, userID uuid.UUID) ([]ListSeriesWatchesForUserRow, error)
+	// Every account, for the background jobs that work on everyone's behalf rather
+	// than inside one person's request.
+	ListUserIDs(ctx context.Context) ([]uuid.UUID, error)
 	ListWatchEventsForVideos(ctx context.Context, arg ListWatchEventsForVideosParams) ([]WatchEvent, error)
 	MarkSeriesSeen(ctx context.Context, arg MarkSeriesSeenParams) error
 	NextFeedChannelPosition(ctx context.Context, feedID uuid.UUID) (int32, error)

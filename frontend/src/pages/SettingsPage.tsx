@@ -2,6 +2,7 @@ import { EVERYTHING_ID, type DeArrowSetting, type FeedSort, type Prefs } from "@
 import { useMe, useUpdatePrefs } from "@/lib/queries";
 import { useConfig } from "@/lib/config";
 import { PageHeader } from "@/components/Layout";
+import { PrepareStatusLine, usePrepareStatus } from "@/components/PrepareRow";
 import { Segmented, Spinner, Toggle } from "@/components/ui";
 import { langName } from "@/player/Player";
 import { sponsorCategoryLabel } from "@/player/chapterMath";
@@ -51,6 +52,7 @@ const SPONSOR_HINTS: Record<string, string> = {
 
 export default function SettingsPage() {
   const me = useMe();
+  const prepare = usePrepareStatus();
   const config = useConfig();
   const prefs = me.data?.prefs;
   const update = useUpdatePrefs();
@@ -223,6 +225,12 @@ export default function SettingsPage() {
                 label="Video quality"
                 hint="Chosen in the player and kept on this device only: it depends on what this browser can decode and how big its screen is."
               />
+              <Row
+                label="Preparing videos"
+                hint="Scrub-preview stills and the loudness measurement, derived ahead of time for what is near the top of your feeds, so the first view of a video is not the worst one. It stops while anything is playing. Transcodes are not prepared — they are a thousand times the disk."
+              >
+                <PrepareStatusLine status={prepare.data} />
+              </Row>
             </Section>
 
             <Section title="Account">

@@ -79,6 +79,16 @@ which is why they are admin-gated like series indexing.
   offered back under that heading is what "up next" stopped meaning anything
   looks like. A watched video that does appear in a list is dimmed the same
   way wherever it appears, queue or history.
+- **The work a viewer would wait for happens before they arrive.** Everything
+  Flimm derives is made on first request, which makes the first view of any
+  video the worst one: a bare scrubber, and whatever level the video was
+  archived at. So the two derivations that are cheap enough to do speculatively
+  — the preview sheet and the loudness measurement — are made ahead of time for
+  the head of every feed. What is *not* done speculatively is the point: a
+  transcode is a thousand times the disk of a preview sheet, and preparing
+  feeds' worth of them is terabytes, so renditions stay on demand. The job
+  stops while anything is playing, because a viewer's picture is worth more
+  than a stranger's future scrubber.
 - **The player can say what it is doing.** Almost everything Flimm derives is
   invisible on purpose — a transcode the viewer never asked for, a sheet of
   stills queued behind it, a measurement that quietly turns the volume down —

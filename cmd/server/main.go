@@ -210,6 +210,13 @@ func main() {
 	// that keeps crowd titles ahead of new downloads. Stops with the process's
 	// context.
 	srv.StartCacheWarmer(ctx)
+	// And the sweep that gives the disk back: derived media for videos every
+	// viewer has finished, minus anything in a pinned playlist.
+	srv.StartMediaCleanup(ctx)
+	// And the one that gets ahead of the viewer: the preview sheet and the
+	// loudness measurement for what is near the top of their feeds, derived
+	// while nothing is playing.
+	srv.StartMediaPrepare(ctx)
 
 	log.Info("listening", "port", cfg.Port)
 	serveErr := make(chan error, 1)
