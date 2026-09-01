@@ -1,11 +1,13 @@
 package media
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"fmt"
 	"io"
 	"log/slog"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -13,6 +15,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -534,11 +537,81 @@ func runFFmpegIn(ctx context.Context, ffmpegPath, dir string, args []string, log
 	return err
 }
 
+// ProgressFunc is told how far through its work a run has got, 0–1. It is
+// called from the run's own goroutine, often, and must not block.
+type ProgressFunc func(fraction float64)
+
+// progressBasis says which of ffmpeg's `-progress` counters measures this run,
+// and what a finished one would read.
+//
+// Everything `-progress` reports is about the *output*, which is why the two
+// scans read different fields. A loudness pass writes a null stream as long as
+// the file, so its output clock is the file's clock. A preview pass writes a
+// known number of stills, so its frame count is the work. Reading `out_time_us`
+// for a run whose output is one image gets zero from start to finish, which is
+// how this was wrong the first time.
+type progressBasis struct {
+	Key   string
+	Total float64
+}
+
+// byOutputTime measures a run whose output is as long as its input.
+func byOutputTime(duration float64) progressBasis {
+	return progressBasis{Key: "out_time_us", Total: duration * 1e6}
+}
+
+// byFrameCount measures a run that writes a known number of frames.
+func byFrameCount(frames int) progressBasis {
+	return progressBasis{Key: "frame", Total: float64(frames)}
+}
+
+// withProgress prepends the options that make ffmpeg report where it is.
+//
+// A pass whose output appears all at once has nothing on disk to count,
+// unlike an HLS rendition whose segments *are* its progress. Asking ffmpeg is
+// the only honest answer, and `-progress` on stdout leaves stderr alone for
+// the runs that parse a filter's measurement out of it.
+func withProgress(args []string) []string {
+	return append([]string{"-progress", "pipe:1", "-nostats"}, args...)
+}
+
+// readProgress turns ffmpeg's `-progress` stream into fractions.
+//
+// The format is plain `key=value` lines. The fraction is held below 1 until
+// the run actually ends, so a reader never sees 100% beside a job that is
+// still working.
+func readProgress(r io.Reader, basis progressBasis, report ProgressFunc) {
+	if report == nil || basis.Total <= 0 {
+		_, _ = io.Copy(io.Discard, r)
+		return
+	}
+	prefix := basis.Key + "="
+	scanner := bufio.NewScanner(r)
+	for scanner.Scan() {
+		value, ok := strings.CutPrefix(scanner.Text(), prefix)
+		if !ok {
+			continue
+		}
+		n, err := strconv.ParseFloat(strings.TrimSpace(value), 64)
+		if err != nil || n < 0 {
+			continue
+		}
+		report(math.Min(n/basis.Total, 0.99))
+	}
+}
+
 // runFFmpegOutput is runFFmpegIn for a run whose *output* matters: ffmpeg
 // writes everything it has to say — including a filter's measurements — to
 // stderr, so an analysis pass reads what a transcode only checks the exit code
 // of. The returned text is scrubbed like the logged one.
 func runFFmpegOutput(ctx context.Context, ffmpegPath, dir string, args []string, log *slog.Logger) (string, error) {
+	return runFFmpegReporting(ctx, ffmpegPath, dir, args, log, progressBasis{}, nil)
+}
+
+// runFFmpegReporting is runFFmpegOutput that also drains ffmpeg's `-progress`
+// stream. Pass a basis and a sink only for args built by withProgress; without
+// them stdout is discarded exactly as before.
+func runFFmpegReporting(ctx context.Context, ffmpegPath, dir string, args []string, log *slog.Logger, basis progressBasis, report ProgressFunc) (string, error) {
 	// ffmpegPath comes from configuration and every argument is a literal, a
 	// number this package computed or a loopback URL with a random nonce — no
 	// request data, and no token, reaches argv.
@@ -551,7 +624,23 @@ func runFFmpegOutput(ctx context.Context, ffmpegPath, dir string, args []string,
 	// forked. Re-aiming a run cancels ffmpeg routinely now, so a job goroutine
 	// pinned on a stray child is a real way to lose a transcode slot forever.
 	cmd.WaitDelay = 10 * time.Second
+
+	// The progress stream has to be drained while ffmpeg runs: a pipe nobody
+	// reads fills, and a run blocked writing to it never finishes.
+	var reading sync.WaitGroup
+	if report != nil {
+		stdout, err := cmd.StdoutPipe()
+		if err != nil {
+			return "", fmt.Errorf("ffmpeg: progress pipe: %w", err)
+		}
+		reading.Add(1)
+		go func() {
+			defer reading.Done()
+			readProgress(stdout, basis, report)
+		}()
+	}
 	runErr := cmd.Run()
+	reading.Wait()
 
 	out := scrubSecrets(strings.TrimSpace(stderr.String()))
 	if out != "" && log != nil {

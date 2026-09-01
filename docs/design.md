@@ -83,9 +83,13 @@ which is why they are admin-gated like series indexing.
   invisible on purpose — a transcode the viewer never asked for, a sheet of
   stills queued behind it, a measurement that quietly turns the volume down —
   and each of them fails in a way that looks exactly like nothing happening.
-  A **playback stats** panel under the video says which of them are running,
-  which are ready, and above all whether what is on screen is the archived
-  file or an encode the server is paying for, *and why the gate chose that*.
+  A **playback stats** panel under the video says which of them are running
+  and how far along, which are ready, and above all whether what is on screen
+  is the archived file or an encode the server is paying for, *and why the
+  gate chose that*. Every derivation counts up the same way — "deriving · 42%"
+  means the same thing whether it came from a transcode counting its own
+  segments or a scan reading ffmpeg's frame counter — because a wait with no
+  number on it is indistinguishable from a wedge.
   It reads and never decides: every line comes from the value the player
   itself runs on, so it cannot disagree with the picture it describes. Web
   only for now — a deliberate scope, not a platform left behind: the

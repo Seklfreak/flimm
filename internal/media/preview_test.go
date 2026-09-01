@@ -4,7 +4,9 @@ import (
 	"image/jpeg"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -90,8 +92,45 @@ func TestPreviewSheetIsTheGridTheTrackDescribes(t *testing.T) {
 		t.Fatal(err)
 	}
 	const duration = 8
-	if err := Preview("ffmpeg", duration, nil, testSource(body))(t.Context(), out); err != nil {
+	// A pass that writes one file at the end has nothing on disk to count, so
+	// the only honest source of "how far along" is ffmpeg's own clock. Without
+	// it the panel's wait is a spinner with nothing behind it.
+	var mu sync.Mutex
+	var seen []float64
+	report := func(f float64) {
+		mu.Lock()
+		defer mu.Unlock()
+		seen = append(seen, f)
+	}
+	if err := Preview("ffmpeg", duration, nil, testSource(body), report)(t.Context(), out); err != nil {
 		t.Fatalf("derive: %v", err)
+	}
+	mu.Lock()
+	got := append([]float64(nil), seen...)
+	mu.Unlock()
+	if len(got) == 0 {
+		t.Error("the run reported no progress at all")
+	}
+	// A number that never leaves zero is the bug this is here for: the first
+	// attempt read ffmpeg's output clock, which for a run whose output is one
+	// image stays at zero from start to finish.
+	if slices.Max(append([]float64{0}, got...)) <= 0 {
+		t.Errorf("progress never moved off zero: %v", got)
+	}
+	for _, f := range got {
+		if f < 0 || f > 0.99 {
+			t.Errorf("progress %v is outside 0–0.99; a running job must never read as finished", f)
+		}
+	}
+
+	// The sampling pass writes a still per tile; none of them may survive into
+	// the finished entry, which the cache measures and evicts by size.
+	leftovers, err := filepath.Glob(filepath.Join(out, "still-*.jpg"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(leftovers) > 0 {
+		t.Errorf("%d scratch stills were left in the entry", len(leftovers))
 	}
 
 	f, err := os.Open(filepath.Join(out, PreviewSheetName)) //nolint:gosec // test fixture path

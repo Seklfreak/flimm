@@ -44,8 +44,8 @@ One container image: a Go backend with the React frontend embedded.
   away until you ask, and no avatars fetched from Google).
 - **Playback stats** (web) — a panel under the video saying what the player is
   actually doing: whether the archived file is playing directly or a rendition
-  is, *why* the gate chose that, how far the transcode has got, whether the
-  scrub-preview sheet and the loudness pass are ready or still being derived,
+  is, *why* the gate chose that, how far the transcode has got, how far the
+  scrub-preview sheet and the loudness pass have got or whether they are ready,
   and what the video element itself reports (buffer ahead, dropped frames,
   picture size). Everything the server derives is invisible by design, and
   each of those jobs fails in a way that looks exactly like nothing happening.

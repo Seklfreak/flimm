@@ -50,18 +50,24 @@ func (s *Server) getVideoLoudness(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	state := s.mediaCache.StartScan(name,
-		media.Measure(s.ffmpegPath, s.log, s.rangeSource(taMediaPath(v.MediaURL))))
+		media.Measure(s.ffmpegPath, v.Player.Duration, s.log, s.rangeSource(taMediaPath(v.MediaURL)),
+			s.mediaCache.ReportDirProgress(name)))
 	// Nothing to apply yet. A gain of 0 is the honest answer while the pass
 	// runs and after one that failed alike: play the video as it was archived.
 	writeJSON(w, http.StatusOK, LoudnessInfo{
 		State:      string(state),
 		TargetLUFS: media.TargetLUFS,
+		Progress:   s.mediaCache.DirProgress(name),
 	})
 }
 
 func loudnessResponse(l media.Loudness, state media.JobState) LoudnessInfo {
 	return LoudnessInfo{
-		State:        string(state),
+		State: string(state),
+		// A measurement that is on disk is finished by definition. Reporting
+		// the running job's counter here would say 0 for the one answer that
+		// is certainly complete.
+		Progress:     1,
 		GainDB:       l.GainDB,
 		TargetLUFS:   l.TargetLUFS,
 		MeasuredLUFS: l.MeasuredLUFS,

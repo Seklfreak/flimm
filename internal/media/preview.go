@@ -35,6 +35,9 @@ const (
 	// PreviewSheetName and PreviewTrackName are what lands in it.
 	PreviewSheetName = "sheet.jpg"
 	PreviewTrackName = "preview.vtt"
+	// previewStillPattern names the scratch stills the sampling pass writes,
+	// which the tiling pass then reads. They never survive the job.
+	previewStillPattern = "still-%04d.jpg"
 
 	// previewTileWidth is each still's width. 160 is what a scrubber shows at
 	// roughly life size on a phone and comfortably on a desktop; the sheet
@@ -102,7 +105,7 @@ func PlanPreview(duration float64) PreviewPlan {
 // N seconds at a *regular* interval: sampling keyframes instead would be much
 // faster and would put the stills wherever the encoder happened to leave one,
 // which is not a grid a track can describe.
-func Preview(ffmpegPath string, duration float64, log *slog.Logger, open RangeSourceFunc) DirDeriveFunc {
+func Preview(ffmpegPath string, duration float64, log *slog.Logger, open RangeSourceFunc, report ProgressFunc) DirDeriveFunc {
 	return func(ctx context.Context, dir string) error {
 		plan := PlanPreview(duration)
 		if plan.Tiles == 0 {
@@ -117,28 +120,51 @@ func Preview(ffmpegPath string, duration float64, log *slog.Logger, open RangeSo
 		defer release()
 
 		sheet := filepath.Join(dir, PreviewSheetName)
-		// Fit-and-pad rather than plain scale: every cell comes out exactly
+		// Fit-and-pad rather than plain scale: every still comes out exactly
 		// previewTileWidth×previewTileHeight whatever the source's shape, which
 		// is what makes the track's arithmetic true. `setsar=1` keeps an
 		// anamorphic source from carrying its pixel ratio into the sheet, where
-		// nothing would honour it. The padding is black, and `tile` needs
-		// equal-sized inputs anyway — a source that changes resolution partway
-		// through used to be able to fail the whole job.
-		filter := fmt.Sprintf("fps=1/%s,scale=%d:%d:force_original_aspect_ratio=decrease,pad=%d:%d:(ow-iw)/2:(oh-ih)/2,setsar=1,tile=%dx%d",
+		// nothing would honour it. The padding is black, and the tiling pass
+		// needs equal-sized inputs anyway — a source that changes resolution
+		// partway through used to be able to fail the whole job.
+		filter := fmt.Sprintf("fps=1/%s,scale=%d:%d:force_original_aspect_ratio=decrease,pad=%d:%d:(ow-iw)/2:(oh-ih)/2,setsar=1",
 			strconv.FormatFloat(plan.Interval, 'f', 3, 64),
-			previewTileWidth, previewTileHeight, previewTileWidth, previewTileHeight,
-			plan.Columns, plan.Rows)
-		args := []string{
+			previewTileWidth, previewTileHeight, previewTileWidth, previewTileHeight)
+		// Two passes, and the split is what makes the wait measurable.
+		//
+		// Tiling inside the sampling run would make its output a single image,
+		// and every counter ffmpeg reports is about the output — so a decode
+		// that takes minutes would report nothing at all until it finished.
+		// Writing the stills out one by one instead makes the frame count the
+		// work, exactly: still 87 of 200 is 43% and means it.
+		//
+		// The second pass only reads a couple of hundred small JPEGs and lays
+		// them out. It is not a decode of anything, and it costs nothing worth
+		// reporting.
+		if _, err := runFFmpegReporting(ctx, ffmpegPath, dir, withProgress([]string{
 			"-hide_banner", "-loglevel", "error",
 			"-i", src,
 			"-an", "-sn",
 			"-vf", filter,
+			"-frames:v", strconv.Itoa(plan.Tiles),
+			"-qscale:v", "3",
+			"-y", previewStillPattern,
+		}), log, byFrameCount(plan.Tiles), report); err != nil {
+			return fmt.Errorf("derive preview: %w", err)
+		}
+		// The stills are scratch: they must not be in the entry when it is
+		// marked complete, or the cache would account for them forever.
+		defer removePreviewStills(dir)
+		if err := runFFmpegIn(ctx, ffmpegPath, dir, []string{
+			"-hide_banner", "-loglevel", "error",
+			"-start_number", "1",
+			"-i", previewStillPattern,
+			"-vf", fmt.Sprintf("tile=%dx%d", plan.Columns, plan.Rows),
 			"-frames:v", "1",
 			"-qscale:v", "5",
 			"-y", sheet,
-		}
-		if err := runFFmpegIn(ctx, ffmpegPath, dir, args, log); err != nil {
-			return fmt.Errorf("derive preview: %w", err)
+		}, log); err != nil {
+			return fmt.Errorf("derive preview sheet: %w", err)
 		}
 		// The track is written last, so its presence is what "ready" means:
 		// a sheet on disk with no track is a job that died halfway.
@@ -192,4 +218,17 @@ func PreviewReady(dir string) bool {
 		}
 	}
 	return true
+}
+
+// removePreviewStills clears the scratch stills. A failure to remove one is not
+// worth failing the derivation over — the sheet and its track are what the
+// entry is for, and the leftovers cost a few hundred KB until it is evicted.
+func removePreviewStills(dir string) {
+	matches, err := filepath.Glob(filepath.Join(dir, "still-*.jpg"))
+	if err != nil {
+		return
+	}
+	for _, m := range matches {
+		_ = os.Remove(m)
+	}
 }

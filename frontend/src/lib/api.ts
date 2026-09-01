@@ -132,6 +132,9 @@ export interface Comment {
  *  `state: "done"` carries numbers. */
 export interface Loudness {
   state: "pending" | "running" | "done" | "failed";
+  /** 0–1 through the file while the pass runs. Optional only because a server
+   *  older than the field does not send it. */
+  progress?: number;
   gain_db: number;
   target_lufs: number;
   measured_lufs: number;

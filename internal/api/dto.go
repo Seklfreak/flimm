@@ -334,6 +334,11 @@ type LoudnessInfo struct {
 	MeasuredLUFS float64 `json:"measured_lufs"`
 	PeakDBTP     float64 `json:"peak_dbtp"`
 	RangeLU      float64 `json:"range_lu"`
+	// Progress is 0–1 through the file while the pass runs, and 1 once it has
+	// finished. The pass reads the whole track, so on a long video it is
+	// minutes of nothing — a wait with a number on it is a wait; the same wait
+	// without one is indistinguishable from a wedged job.
+	Progress float64 `json:"progress"`
 }
 
 // ---- prefs ----

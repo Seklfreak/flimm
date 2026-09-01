@@ -52,6 +52,23 @@ type dirJob struct {
 	mu    sync.Mutex
 	state JobState
 	err   error
+	// progress is how far through its input the run has got, 0–1, for the
+	// passes that have no artefact on disk to count instead. An HLS rendition
+	// reports its own from the segments it has written; a preview sheet and a
+	// loudness measurement produce one file at the very end, so without this
+	// they are a spinner with nothing behind it.
+	progress float64
+}
+
+// SetProgress records how far a run has got. Never backwards: ffmpeg reports
+// the output clock, and the last thing a flushing run says can be smaller than
+// what came before it.
+func (j *dirJob) SetProgress(f float64) {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	if f > j.progress {
+		j.progress = f
+	}
 }
 
 func (j *dirJob) State() JobState {
@@ -266,6 +283,32 @@ func (c *Cache) DirState(name string) JobState {
 
 // TouchDir marks a directory entry as recently used, keeping a rendition that
 // is being watched ahead of one that is not in the eviction order.
+// DirProgress is how far the running job for name has got, 0–1, or 0 when
+// there is no run to ask. A finished entry reports 1: the answer is on disk.
+func (c *Cache) DirProgress(name string) float64 {
+	if c.complete(filepath.Join(c.dir, name)) {
+		return 1
+	}
+	j := c.dirJob(name)
+	if j == nil {
+		return 0
+	}
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	return j.progress
+}
+
+// ReportDirProgress hands back the sink a derivation reports into. It is
+// resolved per call rather than captured, because the job it belongs to is
+// created after the derive function that feeds it.
+func (c *Cache) ReportDirProgress(name string) ProgressFunc {
+	return func(f float64) {
+		if j := c.dirJob(name); j != nil {
+			j.SetProgress(f)
+		}
+	}
+}
+
 func (c *Cache) TouchDir(name string) { c.touchDir(filepath.Join(c.dir, name)) }
 
 // Dir returns the on-disk path of a directory entry. It does not check that

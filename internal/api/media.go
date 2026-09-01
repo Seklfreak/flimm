@@ -290,6 +290,19 @@ func previewTrackURL(id string) string {
 	return "/media/preview/" + id + "/" + media.PreviewTrackName
 }
 
+// previewPending is the 404 a client gets while the sheet is being made. It
+// carries the job's own state and how far it has got: a scrubber with no
+// pictures is otherwise indistinguishable from one whose derivation failed,
+// and a wait with no number behind it is indistinguishable from a wedge.
+type previewPending struct {
+	Error string `json:"error"`
+	State string `json:"state"`
+	// Progress is 0–1 through the source. A decode of the whole file is the
+	// honest cost of stills at a regular interval, and on a long video that is
+	// minutes.
+	Progress float64 `json:"progress"`
+}
+
 // mediaPreview serves the scrub-preview track and its sheet, and starts the
 // derivation on the first request for either.
 //
@@ -323,7 +336,7 @@ func (s *Server) mediaPreview(w http.ResponseWriter, r *http.Request) {
 	name := previewName(id)
 	src := taMediaPath(v.MediaURL)
 	state := s.mediaCache.StartScan(name, media.Preview(s.ffmpegPath, v.Player.Duration, s.log,
-		s.rangeSource(src)))
+		s.rangeSource(src), s.mediaCache.ReportDirProgress(name)))
 	dir := s.mediaCache.Dir(name)
 	if !media.PreviewReady(dir) {
 		// Being made, or it failed. Either way there is nothing to show yet —
@@ -331,9 +344,10 @@ func (s *Server) mediaPreview(w http.ResponseWriter, r *http.Request) {
 		// no pictures, so the 404 carries the job's state rather than making
 		// the client guess from how long it has been asking.
 		w.Header().Set("Cache-Control", "no-store")
-		writeJSON(w, http.StatusNotFound, map[string]string{
-			"error": "preview not ready",
-			"state": string(state),
+		writeJSON(w, http.StatusNotFound, previewPending{
+			Error:    "preview not ready",
+			State:    string(state),
+			Progress: s.mediaCache.DirProgress(name),
 		})
 		return
 	}

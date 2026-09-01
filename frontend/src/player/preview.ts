@@ -79,12 +79,16 @@ export interface PreviewStatus {
   /** The derivation's state as the server reports it, or `null` before the
    *  first answer and when a 404 carried nothing readable. */
   state: HLSState | null;
+  /** How far through the source the derivation has got, 0–1. A sheet is one
+   *  decode of the whole file, so on a long video this is the difference
+   *  between a wait and a wedge. */
+  progress: number;
   /** How many times the track has been asked for — the shape of the wait,
    *  which is otherwise invisible. */
   asked: number;
 }
 
-const IDLE_PREVIEW: PreviewStatus = { tiles: [], state: null, asked: 0 };
+const IDLE_PREVIEW: PreviewStatus = { tiles: [], state: null, progress: 0, asked: 0 };
 
 /**
  * Loads a video's preview track, if the server has derived one.
@@ -106,21 +110,21 @@ export function usePreviewTiles(trackURL: string | undefined, mediaReady: boolea
     let timer: number | undefined;
 
     const load = async () => {
-      let state: HLSState | null = null;
+      let pending: { state: HLSState | null; progress: number } = { state: null, progress: 0 };
       try {
         const res = await fetch(trackURL, { credentials: "include" });
         if (cancelled) return;
         if (res.ok) {
           const tiles = parsePreviewTrack(await res.text(), trackURL);
-          setStatus({ tiles, state: "done", asked: attempt + 1 });
+          setStatus({ tiles, state: "done", progress: 1, asked: attempt + 1 });
           return;
         }
-        state = await derivationState(res);
+        pending = await derivationPending(res);
       } catch {
         /* offline, or the player is being torn down; the next gap asks again */
       }
       if (cancelled) return;
-      setStatus({ tiles: [], state, asked: attempt + 1 });
+      setStatus({ tiles: [], ...pending, asked: attempt + 1 });
       timer = window.setTimeout(load, RETRY_GAPS[Math.min(attempt++, RETRY_GAPS.length - 1)]);
     };
     void load();
@@ -133,17 +137,19 @@ export function usePreviewTiles(trackURL: string | undefined, mediaReady: boolea
 }
 
 /**
- * The job state a 404 carries. A body that is not the JSON the server sends —
- * a proxy's error page, say — is simply no answer, which is what `null` is
- * for: "asked, told nothing".
+ * What a 404 carries: the job's state and how far it has got. A body that is
+ * not the JSON the server sends — a proxy's error page, say — is simply no
+ * answer, which is what `null` and 0 are for: "asked, told nothing".
  */
-async function derivationState(res: Response): Promise<HLSState | null> {
+async function derivationPending(res: Response): Promise<{ state: HLSState | null; progress: number }> {
   try {
-    const body: unknown = await res.json();
-    const state = (body as { state?: unknown })?.state;
-    return typeof state === "string" && STATES.includes(state as HLSState) ? (state as HLSState) : null;
+    const body = (await res.json()) as { state?: unknown; progress?: unknown };
+    const state = typeof body?.state === "string" && STATES.includes(body.state as HLSState) ? (body.state as HLSState) : null;
+    const raw = body?.progress;
+    const progress = typeof raw === "number" && Number.isFinite(raw) ? Math.min(Math.max(raw, 0), 1) : 0;
+    return { state, progress };
   } catch {
-    return null;
+    return { state: null, progress: 0 };
   }
 }
 

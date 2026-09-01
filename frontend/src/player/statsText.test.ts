@@ -10,6 +10,7 @@ import {
   describeRendition,
   describeStream,
   elementState,
+  stateWithProgress,
 } from "./statsText";
 
 const tile = (over: Partial<PreviewTile> = {}): PreviewTile => ({
@@ -82,18 +83,35 @@ describe("describeRendition", () => {
 describe("describePreview", () => {
   it("says how fine the grid is once the sheet is there", () => {
     const tiles = [tile(), tile({ start: 2, end: 4 })];
-    expect(describePreview({ tiles, state: "done", asked: 3 }, true)).toBe("ready · 2 stills, 160×90, every 2.0s");
+    expect(describePreview({ tiles, state: "done", progress: 1, asked: 3 }, true)).toBe("ready · 2 stills, 160×90, every 2.0s");
   });
 
-  // The whole point: a wait and a failure look identical on the scrubber.
+  // The whole point: a wait and a failure look identical on the scrubber, and
+  // so do a wait and a wedge until the wait carries a number.
   it("tells a wait apart from a failure, and shows the shape of the wait", () => {
-    expect(describePreview({ tiles: [], state: "running", asked: 6 }, true)).toBe("deriving · asked 6×");
-    expect(describePreview({ tiles: [], state: "failed", asked: 6 }, true)).toBe("failed · asked 6×");
+    expect(describePreview({ tiles: [], state: "running", progress: 0.42, asked: 6 }, true)).toBe("deriving · 42% · asked 6×");
+    expect(describePreview({ tiles: [], state: "failed", progress: 0, asked: 6 }, true)).toBe("failed · asked 6×");
   });
 
   it("says when there is nothing to wait for", () => {
-    expect(describePreview({ tiles: [], state: null, asked: 0 }, false)).toMatch(/not offered/);
-    expect(describePreview({ tiles: [], state: null, asked: 0 }, true)).toMatch(/not asked/);
+    expect(describePreview({ tiles: [], state: null, progress: 0, asked: 0 }, false)).toMatch(/not offered/);
+    expect(describePreview({ tiles: [], state: null, progress: 0, asked: 0 }, true)).toMatch(/not asked/);
+  });
+});
+
+describe("stateWithProgress", () => {
+  it("counts a running job up", () => {
+    expect(stateWithProgress("running", 0.42)).toBe("deriving · 42%");
+  });
+
+  // 100% on a finished job says nothing, and 0% on one that has not started
+  // reads as a stall — neither is worth the reader's attention.
+  it("leaves the number off when it would mean nothing", () => {
+    expect(stateWithProgress("done", 1)).toBe("ready");
+    expect(stateWithProgress("pending", 0)).toBe("not started");
+    expect(stateWithProgress("running", 0)).toBe("deriving");
+    expect(stateWithProgress("running", undefined)).toBe("deriving");
+    expect(stateWithProgress("failed", 0.5)).toBe("failed");
   });
 });
 
@@ -109,6 +127,7 @@ describe("describeLoudness", () => {
   });
 
   it("does not invent a gain from a measurement that has not finished", () => {
+    expect(describeLoudness({ ...measured, state: "running", progress: 0.6 }, true)).toBe("deriving · 60%");
     expect(describeLoudness({ ...measured, state: "running" }, true)).toBe("deriving");
     expect(describeLoudness(undefined, true)).toBe("waiting");
   });

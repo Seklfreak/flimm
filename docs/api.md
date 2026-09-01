@@ -475,7 +475,7 @@ its default — send the whole map back, which is what the settings screens do.
 | GET | `/videos/{id}/similar` | VideoSummary[] (TA similar) |
 | GET | `/videos/{id}/comments` | the archived comments, **paged by thread** — `Page<Comment>`, a comment's replies riding along with it. Normalised from what TubeArchivist indexed; see [Comments](#comments) |
 | GET | `/videos/{id}/chapters` | chapter markers for the scrubber (see below); cached per video |
-| GET | `/videos/{id}/loudness` | how loud the video is and the gain to play it at — `{ "state": "pending\|running\|done\|failed", "gain_db": -3.9, "target_lufs": -18, "measured_lufs": -14.1, "peak_dbtp": -3.8, "range_lu": 6.1 }`. The first call **starts the measurement** and answers `running` with a gain of 0; the numbers arrive on a later call. See [Loudness normalisation](#loudness-normalisation) |
+| GET | `/videos/{id}/loudness` | how loud the video is and the gain to play it at — `{ "state": "pending\|running\|done\|failed", "progress": 0.42, "gain_db": -3.9, "target_lufs": -18, "measured_lufs": -14.1, "peak_dbtp": -3.8, "range_lu": 6.1 }`. The first call **starts the measurement** and answers `running` with a gain of 0; the numbers arrive on a later call. `progress` is 0–1 through the file while it runs, and 1 once it is done. See [Loudness normalisation](#loudness-normalisation) |
 | POST | `/videos/{id}/progress` | `{ "position": 561 }` — heartbeat. Upserts watch_event; writes TA `/video/{id}/progress/`; at ≥90% (or ≤30 s remaining) marks watched, and **un-marks it** when a seen video is being watched again (see below). Returns `{ "position", "watched" }`. **Nothing is recorded below `MIN_PLAY_SECONDS`** unless the video completes or an event already exists — see below | Pass `?playlist=<id>` so the server can skip recording for music playlists.
 | POST | `/videos/{id}/stall` | `{ "position": 2472.5, "seconds": 3.1, "height": 1080, "client": "tvos" }` — the picture stopped mid-playback. 204, always: the report is fire-and-forget and never worth telling a viewer about. Anything under 0.4 s is dropped as the ordinary gap between segments. The **server** attributes it — see [Playback stalls](#playback-stalls) |
 | POST | `/videos/{id}/watched` | `{ "watched": true\|false }` — writes TA `/watched/`; true completes the watch_event, false clears position and TA progress |
@@ -654,7 +654,7 @@ prefix would be a match-all there).
 | `GET /media/hls/{id}/master.m3u8`, `/index.m3u8`, `/init.mp4`, `/seg00000.m4s` | the same files without a height: a **legacy alias** for the 1080p rendition, kept for clients written before the ladder. It serves that rendition's cache entry rather than one of its own. New clients use `hls_variants` |
 | `GET /media/subtitles/{id}/{lang}.vtt` | TA subtitle track |
 | `GET /media/frame/{id}/{ms}.jpg` | derived: one still, cut on first request and cached — what a DeArrow thumbnail resolves to |
-| `GET /media/preview/{id}/preview.vtt` | derived: the scrub-preview track (`text/vtt`), one cue per still, each pointing at its rectangle of the sheet as `sheet.jpg#xywh=x,y,w,h`. The first request **starts the derivation** and answers **404** (`Cache-Control: no-store`) until both files are on disk; a client scrubs without pictures and asks again. The 404 body is `{"error": "preview not ready", "state": "pending\|running\|done\|failed"}` — the job's own state, so a client can tell a wait from a failure |
+| `GET /media/preview/{id}/preview.vtt` | derived: the scrub-preview track (`text/vtt`), one cue per still, each pointing at its rectangle of the sheet as `sheet.jpg#xywh=x,y,w,h`. The first request **starts the derivation** and answers **404** (`Cache-Control: no-store`) until both files are on disk; a client scrubs without pictures and asks again. The 404 body is `{"error": "preview not ready", "state": "pending\|running\|done\|failed", "progress": 0.42}` — the job's own state and how far it has got, so a client can tell a wait from a failure, and a wait from a wedge |
 | `GET /media/preview/{id}/sheet.jpg` | derived: the sprite sheet those cues cut from (`image/jpeg`). Same 404-until-ready rule. Both are `private, max-age=86400, immutable` once served |
 | `GET /media/thumb/video/{id}` | TA `/cache/videos/…` |
 | `GET /media/thumb/channel/{id}` and `/media/thumb/channel/{id}/banner` | TA `/cache/channels/…` |
@@ -1063,11 +1063,20 @@ request is a 404 and the answer arrives on a later one. Clients keep asking,
 with growing gaps up to a minute, for as long as the player is open. Nothing
 waits on it; a scrubber with no stills is still a scrubber.
 
-That 404 carries the derivation's `state`. A scrubber with no pictures has two
-very different causes — still being made, or the job failed — and they are
-indistinguishable from how long the client has been asking, which is exactly
-the question the web player's playback stats panel — see
-[design.md](design.md#player-resume-and-seen-state) — is there to answer.
+That 404 carries the derivation's `state` and its `progress`, 0–1. A scrubber
+with no pictures has three very different causes — still being made, wedged,
+or failed — and none of them can be told apart from how long the client has
+been asking, which is exactly the question the web player's playback stats
+panel — see [design.md](design.md#player-resume-and-seen-state) — is there to
+answer.
+
+The number is the *sampling* pass's frame count, because that pass is the
+whole cost: a still every N seconds is one decode of the file. It is derived
+in two runs for that reason — the sampler writes the stills one at a time, so
+ffmpeg's own frame counter measures the work, and a second run lays them out.
+Tiling inside the sampler would make its output a single image, and every
+counter ffmpeg reports is about the output: a decode taking minutes would
+report nothing at all until it was over.
 
 It runs in the **scan lane**, not behind `MEDIA_TRANSCODE_JOBS`. Both are
 ffmpeg over the same file, but a scan is a decode that produces a few hundred

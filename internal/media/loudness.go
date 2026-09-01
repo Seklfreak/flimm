@@ -103,7 +103,7 @@ func GainFor(measuredLUFS, peakDBTP float64) float64 {
 // `-vn` matters more than it looks: the whole file is read either way, but
 // decoding only the audio is a fraction of the work, which is what makes this
 // cheap enough to run on demand.
-func Measure(ffmpegPath string, log *slog.Logger, open RangeSourceFunc) DirDeriveFunc {
+func Measure(ffmpegPath string, duration float64, log *slog.Logger, open RangeSourceFunc, report ProgressFunc) DirDeriveFunc {
 	return func(ctx context.Context, dir string) error {
 		lb, err := newLoopbackSource(log)
 		if err != nil {
@@ -113,8 +113,8 @@ func Measure(ffmpegPath string, log *slog.Logger, open RangeSourceFunc) DirDeriv
 		src, release := lb.register(open)
 		defer release()
 
-		args := []string{
-			"-hide_banner", "-nostats",
+		args := withProgress([]string{
+			"-hide_banner",
 			// One thread. This runs *while the viewer watches the same video*,
 			// beside a transcode of it, and `loudnorm` is a software decode of
 			// the whole audio track — on a long file it will happily take
@@ -128,10 +128,13 @@ func Measure(ffmpegPath string, log *slog.Logger, open RangeSourceFunc) DirDeriv
 				strconv.FormatFloat(TargetLUFS, 'f', 1, 64),
 				strconv.FormatFloat(PeakCeilingDBTP, 'f', 1, 64)),
 			"-f", "null", "-",
-		}
+		})
 		// loudnorm prints its measurement to stderr, so this run is read
 		// rather than only checked for an exit code.
-		out, err := runFFmpegOutput(ctx, ffmpegPath, dir, args, log)
+		// The null output runs the length of the file, so ffmpeg's output clock
+		// is the file's clock — unlike the preview pass, whose output is a
+		// handful of images.
+		out, err := runFFmpegReporting(ctx, ffmpegPath, dir, args, log, byOutputTime(duration), report)
 		if err != nil {
 			return fmt.Errorf("measure loudness: %w", err)
 		}

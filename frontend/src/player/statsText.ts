@@ -62,6 +62,22 @@ export function describeStream(height: number, codec: string): string {
 }
 
 /**
+ * A running job's state with how far it has got attached.
+ *
+ * The percentage is only ever shown *while* something is running: on a
+ * finished job it is 100 by definition and says nothing, and on one that has
+ * not started it would be a zero the reader takes for a stall. Every
+ * derivation in the panel says it this way, so "deriving · 42%" means the same
+ * thing whether it came from a transcode counting its own segments or a scan
+ * reading ffmpeg's clock.
+ */
+export function stateWithProgress(state: HLSState | null | undefined, progress: number | null | undefined): string {
+  const label = stateLabel(state);
+  if (state !== "running" || progress === null || progress === undefined || !(progress > 0)) return label;
+  return `${label} · ${Math.round(progress * 100)}%`;
+}
+
+/**
  * A derivation's state as a person would say it.
  *
  * `pending` is the server's word for "nobody has asked", which after the
@@ -86,12 +102,10 @@ export function stateLabel(state: HLSState | null | undefined): string {
 export function describeRendition(variant: HLSVariant | null, state: HLSState | null, progress: number | null): string {
   const parts: string[] = [];
   if (variant) parts.push(describeStream(variant.height, variant.codec));
-  parts.push(stateLabel(state ?? variant?.state));
-  // Progress is the fraction of the *whole* rendition that exists, which is
-  // not where playback is — worth showing only while it is still being made.
-  if (progress !== null && progress > 0 && (state ?? variant?.state) !== "done") {
-    parts.push(`${Math.round(progress * 100)}%`);
-  }
+  // The rendition's progress is the fraction of it that exists, which is not
+  // where playback is — see api.md. It reads the same way as the scans' all the
+  // same: how much of the work is done.
+  parts.push(stateWithProgress(state ?? variant?.state, progress));
   return parts.join(" · ");
 }
 
@@ -111,7 +125,7 @@ export function describePreview(status: PreviewStatus, offered: boolean): string
     return `ready · ${status.tiles.length} stills, ${grid}, every ${every.toFixed(1)}s`;
   }
   if (status.asked === 0) return "not asked for yet";
-  return `${stateLabel(status.state)} · asked ${status.asked}×`;
+  return `${stateWithProgress(status.state, status.progress)} · asked ${status.asked}×`;
 }
 
 /**
@@ -124,7 +138,7 @@ export function describePreview(status: PreviewStatus, offered: boolean): string
 export function describeLoudness(loudness: Loudness | undefined, enabled: boolean): string {
   if (!enabled) return "off — playing at the archived level";
   if (!loudness) return "waiting";
-  if (loudness.state !== "done") return stateLabel(loudness.state);
+  if (loudness.state !== "done") return stateWithProgress(loudness.state, loudness.progress);
   const gain = loudness.gain_db;
   const applied = gain < 0 ? `${gain.toFixed(1)} dB` : "no change";
   return `${applied} · measured ${loudness.measured_lufs.toFixed(1)} LUFS, peak ${loudness.peak_dbtp.toFixed(1)} dBTP`;
