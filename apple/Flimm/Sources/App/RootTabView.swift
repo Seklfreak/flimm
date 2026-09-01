@@ -42,6 +42,9 @@ struct RootTabView: View {
             SectionRoot(tab: tab)
                 .flimmDestinations()
         }
+        // Above the tab bar, under every screen in the section — including a
+        // pushed one, so walking into a channel does not lose the television.
+        .remoteBar()
     }
 }
 

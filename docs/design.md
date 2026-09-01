@@ -287,6 +287,13 @@ History, search in the header), iPad gets a persistent sidebar and a
 three-column grid, and Apple TV merges feeds and library into a top tab bar
 with a focus-driven, full-bleed player.
 
+When two of them are in the same room they are one thing: a video playing on
+the Apple TV shows up on the phone and the iPad, which can pause it, scrub it,
+step through it, and — the reason it is worth having — show the description and
+the comments, which are unreadable at two metres and ordinary in the hand. It
+is the account that connects them, not the network, and nothing is paired. The
+phone steers what the television started; it does not send it anything to play.
+
 The iPad's columns follow the window rather than the device: three across a
 full-width iPad, fewer in Split View, and a pane narrow enough (Slide Over)
 falls back to the phone's tab bar. Where the width allows it the player keeps

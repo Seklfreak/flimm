@@ -142,6 +142,12 @@ type Server struct {
 	// for — the time of the most recent progress heartbeat, from any client.
 	prepare      prepareState
 	lastPlayback atomic.Int64
+	// remote holds the live playback sessions clients steer each other
+	// through; see remote.go. In memory, and deliberately so.
+	remote *remoteHub
+	// remoteWait is how long a remote-control poll waits before answering
+	// "nothing changed". A field so tests need not wait it out.
+	remoteWait time.Duration
 }
 
 func NewServer(o Options) *Server {
@@ -188,6 +194,9 @@ func NewServer(o Options) *Server {
 		segmentWait:       cmp.Or(o.SegmentWait, defaultSegmentWait),
 		seekAheadSegments: cmp.Or(o.SeekAheadSegments, media.DefaultSeekAheadSegments),
 		mediaTokenTTL:     cmp.Or(o.MediaTokenTTL, defaultMediaTokenTTL),
+
+		remote:     newRemoteHub(),
+		remoteWait: defaultRemoteWait,
 	}
 	if o.MediaProxy != nil {
 		// Thumbnails are immutable per id; let the browser keep them a day.
@@ -303,6 +312,14 @@ func (s *Server) Router() http.Handler {
 			r.Patch("/playlists/{id}", s.renamePlaylist)
 			r.Delete("/playlists/{id}", s.deletePlaylist)
 			r.Post("/playlists/{id}/videos", s.playlistVideoAction)
+
+			// Remote control: a player publishes a session, anything else
+			// signed in as the same user steers it. See remote.go.
+			r.Get("/playback/sessions", s.listRemoteSessions)
+			r.Put("/playback/sessions/{id}", s.putRemoteSession)
+			r.Delete("/playback/sessions/{id}", s.deleteRemoteSession)
+			r.Get("/playback/sessions/{id}/commands", s.pollRemoteCommands)
+			r.Post("/playback/sessions/{id}/commands", s.postRemoteCommand)
 
 			r.Get("/prepare", s.getPrepareStatus)
 

@@ -216,6 +216,32 @@ What is there:
     stays AVKit's. `FLIMM_OPEN_COMMENT=<n>` (Debug only) opens the nth thread
     at launch, because selecting a card needs a remote a simulator does not
     have.
+  - **The phone is the Apple TV's companion.** While something is playing on
+    the television, the iPhone and iPad show a "playing on…" bar above the tab
+    bar (and under the detail column on iPad) with the title, the screen's own
+    name, a hairline of progress and a pause button; opening it gives the
+    transport, a scrubber, the chapter list, the description and the archived
+    comments. Which is the point of it — the transport is the small half. A
+    description and a comment thread are a wall of text nobody reads at two
+    metres, and are simply a page in your hand.
+
+    **The direction is one way, deliberately.** The television publishes a
+    session and the phone steers it; the phone never tells it what to *open*.
+    Casting is a different feature with a different question behind it ("play
+    this there") and would need a target picker, a queue and an answer for what
+    happens to the phone's own playback — none of which a viewer already
+    watching something needs. See *Remote control* in
+    [api.md](api.md#remote-control) for the protocol; the rule about what is
+    published and when is ``RemotePublishRule``, and the clock a controller
+    runs forward between heartbeats is ``RemoteClock``, both in FlimmKit so
+    the two ends cannot drift on it.
+
+    **There is nothing to pair.** Sessions are scoped to the account, so a
+    viewer sees their own screens and nobody else's, with no code to type and
+    no local-network discovery — which also means it works from the bus.
+    `FLIMM_OPEN_REMOTE=1` (Debug only) opens the companion at launch, because
+    the bar only exists while another screen is playing and a simulator cannot
+    tap it.
   - **The Home screen's top shelf shows the pinned feed.** When Flimm is
     focused in the Home screen's top row, tvOS draws a row of what is waiting
     in the feed the app opens on — titles, artwork, and the resume bar on
@@ -875,6 +901,14 @@ a side effect of caching.
 - ~~Whether all three ship together or iPhone leads.~~ iPhone led.
 - Whether the derived-media cache gains a video variant (see above), and
   whether it is derived on demand or ahead of time.
+- ~~Whether the web client also takes part in remote control.~~ **It does
+  not**, in either direction: it neither publishes a session nor offers a
+  companion. The companion is a thing you hold while looking at a television,
+  and a browser tab is not that — the machine a laptop is on is usually the
+  machine you would rather just watch on. Nothing about the protocol excludes
+  it (it is the same five endpoints, and a page could publish itself in an
+  afternoon), so this is a decision about what is worth having on screen
+  rather than a platform quietly left behind.
 - Offline downloads: in scope or explicitly not.
 - Whether the Apple clients get the web player's **playback stats** panel
   (which path is playing and why, the transcode's progress, the scrub-preview

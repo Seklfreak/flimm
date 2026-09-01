@@ -29,6 +29,7 @@ struct RootSplitView: View {
                         WatchView()
                     }
             }
+            .remoteBar()
         }
         .navigationSplitViewStyle(.balanced)
         .tint(Palette.accent)

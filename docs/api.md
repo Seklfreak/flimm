@@ -906,6 +906,121 @@ Nothing is written to the database: this is an operational signal, not history.
 `StallReporter`, via `PlaybackServices`). All four use the same 0.4 s floor,
 and all four abandon rather than report a stall that was still running when
 playback stopped — its length is unknown, and the viewer may simply have left.
+### Remote control
+
+One screen plays; another steers it. A player publishes what it is doing as a
+**session**, and anything else signed in as the same account can read those
+sessions and send commands back. That is the whole model, and two things it
+deliberately is not: it is not a cast protocol — no client ever tells another
+*what to open*, so a session exists only because a player already started
+something itself — and it is not a pairing mechanism. Sessions are scoped by
+user id like every other piece of per-user state, so a viewer sees their own
+screens and no others, with no code to type and nothing to discover on the
+local network. It works from anywhere the server does.
+
+Sessions live **in memory**. A session describes a player that is running right
+now; after a restart of either end the truth is republished within one
+heartbeat, and a row that had survived would only be a lie about a television
+that has since been switched off. The consequence to know: a deployment running
+several server replicas behind a load balancer would have the two clients
+talking to different memories. Flimm is a single-process server (one transcode
+slot, one prepare job) and this assumes it too.
+
+A session that has not been republished for **45 seconds** is gone. Publishers
+heartbeat every 10 s, so that is four missed beats.
+
+| Method | Path | Who calls it |
+| --- | --- | --- |
+| `PUT` | `/playback/sessions/{id}` | the player, to publish itself. `{id}` is a UUID the player chooses once per playback session; upsert, `204` |
+| `DELETE` | `/playback/sessions/{id}` | the player, when playback stops. `204` whether or not it still existed |
+| `GET` | `/playback/sessions` | a controller, to see what is playing |
+| `GET` | `/playback/sessions/{id}/commands` | the player, to receive what was pressed |
+| `POST` | `/playback/sessions/{id}/commands` | a controller, to press something |
+
+Both `GET`s are **long polls**, held open for up to 25 s. A socket would need
+its own authentication, its own reconnect and its own place in every proxy
+between the server and the couch, to save what amounts to one idle connection
+per client.
+
+**`GET /playback/sessions`** answers immediately without parameters, and with
+`?since=<version>` holds until anything changes — a session appearing, moving,
+pausing or lapsing:
+
+```json
+{
+  "sessions": [
+    {
+      "id": "1f0b3d2e-2c3a-4f5b-8a1d-6e7f80912345",
+      "device": "Living Room",
+      "platform": "tvos",
+      "video_id": "yt-id",
+      "title": "Input shaping, finally explained",
+      "channel_name": "A Channel",
+      "thumb_url": "/media/thumb/video/yt-id",
+      "position": 561,
+      "duration": 1476,
+      "paused": false,
+      "speed": 1,
+      "audio_only": false,
+      "can_next": true,
+      "can_previous": false,
+      "updated_at": "2026-09-01T19:04:11Z"
+    }
+  ],
+  "version": 12
+}
+```
+
+`position` is a **fix, not a clock**. A controller runs it forward itself at
+`speed` while `paused` is false, or its scrubber jumps once a heartbeat and
+sits still in between. It must measure the elapsed time from when *it* received
+the response and not from `updated_at`: the difference between a phone's clock
+and a server's is unbounded, and the latency of the response that carried the
+session is not. `can_next` / `can_previous` are the player's own answer from
+its playback context — a controller must never try to derive them.
+
+The body a player `PUT`s is the same object; `id` and `updated_at` are the
+server's to set and are ignored on the way in. `video_id` is required. Nothing
+else about the video is published — the description, chapters and comments a
+controller shows come from `/videos/{id}`, `/videos/{id}/chapters` and
+`/videos/{id}/comments` like everywhere else, so there is no second copy of a
+video's detail to keep in step.
+
+**Commands.** `POST /playback/sessions/{id}/commands` takes one of six kinds
+and answers `202` with the sequence number it was given:
+
+| `kind` | Field | Means |
+| --- | --- | --- |
+| `play` | — | resume |
+| `pause` | — | pause |
+| `seek` | `position` (seconds, ≥ 0) | go there |
+| `skip` | `delta` (seconds, signed, ≤ 600) | move that far from wherever playback *actually* is |
+| `next` / `previous` | — | step in the player's own context |
+
+`skip` exists apart from `seek` because a controller pressing ±10 s does not
+know where the television is to within the round trip; a seek computed from a
+projected clock would land slightly wrong every time. Anything else is a `400`,
+so a player can trust that a kind it does not recognise means a server newer
+than itself rather than a controller typing.
+
+**Nothing acknowledges a command.** The player applies what it can and
+publishes its state, and the state *is* the acknowledgement: a controller that
+sent `pause` and then sees a paused session knows it landed.
+
+`GET /playback/sessions/{id}/commands?after=<cursor>` holds until something is
+sent, and answers `{"commands": [...], "cursor": N}`. **Adopt the cursor
+whether or not commands came with it** — the backlog is capped at 32, and a
+session that overflowed holds commands the player will never receive; a cursor
+that only moved on delivery would ask for them for ever.
+
+A session that is not this user's — or that never existed, or has lapsed — is a
+`404` from every one of these, not a `403`. One account may hold 8 sessions at
+a time; over that, the least recently published makes way.
+
+**Clients.** Apple TV publishes (FlimmKit's `RemotePublisher`); iPhone and iPad
+control (`RemoteControl`, and the companion screen behind the "playing on…"
+bar). The web client does neither — see `docs/apple-apps.md`.
+
 ### Derived media
 
 TubeArchivist stores one file per video, muxed. Anything else a client needs —

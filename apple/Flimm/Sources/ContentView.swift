@@ -8,8 +8,14 @@ import SwiftUI
 /// are instead of throwing them back to the setup screen.
 struct ContentView: View {
     @Environment(AuthSession.self) private var session
+    @Environment(\.scenePhase) private var scenePhase
 
     @State private var app: AppModel?
+    /// Watches for a video playing on another screen of this account's — the
+    /// Apple TV — so the companion bar can offer to steer it. It holds one
+    /// long-poll request open while the app is on screen, which is why it is
+    /// stopped the moment it is not.
+    @State private var remote: RemoteControl?
     @State private var player = PlayerCoordinator()
     /// Shared by both shells; see ``RootShell``.
     @State private var nav = NavigationModel()
@@ -30,9 +36,10 @@ struct ContentView: View {
             case .signedOut:
                 SignInView()
             case .signedIn:
-                if let app {
+                if let app, let remote {
                     RootShell()
                         .environment(app)
+                        .environment(remote)
                         .environment(player)
                         .environment(nav)
                         .environment(playback)
@@ -45,6 +52,11 @@ struct ContentView: View {
         }
         .preferredColorScheme(app?.prefs.theme.colorScheme)
         .task(id: sessionKey) { syncAppModel() }
+        // A backgrounded phone has nobody to show a scrubber to, and the poll
+        // it holds open would be a connection kept alive for nothing.
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { remote?.start() } else { remote?.stop() }
+        }
     }
 
     /// Changes when the session or the server does, which is exactly when the
@@ -56,6 +68,8 @@ struct ContentView: View {
     private func syncAppModel() {
         guard session.state == .signedIn, let client = session.client else {
             app = nil
+            remote?.stop()
+            remote = nil
             // A signed-out session has no client to report progress with, so
             // the player goes with it rather than playing on silently.
             player.configure(app: nil, playback: playback)
@@ -63,7 +77,10 @@ struct ContentView: View {
         }
         if app?.client !== client {
             app = AppModel(client: client)
+            remote?.stop()
+            remote = RemoteControl(client: client)
         }
+        remote?.start()
         player.configure(app: app, playback: playback)
         openDebugVideo()
     }

@@ -56,6 +56,14 @@ One container image: a Go backend with the React frontend embedded.
   first; the loudness measurement and the scrub-preview sheet are kept, being
   kilobytes each and a full decode to rebuild. Nothing is lost either way — a
   video played again simply derives again.
+- **The phone as a companion to the television** (iPhone/iPad + Apple TV) —
+  while something is playing on the Apple TV, the phone shows a bar above the
+  tab bar saying so, and opening it gives the transport (play/pause, ±10s/30s,
+  a scrubber, previous/next), the chapter list as places to jump to, the
+  description and the archived comments. Reading is the point of it as much as
+  steering: a comment thread is unreadable across a room and ordinary in your
+  hand. Nothing to pair — it works over your own Flimm account, so it needs
+  neither the same network nor a code to type.
 - **Playback stats** (web) — a panel under the video saying what the player is
   actually doing: whether the archived file is playing directly or a rendition
   is, *why* the gate chose that, how far the transcode has got, how far the

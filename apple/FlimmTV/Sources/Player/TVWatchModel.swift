@@ -104,6 +104,15 @@ final class TVWatchModel {
     /// Keeps the transcode pointed where the viewer is, and says how far it
     /// has got. Only the compatible rendition uses it.
     @ObservationIgnored private let steering: RenditionSteering
+    /// Publishes this session so a phone can steer it, and applies what the
+    /// phone presses. It runs its own clock — a paused `AVPlayer` stops
+    /// ticking, and a session nobody heard from expires — so nothing here has
+    /// to remember to push at it. The device name is the one the viewer gave
+    /// this Apple TV in Settings, which is what makes "Living Room" mean
+    /// something on the phone.
+    @ObservationIgnored private lazy var remote = RemotePublisher(
+        client: client, device: UIDevice.current.name, platform: "tvos"
+    )
 
     /// How long to keep retrying a playlist the server could not open. A
     /// segment that has not been encoded yet no longer lands here — it blocks
@@ -153,6 +162,7 @@ final class TVWatchModel {
         self.steering = RenditionSteering(client: app.client)
         wireSteering()
         observeTime()
+        beginPublishing()
     }
 
     // MARK: - Loading
@@ -300,49 +310,6 @@ final class TVWatchModel {
         }
     }
 
-    private func loadSidecars(_ detail: Video) async {
-        async let chapterList = fetchChapters()
-        async let navigation = fetchNav()
-        async let next = fetchUpNext()
-        let (loadedChapters, loadedNav, loadedNext) = await (chapterList, navigation, next)
-        chapters = loadedChapters
-        nav = loadedNav
-        upNext = loadedNext.items
-        upNextAreSuggestions = loadedNext.suggestions
-        interstitials = TVPlayerMarkers.interstitials(for: detail.sponsorblock)
-        itemGeneration += 1
-        await loadSubtitles(detail)
-        await loadArtwork(detail)
-    }
-
-    private func fetchChapters() async -> [Chapter] {
-        (try? await client.chapters(videoId))?.chapters ?? []
-    }
-
-    /// Without a context there is no list to step through, so the player hides
-    /// the previous/next controls rather than guessing at neighbours.
-    private func fetchNav() async -> Nav? {
-        guard hasContext else { return nil }
-        return try? await client.nav(videoId, context: context)
-    }
-
-    private func fetchUpNext() async -> UpNextPage {
-        (try? await client.upNext(videoId, context: context)) ?? UpNextPage(page: Page(items: []))
-    }
-
-    private func loadSubtitles(_ detail: Video) async {
-        guard let track = SubtitleLoader.pick(from: detail.subtitles, preferred: prefs.subtitleLang) else {
-            cues = []
-            return
-        }
-        cues = await SubtitleLoader.load(track: track, client: client)
-    }
-
-    private func loadArtwork(_ detail: Video) async {
-        artwork = await MediaImageStore.shared.image(at: detail.thumbUrl, client: client)
-        pushNowPlaying(force: true)
-    }
-
     // MARK: - Transport
 
     func seek(to seconds: Double) {
@@ -465,6 +432,9 @@ final class TVWatchModel {
     func tearDown() async {
         compatibleRetry?.cancel()
         compatibleRetry = nil
+        // Before anything else the phone reads: a controller must learn the
+        // screen went dark now, not when the session expires.
+        await remote.stop()
         services.stop()
         steering.cancel()
         await reporter.stop()
@@ -600,6 +570,131 @@ final class TVWatchModel {
         }
     }
 
+}
+
+/// The rest of what a video needs, once it is playing: chapters, the
+/// navigation around it, subtitles and artwork. None of it blocks the
+/// picture, and none of it decides anything — which is why it sits outside
+/// the model's own body rather than in it.
+private extension TVWatchModel {
+    func loadSidecars(_ detail: Video) async {
+        async let chapterList = fetchChapters()
+        async let navigation = fetchNav()
+        async let next = fetchUpNext()
+        let (loadedChapters, loadedNav, loadedNext) = await (chapterList, navigation, next)
+        chapters = loadedChapters
+        nav = loadedNav
+        upNext = loadedNext.items
+        upNextAreSuggestions = loadedNext.suggestions
+        interstitials = TVPlayerMarkers.interstitials(for: detail.sponsorblock)
+        itemGeneration += 1
+        await loadSubtitles(detail)
+        await loadArtwork(detail)
+    }
+
+    func fetchChapters() async -> [Chapter] {
+        (try? await client.chapters(videoId))?.chapters ?? []
+    }
+
+    /// Without a context there is no list to step through, so the player hides
+    /// the previous/next controls rather than guessing at neighbours.
+    func fetchNav() async -> Nav? {
+        guard hasContext else { return nil }
+        return try? await client.nav(videoId, context: context)
+    }
+
+    func fetchUpNext() async -> UpNextPage {
+        (try? await client.upNext(videoId, context: context)) ?? UpNextPage(page: Page(items: []))
+    }
+
+    func loadSubtitles(_ detail: Video) async {
+        guard let track = SubtitleLoader.pick(from: detail.subtitles, preferred: prefs.subtitleLang) else {
+            cues = []
+            return
+        }
+        cues = await SubtitleLoader.load(track: track, client: client)
+    }
+
+    func loadArtwork(_ detail: Video) async {
+        artwork = await MediaImageStore.shared.image(at: detail.thumbUrl, client: client)
+        pushNowPlaying(force: true)
+    }
+}
+
+/// Remote control: this screen, published so a phone can steer it.
+///
+/// It reads the model's private playback state, which is why it is in the
+/// same file; it is out of the class body only because that body is already
+/// as long as it is allowed to be.
+private extension TVWatchModel {
+    /// Starts saying what this screen is playing, and listening for a phone.
+    ///
+    /// Started once, for the life of the model rather than of a video: stepping
+    /// to the next video is the same session to whoever is holding the phone,
+    /// and re-registering per video would make it blink out of their hands
+    /// between the two.
+    func beginPublishing() {
+        remote.start(
+            state: { [weak self] in self?.remoteState },
+            onCommand: { [weak self] command in self?.apply(command) }
+        )
+    }
+
+    /// What a controller sees. `nil` until something is actually loaded, which
+    /// is what keeps a session from existing before there is anything to steer.
+    var remoteState: RemoteSession? {
+        guard let video else { return nil }
+        return RemoteSession(
+            videoId: videoId,
+            title: video.title,
+            channelName: video.channel.name,
+            thumbUrl: video.thumbUrl,
+            position: reportedPosition,
+            duration: video.duration,
+            // Buffering is not pausing: the picture is stopped but the viewer
+            // did not stop it, and a phone showing "paused" would offer to
+            // resume something that is already trying to.
+            paused: player.timeControlStatus == .paused,
+            // The rate playback is *meant* to run at. `player.rate` is 0 while
+            // paused, and a controller reading that would stop its own clock
+            // twice over.
+            speed: prefs.playbackSpeed,
+            audioOnly: audioOnly,
+            // Whether stepping is possible is this player's answer, from its
+            // own context; the phone must never derive it.
+            canNext: canGoNext,
+            canPrevious: canGoPrevious
+        )
+    }
+
+    /// Applies what the phone pressed.
+    ///
+    /// Every one of these is the same call the Siri Remote and the Info panel
+    /// make, so a command cannot reach a path the television's own controls
+    /// cannot — including the heartbeat and the sponsor rules that hang off
+    /// ``seek(to:)``.
+    func apply(_ command: RemoteCommand) {
+        switch command.action {
+        case .play:
+            hasEnded = false
+            player.playImmediately(atRate: Float(prefs.playbackSpeed))
+        case .pause:
+            player.pause()
+        case .seek:
+            seek(to: command.position)
+        case .skip:
+            // A delta rather than a position, because the phone's clock is a
+            // projection: ±10s from where playback *actually* is can only be
+            // worked out here.
+            seek(to: currentTime + command.delta)
+        case .next:
+            Task { await goNext() }
+        case .previous:
+            Task { await goPrevious() }
+        case nil:
+            break
+        }
+    }
 }
 
 private extension TVWatchModel {
