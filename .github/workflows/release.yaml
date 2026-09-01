@@ -42,7 +42,14 @@ jobs:
       - uses: Seklfreak/ai-release-action@v1
         with:
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
-          build-workflow: "build.yaml testflight.yaml"
+          # testflight.yaml carries a path filter: an apple/-less release
+          # would otherwise spend two macOS runners rebuilding an unchanged
+          # app, notify testers, and hand Apple a review of nothing.
+          # testflight-refresh.yaml still rebuilds monthly, so a long run of
+          # backend-only releases can't let the TestFlight build expire.
+          build-workflow: |
+            build.yaml
+            testflight.yaml:^apple/
           project-description: >-
             Flimm is a self-hosted client for a single TubeArchivist instance: a Go
             backend (chi, pgx/sqlc, golang-migrate, go-oidc) plus a React frontend shipped
