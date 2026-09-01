@@ -13,6 +13,21 @@ enum TVRoute: Hashable {
     case playlist(String)
 }
 
+/// Pushes a route onto the stack of the tab on screen, from anywhere inside
+/// it. A card's context menu needs this: the menu is presented by the system
+/// over the whole screen, and a `NavigationLink` in there is not reliably a
+/// push on tvOS, so the shell hands each stack's path down as an action.
+struct TVPushAction {
+    let push: @MainActor (TVRoute) -> Void
+
+    @MainActor
+    func callAsFunction(_ route: TVRoute) { push(route) }
+}
+
+extension EnvironmentValues {
+    @Entry var tvPush = TVPushAction { _ in }
+}
+
 extension View {
     func tvDestinations() -> some View {
         navigationDestination(for: TVRoute.self) { route in

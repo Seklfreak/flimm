@@ -106,6 +106,7 @@ struct TVVideoCard: View {
     var onDismissChange: ((VideoSummary) -> Void)?
 
     @Environment(TVPlayerCoordinator.self) private var player
+    @Environment(\.tvPush) private var push
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -119,7 +120,20 @@ struct TVVideoCard: View {
             .accessibilityLabel(video.title)
             // tvOS activates a `.contextMenu` on a focused card with the
             // remote's long-press — the same gesture the phone and iPad use.
-            .contextMenu { DismissMenuItem(video: video, onChange: onDismissChange) }
+            .contextMenu {
+                // The channel is a line of grey text under the card and
+                // nothing on a remote can select a line of text, so this is
+                // the way from a video to its channel. Not on the channel's
+                // own screen, where the card already hides the name.
+                if showChannel {
+                    Button {
+                        push(.channel(video.channel.id))
+                    } label: {
+                        Label("Go to channel", systemImage: "person.crop.rectangle")
+                    }
+                }
+                DismissMenuItem(video: video, onChange: onDismissChange)
+            }
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(video.title)

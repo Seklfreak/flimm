@@ -85,6 +85,7 @@ struct VideoCard: View {
     var onDismissChange: ((VideoSummary) -> Void)?
 
     @Environment(PlayerCoordinator.self) private var player
+    @Environment(NavigationModel.self) private var nav
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -103,7 +104,21 @@ struct VideoCard: View {
         .opacity(video.watched ? 0.55 : 1)
         .contentShape(Rectangle())
         .onTapGesture { player.play(video, context: context) }
-        .contextMenu { DismissMenuItem(video: video, onChange: onDismissChange) }
+        .contextMenu {
+            // The same hold menu as the TV's: the channel name under the card
+            // is text, and a video's channel is the one place a card cannot
+            // otherwise take you. The player covers the tab's stack, so a
+            // card shown inside it closes the player first.
+            if showChannel {
+                Button {
+                    player.dismiss()
+                    nav.push(.channel(video.channel.id))
+                } label: {
+                    Label("Go to channel", systemImage: "person.crop.rectangle")
+                }
+            }
+            DismissMenuItem(video: video, onChange: onDismissChange)
+        }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(video.title)
         .accessibilityAddTraits(.isButton)

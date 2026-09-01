@@ -22,14 +22,19 @@ struct TVShell: View {
         #endif
         return .feeds
     }()
+    /// One path per tab, owned here so a context menu deep in a grid can push
+    /// onto the tab it is in (``TVPushAction``); a stack without a path binding
+    /// cannot be pushed from anywhere but a `NavigationLink`.
+    @State private var paths: [TVTab: NavigationPath] = [:]
 
     var body: some View {
         TabView(selection: $tab) {
             ForEach(TVTab.allCases) { item in
-                NavigationStack {
+                NavigationStack(path: path(for: item)) {
                     TVSectionRoot(tab: item)
                         .tvDestinations()
                 }
+                .environment(\.tvPush, TVPushAction { route in paths[item, default: NavigationPath()].append(route) })
                 .tabItem { Label(item.title, systemImage: item.icon) }
                 .tag(item)
             }
@@ -45,6 +50,15 @@ struct TVShell: View {
         .fullScreenCover(item: player.presented) { _ in
             TVWatchView()
         }
+    }
+}
+
+extension TVShell {
+    private func path(for tab: TVTab) -> Binding<NavigationPath> {
+        Binding(
+            get: { paths[tab, default: NavigationPath()] },
+            set: { paths[tab] = $0 }
+        )
     }
 }
 
