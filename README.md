@@ -177,7 +177,7 @@ All configuration is via environment variables.
 | `MEDIA_TOKEN_SECONDS` | no | how long a signed media token stays valid; default 2592000 (30 days) |
 | `MEDIA_CACHE_DIR` | no | where derived renditions are cached; default a temp dir. Must be writable — an HLS rendition of a 1080p hour is ~2–3 GB, a 2160p HEVC one ~6–8 GB |
 | `MEDIA_CACHE_MAX_BYTES` | no | cache size cap before least-recently-used eviction (default 5 GiB) |
-| `MEDIA_TRANSCODE_JOBS` | no | concurrent HLS transcodes (default 1), counted across every video and height; extra requests queue |
+| `MEDIA_TRANSCODE_JOBS` | no | concurrent HLS transcodes (default 1), counted across every video and height; extra requests queue. Scrub-preview and loudness passes run in a lane of their own and are not counted against it |
 | `MEDIA_SEGMENT_WAIT` | no | seconds a request for an HLS segment the transcode has not produced yet waits before the client is told to come back (default 60) |
 | `MEDIA_SEEK_AHEAD_SEGMENTS` | no | how far ahead of the encoder (in 4-second segments) a segment request has to be before the running transcode is re-aimed at it (default 30, about two minutes) |
 | `FFMPEG_PATH` | no | ffmpeg binary; default `ffmpeg` on `PATH` |

@@ -49,7 +49,7 @@ func (s *Server) getVideoLoudness(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "not found")
 		return
 	}
-	state := s.mediaCache.StartDir(name,
+	state := s.mediaCache.StartScan(name,
 		media.Measure(s.ffmpegPath, s.log, s.rangeSource(taMediaPath(v.MediaURL))))
 	// Nothing to apply yet. A gain of 0 is the honest answer while the pass
 	// runs and after one that failed alike: play the video as it was archived.

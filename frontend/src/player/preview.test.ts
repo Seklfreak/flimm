@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
-import { parsePreviewTrack, tileAt } from "./preview";
+import { act, renderHook } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { parsePreviewTrack, tileAt, usePreviewTiles } from "./preview";
 
 const track = `WEBVTT
 
@@ -76,5 +77,36 @@ describe("tileAt", () => {
 
   it("has nothing to show without a track", () => {
     expect(tileAt([], 5)).toBeUndefined();
+  });
+});
+
+describe("usePreviewTiles", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  // The sheet is a full decode of the file and can queue behind other work on
+  // the server. Giving up while the player is still open meant a preview that
+  // arrived a minute late reached nobody.
+  it("keeps asking until the derivation lands", async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi.fn().mockResolvedValue({ ok: false });
+    vi.stubGlobal("fetch", fetchMock);
+    const { result } = renderHook(() => usePreviewTiles(trackURL, true));
+
+    // Past the last of the growing gaps, with nothing but 404s so far.
+    for (let i = 0; i < 8; i++) await act(async () => void (await vi.advanceTimersByTimeAsync(60_000)));
+    expect(fetchMock.mock.calls.length).toBeGreaterThan(4);
+    expect(result.current).toEqual([]);
+
+    fetchMock.mockResolvedValue({ ok: true, text: async () => track });
+    await act(async () => void (await vi.advanceTimersByTimeAsync(60_000)));
+    expect(result.current).toHaveLength(3);
+
+    // And then it stops: the answer is on disk and immutable.
+    const settled = fetchMock.mock.calls.length;
+    await act(async () => void (await vi.advanceTimersByTimeAsync(300_000)));
+    expect(fetchMock.mock.calls.length).toBe(settled);
   });
 });

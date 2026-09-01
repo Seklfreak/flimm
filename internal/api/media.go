@@ -322,7 +322,7 @@ func (s *Server) mediaPreview(w http.ResponseWriter, r *http.Request) {
 	}
 	name := previewName(id)
 	src := taMediaPath(v.MediaURL)
-	s.mediaCache.StartDir(name, media.Preview(s.ffmpegPath, v.Player.Duration, s.log,
+	s.mediaCache.StartScan(name, media.Preview(s.ffmpegPath, v.Player.Duration, s.log,
 		s.rangeSource(src)))
 	dir := s.mediaCache.Dir(name)
 	if !media.PreviewReady(dir) {

@@ -46,6 +46,11 @@ const (
 	// transcodeTimeout bounds a directory job. A video transcode can run near
 	// realtime on a busy box, so a long video needs hours, not minutes.
 	transcodeTimeout = 4 * time.Hour
+	// scanJobs caps the scan lane. Two, because opening a video starts both of
+	// them — the preview sheet and the loudness pass — and making the second
+	// wait out the first would put the stills a scrub needs behind a
+	// measurement nothing is looking at.
+	scanJobs = 2
 )
 
 type Cache struct {
@@ -62,6 +67,13 @@ type Cache struct {
 	// running four at once does not finish any of them sooner — it only makes
 	// the first viewer wait four times as long for the first segment.
 	slots chan struct{}
+	// scanSlots is a lane of its own for the read-only passes over a file —
+	// the scrub-preview sheet and the loudness measurement. They are decodes,
+	// not encodes: a minute of work for a few hundred KB, against an encode
+	// that runs for tens of minutes. Sharing one lane meant a box transcoding
+	// anything at all derived no scrub previews, because every client gives up
+	// long before a transcode lets go of the slot.
+	scanSlots chan struct{}
 	// baseCtx outlives every request: a job runs to completion whoever walks
 	// away from it, and is cancelled only by Close.
 	baseCtx context.Context
@@ -88,14 +100,15 @@ func NewCache(dir string, maxBytes int64, maxJobs int, log *slog.Logger) (*Cache
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Cache{
-		dir:      dir,
-		maxBytes: maxBytes,
-		log:      log,
-		inflight: map[string]*job{},
-		dirs:     map[string]*dirJob{},
-		slots:    make(chan struct{}, maxJobs),
-		baseCtx:  ctx,
-		cancel:   cancel,
+		dir:       dir,
+		maxBytes:  maxBytes,
+		log:       log,
+		inflight:  map[string]*job{},
+		dirs:      map[string]*dirJob{},
+		slots:     make(chan struct{}, maxJobs),
+		scanSlots: make(chan struct{}, scanJobs),
+		baseCtx:   ctx,
+		cancel:    cancel,
 	}, nil
 }
 

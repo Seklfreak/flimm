@@ -63,25 +63,30 @@ public enum ScrubPreview {
     /// Fetches a video's preview track, waiting out the derivation.
     ///
     /// A 404 is the normal first answer — asking is what starts the work — so
-    /// this asks again a few times, with growing gaps, and then gives up: the
-    /// next time the video is opened will find it on disk. Nothing waits on
-    /// this; the video is already playing.
+    /// this asks again with growing gaps for as long as the caller's task
+    /// lives. It used to stop after three waits, which meant a sheet that took
+    /// longer than three quarters of a minute to derive never reached the
+    /// scrubber it was made for, however long the video stayed on screen.
+    /// Nothing waits on this either way; the video is already playing.
     public static func load(trackPath: String, client: APIClient) async -> [PreviewTile] {
-        for (attempt, gap) in retryGaps.enumerated() {
+        var attempt = 0
+        while !Task.isCancelled {
             if attempt > 0 {
+                let gap = retryGaps[min(attempt, retryGaps.count - 1)]
                 guard (try? await Task.sleep(nanoseconds: UInt64(gap * 1_000_000_000))) != nil else { return [] }
             }
             if let vtt = await fetch(trackPath, client: client) {
                 return tiles(from: vtt, trackPath: trackPath)
             }
-            if Task.isCancelled { return [] }
+            attempt += 1
         }
         return []
     }
 
     /// The first entry is the first try, so only the later ones are waits. A
-    /// sheet is one decode of the whole file, which is why they grow.
-    private static let retryGaps: [Double] = [0, 4, 10, 30]
+    /// sheet is one decode of the whole file, which is why they grow; the last
+    /// gap is then held until the player closes.
+    private static let retryGaps: [Double] = [0, 4, 10, 30, 60]
 
     private static func fetch(_ path: String, client: APIClient) async -> String? {
         guard let url = client.mediaURL(path), let headers = try? await client.mediaHeaders() else { return nil }

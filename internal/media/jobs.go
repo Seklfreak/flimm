@@ -86,7 +86,7 @@ func (j *dirJob) finish(err error) {
 // failure is not sticky — it is retried here — which is what keeps one bad
 // run from wedging a video forever.
 func (c *Cache) StartDir(name string, derive DirDeriveFunc) JobState {
-	return c.StartDirJob(name, nil, derive)
+	return c.startDir(name, c.slots, nil, derive)
 }
 
 // StartDirJob is StartDir with a preparation step that runs *before* the job
@@ -95,6 +95,18 @@ func (c *Cache) StartDir(name string, derive DirDeriveFunc) JobState {
 // transcode — the playlist is derived from the video's duration and needs no
 // encoder to exist.
 func (c *Cache) StartDirJob(name string, prepare, derive DirDeriveFunc) JobState {
+	return c.startDir(name, c.slots, prepare, derive)
+}
+
+// StartScan is StartDir in the scan lane: a read-only pass over the file that
+// produces a few hundred KB, not a rendition. It is queued apart from the
+// transcodes on purpose — a scrub preview behind a forty-minute encode is a
+// scrub preview no client is still waiting for.
+func (c *Cache) StartScan(name string, derive DirDeriveFunc) JobState {
+	return c.startDir(name, c.scanSlots, nil, derive)
+}
+
+func (c *Cache) startDir(name string, slots chan struct{}, prepare, derive DirDeriveFunc) JobState {
 	path := filepath.Join(c.dir, name)
 
 	c.mu.Lock()
@@ -115,7 +127,7 @@ func (c *Cache) StartDirJob(name string, prepare, derive DirDeriveFunc) JobState
 	c.wg.Add(1)
 	go func() {
 		defer c.wg.Done()
-		err := c.deriveDir(path, prepare, derive)
+		err := c.deriveDir(path, slots, prepare, derive)
 		j.finish(err)
 		if err != nil {
 			if c.log != nil {
@@ -139,7 +151,7 @@ func (c *Cache) StartDirJob(name string, prepare, derive DirDeriveFunc) JobState
 // deriveDir runs one directory derivation: prepare, wait for a slot, build in
 // place, and mark it complete. On any failure the partial directory is removed,
 // so the next request starts clean rather than serving a truncated rendition.
-func (c *Cache) deriveDir(path string, prepare, derive DirDeriveFunc) error {
+func (c *Cache) deriveDir(path string, slots chan struct{}, prepare, derive DirDeriveFunc) error {
 	// Detached from any request: a viewer navigating away must not abandon a
 	// transcode others are waiting on, or leave the cache holding half of one.
 	ctx, cancel := context.WithTimeout(c.baseCtx, transcodeTimeout)
@@ -161,12 +173,12 @@ func (c *Cache) deriveDir(path string, prepare, derive DirDeriveFunc) error {
 	}
 
 	select {
-	case c.slots <- struct{}{}:
+	case slots <- struct{}{}:
 	case <-c.baseCtx.Done():
 		_ = os.RemoveAll(path)
 		return ErrClosed
 	}
-	defer func() { <-c.slots }()
+	defer func() { <-slots }()
 
 	if err := derive(ctx, path); err != nil {
 		_ = os.RemoveAll(path)

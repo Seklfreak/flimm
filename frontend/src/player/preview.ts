@@ -76,8 +76,11 @@ export function tileAt(tiles: PreviewTile[], time: number): PreviewTile | undefi
  * Loads a video's preview track, if the server has derived one.
  *
  * A 404 is the normal answer while it is being made — asking is what starts
- * that — so this retries a couple of times, slowly, and then stops. Nothing
- * waits on it: the player is already playing.
+ * that — so this keeps asking, with growing gaps, for as long as the player is
+ * open. It used to stop after three tries, which meant a sheet that took
+ * longer than three quarters of a minute to derive never reached the scrubber
+ * it was made for, however long the video stayed on screen. Nothing waits on
+ * it either way: the player is already playing.
  */
 export function usePreviewTiles(trackURL: string | undefined, mediaReady: boolean): PreviewTile[] {
   const [tiles, setTiles] = useState<PreviewTile[]>([]);
@@ -99,8 +102,8 @@ export function usePreviewTiles(trackURL: string | undefined, mediaReady: boolea
       } catch {
         /* offline, or the player is being torn down; try again if there is one left */
       }
-      if (cancelled || attempt >= RETRIES.length) return;
-      timer = window.setTimeout(load, RETRIES[attempt++]);
+      if (cancelled) return;
+      timer = window.setTimeout(load, RETRY_GAPS[Math.min(attempt++, RETRY_GAPS.length - 1)]);
     };
     void load();
     return () => {
@@ -112,6 +115,6 @@ export function usePreviewTiles(trackURL: string | undefined, mediaReady: boolea
 }
 
 // How long to wait before asking again, in ms. A sheet is one decode of the
-// whole file, so the gaps grow; after these, the next time the video is opened
-// will find it.
-const RETRIES = [4000, 10000, 30000];
+// whole file, so the gaps grow; the last one is then held, and asking stops
+// only when the player closes.
+const RETRY_GAPS = [4000, 10000, 30000, 60000];

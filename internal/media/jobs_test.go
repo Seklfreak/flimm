@@ -165,6 +165,28 @@ func TestConcurrentJobsAreCapped(t *testing.T) {
 	}
 }
 
+// The scan lane is why a scrub preview appears at all on a box that transcodes:
+// sharing the transcode lane put a minute of decoding behind an encode that
+// runs for tens of minutes, and every client gives up long before that.
+func TestScansDoNotQueueBehindATranscode(t *testing.T) {
+	c := newDirCache(t, 0, 1)
+	holding, release := make(chan struct{}), make(chan struct{})
+	c.StartDir("hls-a", func(_ context.Context, dir string) error {
+		close(holding)
+		<-release
+		return writeIn(t, dir, "index.m3u8", 10)
+	})
+	defer close(release)
+	// Only once the transcode is inside its slot is there anything to queue
+	// behind.
+	<-holding
+
+	c.StartScan("preview-a", func(_ context.Context, dir string) error {
+		return writeIn(t, dir, PreviewTrackName, 10)
+	})
+	waitState(t, c, "preview-a", StateDone)
+}
+
 // The point of the whole design: the playlist request returns as soon as the
 // first segments exist, not when the transcode ends.
 func TestWaitDirReturnsBeforeTheJobFinishes(t *testing.T) {

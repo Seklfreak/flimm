@@ -1005,7 +1005,9 @@ avoids entirely. Clients draw the author's initial instead.
 measure-only mode, EBU R128) and says how many decibels to move it by. The
 `loudness` variant is a directory holding that one small JSON file; nothing is
 re-encoded and the archived file is never touched. `-vn` makes the pass cheap:
-the whole file is read either way, but only the audio is decoded.
+the whole file is read either way, but only the audio is decoded. Like the
+[scrub preview](#scrub-previews) it runs in the scan lane rather than behind
+`MEDIA_TRANSCODE_JOBS`.
 
 **The server computes the gain, not the clients.** It is the smaller of two
 limits — the distance to the **-18 LUFS** target, and the headroom to a -1.0
@@ -1047,8 +1049,15 @@ It is the most expensive derivation per unit of use — a full decode of the
 file, because stills at a *regular* interval are not the keyframes the encoder
 happened to leave — so nothing derives it until a player asks, and the clients
 only ask once playback has actually begun. Asking is what starts it: the first
-request is a 404 and the answer arrives on a later one. Nothing waits on it;
-a scrubber with no stills is still a scrubber.
+request is a 404 and the answer arrives on a later one. Clients keep asking,
+with growing gaps up to a minute, for as long as the player is open. Nothing
+waits on it; a scrubber with no stills is still a scrubber.
+
+It runs in the **scan lane**, not behind `MEDIA_TRANSCODE_JOBS`. Both are
+ffmpeg over the same file, but a scan is a decode that produces a few hundred
+KB and an HLS rendition is an encode that runs for tens of minutes: queueing
+one behind the other meant a box transcoding anything at all derived no
+previews at any point a client was still asking.
 
 #### Compatible video renditions (HLS)
 
@@ -1175,7 +1184,9 @@ Costs, so nobody is surprised:
   **across every video and every height**; extra requests queue, because two
   transcodes sharing a core make both viewers wait longer. A client that
   prefetches several qualities of the same video therefore serialises them —
-  ask for the one that will be played.
+  ask for the one that will be played. It caps **transcodes only**: the scrub
+  preview and the loudness pass are decodes of a wholly different length and
+  queue in a lane of their own, two at a time.
 - **Unless there is a GPU.** With an Intel iGPU exposed to the server
   (`MEDIA_HWACCEL`, default `auto`) the decode, the scale and the encode all
   run on it, and the same job takes minutes instead. Nothing about the
@@ -1254,7 +1265,7 @@ tested against a fake.
 | `MEDIA_TOKEN_SECONDS` | no | how long a signed media token (cookie and `media_token` URL parameter) stays valid; default 2592000 (30 days) |
 | `MEDIA_CACHE_DIR` | no | where derived media is cached; default a temp dir. Must be writable; an HLS rendition of a 1080p hour is ~1.5 GB |
 | `MEDIA_CACHE_MAX_BYTES` | no | cache size cap before LRU eviction; default 5 GiB |
-| `MEDIA_TRANSCODE_JOBS` | no | concurrent HLS transcodes; default 1, extra requests queue |
+| `MEDIA_TRANSCODE_JOBS` | no | concurrent HLS transcodes; default 1, extra requests queue. Scrub-preview and loudness passes are not counted against it — they have their own lane |
 | `MEDIA_SEGMENT_WAIT` | no | seconds a request for an HLS segment the transcode has not produced yet blocks before the client is told to come back; default 60 |
 | `MEDIA_SEEK_AHEAD_SEGMENTS` | no | how far ahead of the encoder (in 4-second segments) a segment request has to be before the running transcode is re-aimed at it; default 30 (about two minutes) |
 | `FFMPEG_PATH` | no | ffmpeg binary; default `ffmpeg` on `PATH` |
