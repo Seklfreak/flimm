@@ -261,6 +261,32 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(function Player(
     };
   }, [el, url, isHls, caps.nativeHLS, rendition.started, playerFrom]);
 
+  // Unmounting the player is not the same as releasing it.
+  //
+  // React takes the <video> out of the DOM and the browser pauses it, and that
+  // looks like enough — but the element itself outlives the page for as long as
+  // anything still references it. It keeps its request to /media open
+  // (`networkState` stays NETWORK_LOADING), and it stays the tab's media
+  // session: the lock screen, the keyboard's play key and Control Center all
+  // still point at a video the viewer walked away from, and pressing play
+  // starts it again with nothing on screen. Dropping the source and reloading
+  // is what actually lets it go — and it must run *after* the source effect
+  // above, so hls.js has already detached from the element.
+  useEffect(() => {
+    if (!el) return;
+    return () => {
+      try {
+        el.pause();
+        el.removeAttribute("src");
+        // Without this the element keeps the resource it already fetched; the
+        // load algorithm is what aborts it and returns it to NETWORK_EMPTY.
+        el.load();
+      } catch {
+        /* already torn down by the browser */
+      }
+    };
+  }, [el]);
+
   // Seek to resume point / ?t= once metadata is known; apply speed.
   useEffect(() => {
     if (!el) return;

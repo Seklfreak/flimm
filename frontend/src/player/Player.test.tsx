@@ -116,6 +116,32 @@ describe("Player audio mode", () => {
 });
 
 
+describe("leaving the player", () => {
+  // A video the viewer walked away from used to keep its request to /media
+  // open and stay the tab's media session, so the lock screen and the
+  // keyboard's play key still pointed at it — and pressing play started it
+  // again with nothing on screen. Unmounting is not releasing.
+  it("releases the media element rather than only unmounting it", () => {
+    const { container, unmount } = renderPlayer(false);
+    const el = container.querySelector("video");
+    expect(el?.getAttribute("src")).toBe("/media/video/vid1.mp4");
+
+    // jsdom implements neither, and the point of the assertion is that they
+    // are called on the way out.
+    const pause = vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => {});
+    const load = vi.spyOn(HTMLMediaElement.prototype, "load").mockImplementation(() => {});
+    unmount();
+
+    expect(pause).toHaveBeenCalled();
+    // `load()` after the source is gone is what aborts the download; without
+    // it the element keeps whatever it had already fetched.
+    expect(load).toHaveBeenCalled();
+    expect(el?.getAttribute("src")).toBeNull();
+    pause.mockRestore();
+    load.mockRestore();
+  });
+});
+
 describe("the SponsorBlock highlight", () => {
   const highlight = videoDetail({
     sponsorblock: [{ category: "poi_highlight", action_type: "poi", start: 90, end: 90 }],
