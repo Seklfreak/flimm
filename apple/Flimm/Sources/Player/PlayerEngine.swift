@@ -3,6 +3,7 @@ import AVKit
 import FlimmKit
 import Foundation
 import Observation
+import UIKit
 
 /// A thin, observable wrapper around one `AVPlayer`.
 ///
@@ -15,11 +16,19 @@ final class PlayerEngine {
 
     private(set) var currentTime: Double = 0
     private(set) var duration: Double = 0
-    private(set) var isPlaying = false
+    private(set) var isPlaying = false {
+        // Playing video is what holds the screen awake; see ``ScreenSleep``.
+        didSet { updateScreenSleep() }
+    }
     private(set) var isBuffering = false
     private(set) var isPiPActive = false
     private(set) var isPiPPossible = false
     private(set) var isMuted = false
+    /// Cleared for audio-only playback, whose whole point on a phone is to
+    /// keep going with the screen off.
+    var keepsScreenAwake = true {
+        didSet { updateScreenSleep() }
+    }
     /// True once the current item reports `readyToPlay` — the moment a
     /// "preparing…" state has something real to hand over to.
     private(set) var isReady = false
@@ -196,6 +205,7 @@ final class PlayerEngine {
     // MARK: - Teardown
 
     func tearDown() {
+        ScreenSleep.hold(false, for: self)
         if let timeObserver { player.removeTimeObserver(timeObserver) }
         timeObserver = nil
         removeItemObservers()
@@ -205,6 +215,13 @@ final class PlayerEngine {
     }
 
     // MARK: - Observation
+
+    /// The screen stays up from the moment playback is asked for, not from the
+    /// moment it starts: the wait for a compatible rendition is a spinner the
+    /// viewer is watching, and it is minutes long.
+    private func updateScreenSleep() {
+        ScreenSleep.hold(keepsScreenAwake && isPlaying, for: self)
+    }
 
     private func observeTime() {
         let interval = CMTime(seconds: 0.2, preferredTimescale: 600)

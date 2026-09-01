@@ -240,6 +240,9 @@ final class WatchModel {
         if isResume { resumedFrom = resume }
 
         NowPlayingController.configureAudioSession()
+        // Video holds the screen awake for as long as it plays; audio-only is
+        // the mode that wants the phone to lock. See ``ScreenSleep``.
+        engine.keepsScreenAwake = !audioOnly
         engine.load(
             url: url,
             headers: headers,

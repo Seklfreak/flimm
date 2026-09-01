@@ -87,6 +87,7 @@ What is there:
     is `ScrubPreview` in FlimmKit, shared with nothing yet and identical to the
     web's), playback speed, Picture in Picture, landscape full screen, and
     audio-only mode with `MPNowPlayingInfoCenter` / `MPRemoteCommandCenter`.
+    It also holds the screen awake itself while video plays (`ScreenSleep`).
   - **Search** — sectioned results with subtitle hits that open the player at
     their timestamp.
   - **iPad** — the same screens under a `NavigationSplitView`:
@@ -281,6 +282,19 @@ What is there:
 
     The phone and iPad have no equivalent and want none: iOS has no top shelf,
     and a widget is a different feature with a different design.
+  - **A player with its own controls holds the screen awake itself.** The
+    phone dimmed and then locked mid-video: `AVPlayerViewController` keeps the
+    display up for the TV app, and a browser does it for a playing `<video>`,
+    but this player is a bare `AVPlayerLayer` under controls of our own and
+    `AVPlayer.preventsDisplaySleepDuringVideoPlayback` did not cover it. The
+    hold (`ScreenSleep`, driven by `PlayerEngine.isPlaying`) is taken from the
+    moment playback is *asked for*, not from the moment a picture appears —
+    the wait for a compatible rendition is minutes of spinner the viewer is
+    watching — and audio-only clears it, because playing with the screen off
+    is that mode's whole point. `UIApplication.isIdleTimerDisabled` is one
+    app-wide flag, so holders are counted: opening a video while another is
+    open builds the new `WatchModel` before the old one tears down, and the
+    departing player must not hand the screen back under it.
   - **Scrub previews are the TV's one stated gap.** The web, phone and iPad
     draw `preview_url`'s stills above the scrubber; the TV cannot be handed
     them, because the scrubber there is `AVPlayerViewController`'s and AVKit
