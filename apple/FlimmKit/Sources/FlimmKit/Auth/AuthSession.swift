@@ -49,8 +49,12 @@ public final class AuthSession {
     private let tokenStore: TokenStore
     private var oidc: OIDCClient?
     /// Assigned once, on the main actor, and read again only by `deinit`,
-    /// which Swift runs outside the actor — hence the annotation.
-    nonisolated(unsafe) private var foregroundObserver: (any NSObjectProtocol)?
+    /// which Swift runs outside the actor — hence `nonisolated(unsafe)`. It
+    /// only lands on a *stored* property, so the token has to be kept out of
+    /// `@Observable`'s reach as well: the macro would otherwise rewrite this
+    /// into a computed one, and the annotation would silently do nothing.
+    /// Nothing observes it either — it is bookkeeping for `deinit`.
+    @ObservationIgnored nonisolated(unsafe) private var foregroundObserver: (any NSObjectProtocol)?
 
     private static let serverKey = "flimm.server"
     /// Sent as the bearer token to a server running without auth. Any
