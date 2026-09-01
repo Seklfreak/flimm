@@ -85,8 +85,12 @@ What is there:
     drives identically), self-rendered WebVTT subtitles, scrub-preview stills above the thumb while dragging (the sheet
     and track from `preview_url`, cropped with `CGImage.cropping`; the parsing
     is `ScrubPreview` in FlimmKit, shared with nothing yet and identical to the
-    web's), playback speed, Picture in Picture, landscape full screen, and
-    audio-only mode with `MPNowPlayingInfoCenter` / `MPRemoteCommandCenter`.
+    web's), playback speed, Picture in Picture, full screen (landscape is
+    full screen by itself; the explicit toggle in portrait is left by the
+    button, by `Esc`, or by pulling the picture down), and audio-only mode
+    with `MPNowPlayingInfoCenter` / `MPRemoteCommandCenter`. The phone has
+    one close control, the bar's ✕: the overlay's top-left button exists only
+    in full screen, where the bar is hidden.
     It also holds the screen awake itself while video plays (`ScreenSleep`).
   - **Search** — sectioned results with subtitle hits that open the player at
     their timestamp.

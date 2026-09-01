@@ -84,6 +84,9 @@ final class TVWatchModel {
     /// from a phone on cellular, so quality never goes to `PATCH /me/prefs`.
     @ObservationIgnored private let playback: PlaybackSettings
     @ObservationIgnored private let reporter: ProgressReporter
+    /// Whether the server accepted a heartbeat this session; see the phone's
+    /// `WatchModel` for why that alone stales every cached list.
+    @ObservationIgnored private var reportedProgress = false
     @ObservationIgnored private var startAtOverride: Double?
     @ObservationIgnored private var timeObserver: Any?
     @ObservationIgnored private var endObserver: (any NSObjectProtocol)?
@@ -438,6 +441,9 @@ final class TVWatchModel {
         services.stop()
         steering.cancel()
         await reporter.stop()
+        // After the last heartbeat: the list underneath reloads once this
+        // returns, and its in-progress row has to show where playback stopped.
+        if reportedProgress { await app.videoListStateChanged() }
         if let timeObserver { player.removeTimeObserver(timeObserver) }
         timeObserver = nil
         if let endObserver { NotificationCenter.default.removeObserver(endObserver) }
@@ -717,6 +723,7 @@ private extension TVWatchModel {
     /// heartbeat comes back `watched`. The lists behind the player are then as
     /// stale as after an explicit "Mark seen", and need the same invalidation.
     func applyProgress(_ result: ProgressResult) async {
+        reportedProgress = true
         guard result.watched, !isWatched else { return }
         isWatched = true
         await app.videoListStateChanged()

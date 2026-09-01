@@ -39,9 +39,12 @@ struct TVChannelDetailView: View {
         .task(id: view) { await reload() }
         // Same as the feed screen: the player invalidates these lists, and a
         // stale "Unseen" channel is what a viewer notices.
-        .reloadsWhenPlayerCloses(request: player.request, isStale: isPagerStale) {
-            await reload()
-        }
+        .reloadsWhenPlayerCloses(
+            request: player.request,
+            settled: { await player.settle() },
+            isStale: isPagerStale,
+            reload: { await reload() }
+        )
     }
 
     private var header: some View {

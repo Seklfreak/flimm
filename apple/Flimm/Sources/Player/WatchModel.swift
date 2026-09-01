@@ -83,6 +83,10 @@ final class WatchModel {
     /// network, so it never goes to `PATCH /me/prefs`.
     @ObservationIgnored private let playback: PlaybackSettings
     @ObservationIgnored private let reporter: ProgressReporter
+    /// Whether the server accepted a heartbeat this session. A position that
+    /// moved is what an "in progress" row shows, so the lists are stale once
+    /// it has, not only when the video finished.
+    @ObservationIgnored private var reportedProgress = false
     @ObservationIgnored private let nowPlaying = NowPlayingController()
     @ObservationIgnored private var startAtOverride: Double?
     @ObservationIgnored private var artwork: UIImage?
@@ -491,10 +495,6 @@ final class WatchModel {
 
     // MARK: - Lifecycle
 
-    func flush() async {
-        await reporter.flush()
-    }
-
     func handleBackground() async {
         await reporter.flush()
         // Video keeps the screen; audio-only is what earns background playback.
@@ -510,6 +510,12 @@ final class WatchModel {
         nowPlaying.unregister()
         engine.tearDown()
         NowPlayingController.deactivateAudioSession()
+        // After the last heartbeat, not before: the feed underneath reloads
+        // once this returns (``PlayerCoordinator/settle()``), and its
+        // in-progress row has to show where playback actually stopped. A
+        // session that never reported — opened and closed, or under the play
+        // threshold — changed nothing and drops nothing.
+        if reportedProgress { await app.videoListStateChanged() }
     }
 
     private func beginReporting() async {
@@ -532,6 +538,7 @@ final class WatchModel {
     private var playbackPosition: Double { engine.currentTime }
 
     private func applyProgress(_ result: ProgressResult) async {
+        reportedProgress = true
         guard result.watched, !isWatched else { return }
         isWatched = true
         // The explicit "Mark seen" isn't the only way a video finishes —

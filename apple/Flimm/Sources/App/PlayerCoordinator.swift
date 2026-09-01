@@ -31,6 +31,11 @@ final class PlayerCoordinator {
     /// Set by the full-screen control and the `f` key. On iPad it also collapses
     /// the sidebar, which is what "full screen" means in a split view.
     var isFullScreen = false
+    /// The teardown of the session that was just closed: its last heartbeat is
+    /// still in flight when `request` goes nil, and a list that reloads on the
+    /// way back has to wait for it or it reads the position from before the
+    /// player opened. Nil once it has landed.
+    private(set) var closing: Task<Void, Never>?
 
     @ObservationIgnored private weak var app: AppModel?
     /// The device's own playback settings — quality. One instance is shared
@@ -67,7 +72,16 @@ final class PlayerCoordinator {
         model = nil
         request = nil
         isFullScreen = false
-        Task { await leaving?.tearDown() }
+        closing = Task { [weak self] in
+            await leaving?.tearDown()
+            self?.closing = nil
+        }
+    }
+
+    /// Waits for the session that was just closed to finish reporting, so
+    /// whatever reloads afterwards sees the position it left at.
+    func settle() async {
+        await closing?.value
     }
 
     /// Drives both shells' presentation. Popping the iPad detail push writes

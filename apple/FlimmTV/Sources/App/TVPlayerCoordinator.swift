@@ -55,7 +55,19 @@ final class TVPlayerCoordinator {
         let leaving = model
         model = nil
         request = nil
-        Task { await leaving?.tearDown() }
+        closing = Task { [weak self] in
+            await leaving?.tearDown()
+            self?.closing = nil
+        }
+    }
+
+    /// The teardown of the session just closed, still reporting its last
+    /// position while `request` is already nil; a list that reloads on the
+    /// way back waits for it (see `reloadsWhenPlayerCloses`).
+    private(set) var closing: Task<Void, Never>?
+
+    func settle() async {
+        await closing?.value
     }
 
     /// Drives the full-screen cover. Dismissing it is the same thing as

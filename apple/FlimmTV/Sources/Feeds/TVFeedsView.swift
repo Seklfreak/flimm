@@ -40,12 +40,17 @@ struct TVFeedsView: View {
         .task(id: contextKey) { await rebuildPager() }
         // A video finished or marked seen in the player drops this list from
         // the cache; coming back to a stale "Unseen" grid is the bug.
-        .reloadsWhenPlayerCloses(request: player.request, isStale: isPagerStale) {
-            await rebuildPager()
-            // Watching something changes the shelf too: that video is either
-            // gone from an unseen feed or carrying a resume bar now.
-            await publishTopShelf()
-        }
+        .reloadsWhenPlayerCloses(
+            request: player.request,
+            settled: { await player.settle() },
+            isStale: isPagerStale,
+            reload: {
+                await rebuildPager()
+                // Watching something changes the shelf too: that video is
+                // either gone from an unseen feed or carrying a resume bar now.
+                await publishTopShelf()
+            }
+        )
     }
 
     /// Whether this screen is showing a pager the cache has since dropped.

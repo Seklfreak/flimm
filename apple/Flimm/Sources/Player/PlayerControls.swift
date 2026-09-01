@@ -105,11 +105,17 @@ struct PlayerControls: View {
 
     private var topBar: some View {
         HStack(spacing: 14) {
-            Button(action: onClose) {
-                Image(systemName: isFullScreen ? "arrow.down.right.and.arrow.up.left" : "chevron.down")
-                    .playerHitTarget(hit)
+            // Only in full screen, where the navigation bar and its Close
+            // (or Back) are hidden. Outside it the bar already has one, and
+            // a second "minimise" glyph a finger's width below it read as
+            // two ways out that might do different things.
+            if isFullScreen {
+                Button(action: onClose) {
+                    Image(systemName: "arrow.down.right.and.arrow.up.left")
+                        .playerHitTarget(hit)
+                }
+                .accessibilityLabel("Exit full screen")
             }
-            .accessibilityLabel(isFullScreen ? "Exit full screen" : "Close player")
             Spacer(minLength: 0)
             Button {
                 Task { await model.toggleAudioOnly() }

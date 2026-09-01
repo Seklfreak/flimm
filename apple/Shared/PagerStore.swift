@@ -77,15 +77,26 @@ final class PagerStore {
 /// back to this list"; `isStale` then decides whether anything actually
 /// changed, so a dismissal that invalidated nothing reloads nothing and the
 /// list does not jump under the viewer.
+///
+/// `settled` runs first and is awaited: the request goes nil the instant the
+/// player is dismissed, while its last heartbeat is still on the wire. Judging
+/// staleness before that lands is how a feed kept showing the position from
+/// before the video was opened — and a pull-to-refresh a moment later could
+/// race the same heartbeat.
 extension View {
     func reloadsWhenPlayerCloses<Request: Equatable>(
         request: Request?,
+        settled: @escaping () async -> Void,
         isStale: @escaping () -> Bool,
         reload: @escaping () async -> Void
     ) -> some View {
         onChange(of: request) { old, new in
-            guard old != nil, new == nil, isStale() else { return }
-            Task { await reload() }
+            guard old != nil, new == nil else { return }
+            Task {
+                await settled()
+                guard isStale() else { return }
+                await reload()
+            }
         }
     }
 }

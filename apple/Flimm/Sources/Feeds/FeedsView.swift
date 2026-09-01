@@ -56,9 +56,12 @@ struct FeedsView: View {
             await rebuildPager()
             await loadNewSeries()
         }
-        .reloadsWhenPlayerCloses(request: player.request, isStale: isPagerStale) {
-            await rebuildPager()
-        }
+        .reloadsWhenPlayerCloses(
+            request: player.request,
+            settled: { await player.settle() },
+            isStale: isPagerStale,
+            reload: { await rebuildPager() }
+        )
     }
 
     /// "This channel started a new series" — announced once, until the

@@ -55,6 +55,12 @@ struct WatchView: View {
                 if isFullScreen {
                     stage(model)
                         .ignoresSafeArea()
+                        // Pulling the picture down leaves full screen, the
+                        // way a sheet is pulled away. Portrait only: in
+                        // landscape full screen is the orientation, and
+                        // rotating back is what ends it. The scrubber's own
+                        // drag wins over this one, being the child.
+                        .gesture(pullDownToExit)
                 } else if isWide {
                     wide(model)
                 } else {
@@ -77,8 +83,10 @@ struct WatchView: View {
         .toolbar(isFullScreen ? .hidden : .automatic, for: .navigationBar)
         .toolbar {
             // The phone presents this screen modally, which has no Back
-            // button; the overlay's own chevron hides itself and is absent
-            // entirely on the codec-gate and failure views.
+            // button, and this is the one close control: the overlay carries
+            // none outside full screen, where the bar is hidden. It is also
+            // there on the codec-gate and failure views, which draw no
+            // overlay at all.
             if horizontalSizeClass == .compact {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("Close", systemImage: "xmark") { player.dismiss() }
@@ -265,6 +273,26 @@ struct WatchView: View {
         .contentShape(Rectangle())
         .onTapGesture { toggleControls() }
         .onAppear { scheduleHide() }
+        // The hide is only armed while playing (see `scheduleHide()`), so a
+        // pass that found the player paused, buffering or still loading has
+        // to be re-armed when playback does begin — or the chrome stays up
+        // until the next tap, which is what "the controls never go away" was.
+        .onChange(of: model.engine.isPlaying) { _, playing in playbackStateChanged(playing) }
+    }
+
+    private func playbackStateChanged(_ playing: Bool) {
+        if playing { scheduleHide() }
+    }
+
+    /// A downward pull on the full-screen picture, in portrait.
+    private var pullDownToExit: some Gesture {
+        DragGesture(minimumDistance: 40)
+            .onEnded { value in
+                guard player.isFullScreen, verticalSizeClass != .compact else { return }
+                let drop = value.translation.height
+                guard drop > 90, drop > abs(value.translation.width) * 1.5 else { return }
+                player.isFullScreen = false
+            }
     }
 
     /// How far the cue sits above the bottom of the picture: a share of the

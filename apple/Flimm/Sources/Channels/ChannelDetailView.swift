@@ -62,9 +62,12 @@ struct ChannelDetailView: View {
         // Same reason as the feed screen: a video finished or marked seen in
         // the player drops this list from the cache, and an "Unseen" channel
         // that still lists it is the bug.
-        .reloadsWhenPlayerCloses(request: player.request, isStale: isPagerStale) {
-            await reloadVideos(force: false)
-        }
+        .reloadsWhenPlayerCloses(
+            request: player.request,
+            settled: { await player.settle() },
+            isStale: isPagerStale,
+            reload: { await reloadVideos(force: false) }
+        )
     }
 
     /// Whether this screen is showing a pager the cache has since dropped.
