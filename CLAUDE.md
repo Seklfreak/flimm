@@ -168,9 +168,13 @@ TA_URL=http://localhost:8001 TA_TOKEN=dev SPONSORBLOCK_URL= \
   rendition now has to queue.
 - The fake's catalogue is built for exactly this: a running-timer picture so a
   seek or a resume can be checked by eye, embedded chapters, SponsorBlock
-  segments, WebVTT subtitles that name their own timestamps, and a VP9 video
+  segments, WebVTT subtitles that name their own timestamps, a VP9 video
   Apple hardware cannot decode, which is the only way to reach the codec gate
-  and the compatible-rendition wait.
+  and the compatible-rendition wait, and one **2.40:1** video — the only
+  non-16:9 shape in it, and the only way to catch anything that quietly
+  assumes every source is 16:9. A scrub-preview sheet did, and was black past
+  the first row for every wider video. **When a fixture cannot reach a bug,
+  adding the fixture is part of the fix.**
 
 Screenshot what changed. If a change genuinely cannot be reached this way, say
 so plainly rather than implying it was seen.

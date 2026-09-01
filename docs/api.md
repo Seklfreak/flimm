@@ -1039,11 +1039,21 @@ does this speaks). A sheet rather than a thousand files because a drag moves
 through dozens of positions a second, and one image already in the client's
 memory answers all of them.
 
-The stills are 160px wide, ten to a row, at most 200 of them and never closer
-together than two seconds — so a three-minute video gets one every two seconds
-and a two-hour one gets one every 36, both in a sheet of a few hundred KB. The
-track is written **after** the sheet, so its presence is what "ready" means:
-a job that died halfway leaves a sheet no client can be handed.
+The cells are a fixed **160×90**, ten to a row, at most 200 of them and never
+closer together than two seconds — so a three-minute video gets one every two
+seconds and a two-hour one gets one every 36, both in a sheet of a few hundred
+KB. The track is written **after** the sheet, so its presence is what "ready"
+means: a job that died halfway leaves a sheet no client can be handed.
+
+The cell is fixed rather than the source's own shape, and each still is
+letterboxed into it. A track can only address a sheet by arithmetic, so the
+arithmetic needs a cell it can rely on: scaling to the source made every ratio
+but 16:9 wrong, and for anything wider the later rows fell off the bottom of
+the image, which a client draws as nothing at all. It also bounds the sheet —
+a vertical video's twenty rows would otherwise come to 5680px, past the
+texture size browsers are happy with. The cache entry is named for the cell
+(`preview-160x90-<id>`) so a sheet built for one grid can never be found and
+served under another.
 
 It is the most expensive derivation per unit of use — a full decode of the
 file, because stills at a *regular* interval are not the keyframes the encoder

@@ -92,7 +92,10 @@ export function Scrubber({ time, duration, chapters, sponsorblock, onSeek, previ
           a background-position, not a fetch. */}
       {hover && hoverTile && (
         <div
-          className="pointer-events-none absolute bottom-8 -translate-x-1/2 overflow-hidden rounded-lg border border-white/15 shadow-modal"
+          // `bg-black` so the still reads as a picture from the first frame:
+          // the sheet is one image for the whole video, and an unpainted box
+          // over a black player is indistinguishable from a broken preview.
+          className="pointer-events-none absolute bottom-8 -translate-x-1/2 overflow-hidden rounded-lg border border-white/15 bg-black shadow-modal"
           style={{
             left: hover.x,
             width: hoverTile.w,

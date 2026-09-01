@@ -78,7 +78,7 @@ func (m *Media) encode(ctx context.Context, path, title string, s spec) error {
 	tmp := strings.TrimSuffix(path, ".mp4") + ".partial.mp4"
 	args := []string{
 		"-y", "-hide_banner", "-loglevel", "error",
-		"-f", "lavfi", "-i", fmt.Sprintf("testsrc2=size=%dx%d:rate=30:duration=%.0f", s.height*16/9, s.height, s.seconds),
+		"-f", "lavfi", "-i", fmt.Sprintf("testsrc2=size=%dx%d:rate=30:duration=%.0f", s.codedWidth(), s.height, s.seconds),
 		"-f", "lavfi", "-i", fmt.Sprintf("sine=frequency=220:duration=%.0f", s.seconds),
 	}
 	// Chapters ride in through a metadata input, which is how the embedded

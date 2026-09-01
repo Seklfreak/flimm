@@ -27,11 +27,17 @@ type Catalogue struct {
 // spec describes one video before its media file exists. Duration is what the
 // generator actually encodes, so the document and the file agree.
 type spec struct {
-	title    string
-	seconds  float64
-	kind     string // videos|shorts|streams
-	codec    string // avc1|vp09 — vp09 is what makes a client reach for the HLS rendition
-	height   int
+	title   string
+	seconds float64
+	kind    string // videos|shorts|streams
+	codec   string // avc1|vp09 — vp09 is what makes a client reach for the HLS rendition
+	height  int
+	// width is the coded width. 0 means 16:9 from the height, which is what
+	// nearly every archived video is. A spec that sets it is buying the one
+	// thing 16:9 cannot exercise: anything derived per-frame has to fit a
+	// still into a cell it did not choose, and a scrub-preview sheet built on
+	// the assumption that it never has to was wrong for every other ratio.
+	width    int
 	chapters bool
 	sponsors bool
 	// levelDB moves the generated tone, in decibels, so the archive is not one
@@ -42,6 +48,15 @@ type spec struct {
 	// *boosts*, and a video is loud or quiet relative to the -18 LUFS target
 	// the server normalises toward.
 	levelDB float64
+}
+
+// codedWidth is the width the generator encodes and the document reports —
+// 16:9 unless the spec says otherwise.
+func (s spec) codedWidth() int {
+	if s.width > 0 {
+		return s.width
+	}
+	return s.height * 16 / 9
 }
 
 // The catalogue is deliberately small and deliberately varied: enough shapes
@@ -95,6 +110,10 @@ var channelSpecs = []struct {
 			{title: "Harbour at six in the morning", seconds: 55, kind: "videos", codec: "avc1", height: 1080, levelDB: -3},
 			{title: "Rain on a tin roof", seconds: 45, kind: "videos", codec: "avc1", height: 720, levelDB: 9},
 			{title: "Night bus", seconds: 40, kind: "videos", codec: "avc1", height: 720, levelDB: 1},
+			// The one video in the archive that is not 16:9, and long enough
+			// for its preview sheet to run to several rows — the shape of
+			// source that turned a scrubber black.
+			{title: "Cliffs at low tide (2.40:1 source)", seconds: 90, kind: "videos", codec: "avc1", height: 800, width: 1920, levelDB: 4},
 		},
 	},
 }
@@ -194,7 +213,7 @@ func video(channelID, channelName, id string, s spec, published time.Time) ta.Vi
 		Player:         ta.Player{Duration: s.seconds, DurationStr: durationString(s.seconds)},
 		Stats:          ta.Stats{ViewCount: int64(len(s.title)) * 1371, LikeCount: int64(len(s.title)) * 42},
 		Streams: []ta.Stream{
-			{Type: "video", Codec: s.codec, Width: s.height * 16 / 9, Height: s.height, Bitrate: s.height * 4000},
+			{Type: "video", Codec: s.codec, Width: s.codedWidth(), Height: s.height, Bitrate: s.height * 4000},
 			{Type: "audio", Codec: "mp4a", Bitrate: 128000},
 		},
 		Subtitles: []ta.Subtitle{

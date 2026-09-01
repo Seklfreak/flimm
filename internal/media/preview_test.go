@@ -1,6 +1,9 @@
 package media
 
 import (
+	"image/jpeg"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -68,5 +71,56 @@ func TestVTTTimeFormatsAsWebVTTWants(t *testing.T) {
 		if got := vttTime(in); got != want {
 			t.Errorf("vttTime(%v) = %q, want %q", in, got, want)
 		}
+	}
+}
+
+// The bug this exists for: the track can only address the sheet by arithmetic,
+// so a cell that is not the size the track says is a cue pointing at the wrong
+// pixels — and, past the row where the sheet runs out, at no pixels at all. A
+// viewer some way into a 2.40:1 video saw a scrubber full of black.
+//
+// The fixture is 4:3, deliberately: 16:9 is the one ratio the old code got
+// right, so a test that used it would have passed throughout.
+func TestPreviewSheetIsTheGridTheTrackDescribes(t *testing.T) {
+	dir := t.TempDir()
+	body := buildFixture(t, dir, 8)
+
+	out := filepath.Join(dir, "preview")
+	if err := os.MkdirAll(out, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	const duration = 8
+	if err := Preview("ffmpeg", duration, nil, testSource(body))(t.Context(), out); err != nil {
+		t.Fatalf("derive: %v", err)
+	}
+
+	f, err := os.Open(filepath.Join(out, PreviewSheetName)) //nolint:gosec // test fixture path
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	cfg, err := jpeg.DecodeConfig(f)
+	if err != nil {
+		t.Fatalf("the sheet is not a readable jpeg: %v", err)
+	}
+
+	plan := PlanPreview(duration)
+	wantW, wantH := plan.Columns*previewTileWidth, plan.Rows*previewTileHeight
+	if cfg.Width != wantW || cfg.Height != wantH {
+		t.Errorf("sheet is %dx%d, but the track addresses a %dx%d grid — every cue past the first row points at the wrong pixels",
+			cfg.Width, cfg.Height, wantW, wantH)
+	}
+}
+
+// The cache entry carries the cell size, so a sheet built for one grid can
+// never be found and served under another. Getting this wrong is silent: the
+// old sheet is on disk, complete, and wrong.
+func TestPreviewVariantNamesItsCell(t *testing.T) {
+	if want := "preview-160x90"; PreviewVariant != want {
+		t.Errorf("PreviewVariant = %q, want %q", PreviewVariant, want)
+	}
+	if previewTileWidth != 160 || previewTileHeight != 90 {
+		t.Errorf("the cell is %dx%d but the cache entry is still called %q — change both together",
+			previewTileWidth, previewTileHeight, PreviewVariant)
 	}
 }

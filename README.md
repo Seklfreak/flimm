@@ -234,11 +234,13 @@ export TA_URL=http://localhost:8001
 export TA_TOKEN=dev                  # any value; the fake accepts them all
 ```
 
-It serves 13 videos over 4 channels: chapters embedded in the files, SponsorBlock
+It serves 15 videos over 4 channels: chapters embedded in the files, SponsorBlock
 segments, WebVTT subtitles whose lines name their own timestamp, a custom
-playlist, and one VP9 video that Apple hardware cannot decode — so the codec
-gate and the compatible HLS rendition get exercised too. The picture is a
-running timer, so a seek, a resume or a chapter jump can be checked by eye.
+playlist, one VP9 video that Apple hardware cannot decode — so the codec gate
+and the compatible HLS rendition get exercised too — and one 2.40:1 video, the
+only shape in the archive that is not 16:9, which is what anything deriving a
+fixed-size still has to survive. The picture is a running timer, so a seek, a
+resume or a chapter jump can be checked by eye.
 
 Set `SPONSORBLOCK_URL=` (empty) alongside it: the real SponsorBlock service has
 never heard of these video ids, and its answer of "no segments" is

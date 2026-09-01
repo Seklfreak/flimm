@@ -26,8 +26,12 @@ import (
 // player actually asks.
 
 const (
-	// PreviewVariant names the cache directory.
-	PreviewVariant = "preview"
+	// PreviewVariant names the cache directory. The cell size is part of the
+	// name on purpose: a sheet only means anything against the grid its track
+	// describes, so a change to that grid must never be able to find an older
+	// sheet on disk and serve it under the new arithmetic. Changing the cell
+	// below without changing this is the bug this spells out.
+	PreviewVariant = "preview-160x90"
 	// PreviewSheetName and PreviewTrackName are what lands in it.
 	PreviewSheetName = "sheet.jpg"
 	PreviewTrackName = "preview.vtt"
@@ -37,8 +41,20 @@ const (
 	// grows with the square of this, so it is the number that decides whether
 	// a two-hour video costs 300 KB or 3 MB.
 	previewTileWidth = 160
+	// previewTileHeight is the cell every still is fitted into, letterboxed.
+	//
+	// A *fixed* cell, not the source's own aspect, and that is the whole point:
+	// a track can only address a sheet by arithmetic, and arithmetic needs a
+	// cell it can rely on. Scaling to the source instead made every ratio but
+	// 16:9 wrong — a 2.40:1 video produced 66px rows under a track that
+	// addressed 90px ones, so the later rows fell off the bottom of the image
+	// and a scrubber a viewer had got some way into showed nothing but black.
+	// It also unbounded the sheet: a vertical video's twenty rows came to
+	// 5680px, past the texture size browsers and Metal are happy with.
+	previewTileHeight = previewTileWidth * 9 / 16
 	// previewColumns is the sheet's width in tiles. Ten keeps a sheet under
-	// the 4096-pixel texture limit browsers and Metal are happiest with.
+	// the 4096-pixel texture limit browsers and Metal are happiest with —
+	// which holds only because the cell above is pinned.
 	previewColumns = 10
 	// previewMaxTiles caps the sheet: 200 stills is a preview every 36 seconds
 	// of a two-hour video, and a sheet of 1600×1800.
@@ -101,8 +117,17 @@ func Preview(ffmpegPath string, duration float64, log *slog.Logger, open RangeSo
 		defer release()
 
 		sheet := filepath.Join(dir, PreviewSheetName)
-		filter := fmt.Sprintf("fps=1/%s,scale=%d:-2,tile=%dx%d",
-			strconv.FormatFloat(plan.Interval, 'f', 3, 64), previewTileWidth, plan.Columns, plan.Rows)
+		// Fit-and-pad rather than plain scale: every cell comes out exactly
+		// previewTileWidth×previewTileHeight whatever the source's shape, which
+		// is what makes the track's arithmetic true. `setsar=1` keeps an
+		// anamorphic source from carrying its pixel ratio into the sheet, where
+		// nothing would honour it. The padding is black, and `tile` needs
+		// equal-sized inputs anyway — a source that changes resolution partway
+		// through used to be able to fail the whole job.
+		filter := fmt.Sprintf("fps=1/%s,scale=%d:%d:force_original_aspect_ratio=decrease,pad=%d:%d:(ow-iw)/2:(oh-ih)/2,setsar=1,tile=%dx%d",
+			strconv.FormatFloat(plan.Interval, 'f', 3, 64),
+			previewTileWidth, previewTileHeight, previewTileWidth, previewTileHeight,
+			plan.Columns, plan.Rows)
 		args := []string{
 			"-hide_banner", "-loglevel", "error",
 			"-i", src,
@@ -129,7 +154,6 @@ func Preview(ffmpegPath string, duration float64, log *slog.Logger, open RangeSo
 func PreviewTrack(plan PreviewPlan, duration float64) string {
 	var b strings.Builder
 	b.WriteString("WEBVTT\n\n")
-	height := previewTileWidth * 9 / 16
 	for i := range plan.Tiles {
 		start := float64(i) * plan.Interval
 		end := start + plan.Interval
@@ -140,9 +164,9 @@ func PreviewTrack(plan PreviewPlan, duration float64) string {
 			break
 		}
 		x := (i % plan.Columns) * previewTileWidth
-		y := (i / plan.Columns) * height
+		y := (i / plan.Columns) * previewTileHeight
 		fmt.Fprintf(&b, "%s --> %s\n%s#xywh=%d,%d,%d,%d\n\n",
-			vttTime(start), vttTime(end), PreviewSheetName, x, y, previewTileWidth, height)
+			vttTime(start), vttTime(end), PreviewSheetName, x, y, previewTileWidth, previewTileHeight)
 	}
 	return b.String()
 }
