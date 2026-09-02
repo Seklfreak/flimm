@@ -66,8 +66,8 @@ export function Thumb({
       {video.thumb_url && <MediaImg src={video.thumb_url} alt="" className="absolute inset-0 h-full w-full object-cover" />}
       {!compact && inProgress && <span className="pill left-3 top-3">Resume · {fmtDuration(video.position)}</span>}
       {video.watched && (
-        <span className={`absolute flex items-center justify-center rounded-full bg-[rgba(23,24,26,0.8)] text-white ${compact ? "left-2 top-2 h-5 w-5" : "left-3 top-3 h-6 w-6"}`}>
-          <CheckIcon size={compact ? 11 : 13} />
+        <span className={`absolute flex items-center justify-center rounded-full bg-[rgba(23,24,26,0.8)] text-white ${compact ? "left-2 top-2 h-5 w-5" : "left-3 top-3 h-7 w-7"}`}>
+          <CheckIcon size={compact ? 11 : 15} />
         </span>
       )}
       <span className={`pill ${compact ? "bottom-1.5 right-1.5 !px-1.5 !py-0.5 !text-[10px]" : "bottom-3 right-3"}`}>{fmtDuration(video.duration)}</span>
@@ -107,9 +107,12 @@ export function VideoCard({
             title="Not interested — hide from feeds"
             onClick={toggle}
             disabled={pending}
-            className="absolute right-2.5 top-2.5 flex h-6 w-6 items-center justify-center rounded-full bg-[rgba(23,24,26,0.8)] text-white transition-colors hover:bg-[rgba(23,24,26,0.95)] disabled:opacity-50"
+            // 36px circle, and the pseudo-element pushes the hit area out to
+            // 44px so a thumb can land on it without covering the thumbnail
+            // with a button that large.
+            className="absolute right-2 top-2 flex h-9 w-9 items-center justify-center rounded-full bg-[rgba(23,24,26,0.8)] text-white transition-colors before:absolute before:-inset-1 before:content-[''] hover:bg-[rgba(23,24,26,0.95)] disabled:opacity-50"
           >
-            <CloseIcon size={12} />
+            <CloseIcon size={16} />
           </button>
         )}
       </div>

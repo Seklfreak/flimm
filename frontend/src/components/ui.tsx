@@ -99,7 +99,7 @@ export function MediaImg({ src, alt, className }: { src: string; alt: string; cl
 
 export function ProgressBar({ value, className = "" }: { value: number; className?: string }) {
   return (
-    <div className={`h-1 overflow-hidden rounded-sm bg-white/50 ${className}`}>
+    <div className={`h-1.5 overflow-hidden rounded-sm bg-white/50 ${className}`}>
       <div className="h-full rounded-sm bg-accent" style={{ width: `${Math.round(Math.min(1, Math.max(0, value)) * 100)}%` }} />
     </div>
   );

@@ -563,12 +563,14 @@ func (s *Server) subtitleHits(query string) []ta.SubtitleHit {
 	hits := []ta.SubtitleHit{}
 	for _, v := range s.videos() {
 		for start := 0.0; start < v.Player.Duration; start += 5 {
-			line := "This line starts at " + clock(start) + "."
-			if !strings.Contains(strings.ToLower(line), query) {
+			// Matched against the readable text, but indexed with the markup
+			// the archive actually stores — that is the shape a client has to
+			// cope with.
+			if !strings.Contains(strings.ToLower(SubtitleLineText(start)), query) {
 				continue
 			}
 			hits = append(hits, ta.SubtitleHit{
-				YoutubeID: v.YoutubeID, Title: v.Title, SubtitleLine: line, SubtitleStart: start,
+				YoutubeID: v.YoutubeID, Title: v.Title, SubtitleLine: SubtitleLine(start), SubtitleStart: start,
 			})
 			if len(hits) >= 20 {
 				return hits

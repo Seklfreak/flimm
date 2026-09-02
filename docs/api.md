@@ -633,6 +633,12 @@ Implementation: TA `/search/?query=` for titles/channels/playlists and
 `full:<q>` for the `ta_subtitle` index; group subtitle hits by video; `unseen`
 and `feed` filter the video results in the backend.
 
+A hit's `text` is plain text: TA indexes the WebVTT cue as written, so the
+stored line carries caption markup (`<c>` karaoke spans and inline
+timestamps, `<i>`/`<b>`/`<font>`, `&amp;`-style entities). The server strips
+the tags and decodes the entities, so no client has to know what a VTT cue
+looks like.
+
 `q` is matched literally: colons are folded to spaces before the query goes to
 TA, whose parser crashes (500) on a colon in the first word — which our index
 prefix guarantees — or on a two-colon word like a `1:23:45` timestamp. TA's

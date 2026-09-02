@@ -71,3 +71,20 @@ func TestSearchAllColonsIsEmpty(t *testing.T) {
 		}
 	}
 }
+
+// A subtitle hit is a WebVTT cue, so it arrives with karaoke markup, styling
+// and entities. None of that belongs in a search result.
+func TestSubtitleTextStripsMarkup(t *testing.T) {
+	for _, tc := range []struct{ in, want string }{
+		{"<c>and then</c><00:00:12.345><c> we left</c>", "and then we left"},
+		{"<i>whispering</i> &amp; <b>shouting</b>", "whispering & shouting"},
+		{`<font color="#ffffff">plain</font>`, "plain"},
+		{"nothing&nbsp;to   strip", "nothing to strip"},
+		{"already clean", "already clean"},
+		{"<unclosed", ""},
+	} {
+		if got := subtitleText(tc.in); got != tc.want {
+			t.Errorf("subtitleText(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}

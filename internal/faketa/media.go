@@ -151,9 +151,24 @@ func Subtitles(seconds float64) string {
 		if end > seconds {
 			end = seconds
 		}
-		fmt.Fprintf(&b, "%s --> %s\nThis line starts at %s.\n\n", vttClock(start), vttClock(end), clock(start))
+		fmt.Fprintf(&b, "%s --> %s\n%s\n\n", vttClock(start), vttClock(end), SubtitleLine(start))
 	}
 	return b.String()
+}
+
+// SubtitleLine is one cue exactly as an archived caption carries it: with
+// YouTube's auto-caption karaoke markup (a `<c>` span and an inline
+// timestamp) and an escaped entity. A player resolves all of that, so a
+// plain-prose fixture hid the fact that anything else showing a subtitle
+// line — the search results — was showing the tags.
+func SubtitleLine(start float64) string {
+	return fmt.Sprintf("<c>This line starts at %s</c><%s><c> &amp; runs five seconds.</c>", clock(start), vttClock(start+2.5))
+}
+
+// SubtitleLineText is the same cue as a viewer reads it, which is what the
+// fake matches a subtitle search against.
+func SubtitleLineText(start float64) string {
+	return fmt.Sprintf("This line starts at %s & runs five seconds.", clock(start))
 }
 
 func vttClock(seconds float64) string {

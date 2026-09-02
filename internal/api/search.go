@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"errors"
+	"html"
 	"net/http"
 	"sort"
 	"strings"
@@ -206,6 +207,33 @@ func (s *Server) search(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// subtitleText turns one indexed subtitle line into something readable.
+// TA indexes the cue as it appears in the WebVTT file, so a hit can carry
+// markup no one wants to read in a search result: YouTube's auto-caption
+// karaoke tags (`<c>`, `</c>`, `<00:00:12.345>`), styling from user-supplied
+// tracks (`<i>`, `<b>`, `<font color="…">`), and the entities the format
+// requires (`&amp;`, `&lt;`, `&nbsp;`). Strip the tags, decode the entities,
+// and collapse the whitespace that removing them leaves behind.
+//
+// This is server-side on purpose: every client shows these hits, and none of
+// them should have to know what a VTT cue looks like.
+func subtitleText(line string) string {
+	var b strings.Builder
+	b.Grow(len(line))
+	depth := 0
+	for _, r := range line {
+		switch {
+		case r == '<':
+			depth++
+		case r == '>' && depth > 0:
+			depth--
+		case depth == 0:
+			b.WriteRune(r)
+		}
+	}
+	return strings.Join(strings.Fields(html.UnescapeString(b.String())), " ")
+}
+
 // searchVideos merges title hits and subtitle hits (grouped per video),
 // resolving videos only known from subtitle hits, then applies the unseen
 // and feed filters.
@@ -223,7 +251,7 @@ func (s *Server) searchVideos(ctx context.Context, uid uuid.UUID, res ta.SearchR
 		if _, ok := byID[h.YoutubeID]; !ok && !containsStr(order, h.YoutubeID) {
 			order = append(order, h.YoutubeID)
 		}
-		hits[h.YoutubeID] = append(hits[h.YoutubeID], subtitleHit{Lang: h.SubtitleLang, Start: h.SubtitleStart, End: h.SubtitleEnd, Text: h.SubtitleLine})
+		hits[h.YoutubeID] = append(hits[h.YoutubeID], subtitleHit{Lang: h.SubtitleLang, Start: h.SubtitleStart, End: h.SubtitleEnd, Text: subtitleText(h.SubtitleLine)})
 	}
 	var missing []string
 	for _, id := range order {
