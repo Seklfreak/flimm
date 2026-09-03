@@ -97,6 +97,31 @@ public enum WebVTT {
             default: if !insideTag { output.append(character) }
             }
         }
+        return decodingEntities(output)
+    }
+
+    /// The character references the format requires.
+    ///
+    /// A cue cannot contain a bare `&` or `<` — the spec makes them escapes —
+    /// so any caption with an ampersand in it arrives as `&amp;` and was drawn
+    /// on screen exactly like that. A browser never had this problem: the web
+    /// client hands the file to a native `<track>`, which parses it per spec.
+    /// These players parse it themselves, because `AVPlayer` cannot side-load
+    /// a track that needs the bearer header, and parsing it themselves means
+    /// owning this too.
+    ///
+    /// `&amp;` is decoded last, or `&amp;lt;` — the way a caption writes a
+    /// literal `&lt;` — would come out as `<`.
+    private static func decodingEntities(_ text: String) -> String {
+        guard text.contains("&") else { return text }
+        var output = text
+        for (entity, replacement) in [
+            ("&lt;", "<"), ("&gt;", ">"), ("&quot;", "\""), ("&apos;", "'"), ("&#39;", "'"),
+            ("&nbsp;", "\u{00A0}"), ("&lrm;", "\u{200E}"), ("&rlm;", "\u{200F}"),
+            ("&amp;", "&"),
+        ] {
+            output = output.replacingOccurrences(of: entity, with: replacement)
+        }
         return output
     }
 }

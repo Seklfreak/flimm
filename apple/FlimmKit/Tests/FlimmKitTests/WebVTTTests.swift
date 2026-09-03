@@ -40,6 +40,30 @@ final class WebVTTTests: XCTestCase {
         XCTAssertEqual(cues[2].text, "Third line")
     }
 
+    /// A cue cannot hold a bare `&` or `<` — the format makes them escapes —
+    /// so a caption saying "salt & pepper" arrives as `salt &amp; pepper` and
+    /// used to be drawn on screen exactly like that. A browser never had this
+    /// problem; these players parse the file themselves and so own this too.
+    func testDecodesTheCharacterReferencesTheFormatRequires() {
+        let cues = WebVTT.parse("""
+        WEBVTT
+
+        00:00:01.000 --> 00:00:02.000
+        salt &amp; pepper
+
+        00:00:03.000 --> 00:00:04.000
+        a &lt;tag&gt; and a &quot;quote&quot;
+
+        00:00:05.000 --> 00:00:06.000
+        &amp;lt; is how a caption writes a literal escape
+        """)
+        XCTAssertEqual(cues[0].text, "salt & pepper")
+        XCTAssertEqual(cues[1].text, "a <tag> and a \"quote\"")
+        // Decoding `&amp;` first would turn this into a bare `<` and then eat
+        // the rest of the line as a tag.
+        XCTAssertEqual(cues[2].text, "&lt; is how a caption writes a literal escape")
+    }
+
     func testHeaderAndCueNumbersAreNotCues() {
         let cues = WebVTT.parse(sample)
         XCTAssertFalse(cues.contains { $0.text.contains("WEBVTT") })
