@@ -145,14 +145,23 @@ func NewCatalogue() *Catalogue {
 		}
 	}
 
-	// Two whole-channel playlists, one *partial* one and a custom one. The
-	// partial playlist is the point of the series feature: a feed holding it
-	// must show fewer videos than one holding its channel, which is only
-	// checkable when the two sets differ.
+	// Two whole-channel playlists, one *partial* one, a custom one and a
+	// subscribed one. The partial playlist is the point of the series
+	// feature: a feed holding it must show fewer videos than one holding its
+	// channel, which is only checkable when the two sets differ. The
+	// subscribed one is a YouTube playlist the viewer follows — TA marks it
+	// `playlist_subscribed`, and the Playlists page lists it while leaving
+	// the channel's own indexed playlists to the channel page, which is only
+	// checkable when the fixture has one of each.
 	c.Playlists = []ta.Playlist{
 		c.channelPlaylist("PL-fake-workshop", "Workshop basics", "UC-fake-workshop"),
 		c.channelPlaylist("PL-fake-signals", "Signals, in order", "UC-fake-signals"),
 		c.partialPlaylist("PL-fake-night", "Night sides", "UC-fake-tapes", 2),
+		c.subscribedPlaylist("PL-fake-followed", "Cooking, borrowed", []string{
+			videoID("UC-fake-kitchen", 1),
+			videoID("UC-fake-workshop", 0),
+			videoID("UC-fake-tapes", 2),
+		}),
 		{
 			PlaylistID:          "PL-fake-custom",
 			PlaylistName:        "Saved for later",
@@ -301,6 +310,41 @@ func durationString(seconds float64) string {
 		return fmt.Sprintf("%d:%02d:%02d", total/3600, (total%3600)/60, total%60)
 	}
 	return clock(seconds)
+}
+
+// subscribedPlaylist is a playlist the viewer follows rather than one TA found
+// by walking a channel: `playlist_subscribed`, no owning channel in the
+// archive, and videos from wherever. It is what separates "playlists of mine"
+// from "everything a channel owns" on the Playlists page.
+func (c *Catalogue) subscribedPlaylist(id, name string, videoIDs []string) ta.Playlist {
+	p := ta.Playlist{
+		PlaylistID:          id,
+		PlaylistName:        name,
+		PlaylistChannel:     "A Viewer",
+		PlaylistChannelID:   "UC-fake-elsewhere",
+		PlaylistType:        "regular",
+		PlaylistDescription: "A YouTube playlist you subscribed to in TubeArchivist.",
+		PlaylistActive:      true,
+		PlaylistSubscribed:  true,
+	}
+	for _, id := range videoIDs {
+		for _, v := range c.Videos {
+			if v.YoutubeID != id {
+				continue
+			}
+			p.PlaylistEntries = append(p.PlaylistEntries, ta.PlaylistEntry{
+				YoutubeID:  v.YoutubeID,
+				Title:      v.Title,
+				Uploader:   v.Channel.ChannelName,
+				Idx:        len(p.PlaylistEntries),
+				Downloaded: true,
+			})
+			if p.PlaylistThumbnail == "" {
+				p.PlaylistThumbnail = "/media/" + v.Channel.ChannelID + "/" + v.YoutubeID + ".jpg"
+			}
+		}
+	}
+	return p
 }
 
 func (c *Catalogue) channelPlaylist(id, name, channelID string) ta.Playlist {

@@ -579,7 +579,7 @@ Clients treat an empty list as "no chapter UI", never as an error.
 | PUT | `/playlists/{id}/pinned` | `{ "pinned": true\|false }` → 204. Pinning appends to the end; unpinning closes the gap |
 | PUT | `/playlists/{id}/music` | `{ "music": true\|false }` → 204. Marks the playlist as music: audio-only playback and no watch state (see below) |
 | PUT | `/playlists/{id}/feeds` | `{ "feed_ids": [...] }` — the playlist's "In feeds:" control, mirroring the channel one |
-| GET | `/playlists` | query `kind=custom\|channel`, paged PlaylistSummary; custom first. A channel playlist is listed only once the user has taken it up (pinned it or marked it music); a channel's full set is `GET /channels/{id}/playlists` |
+| GET | `/playlists` | query `kind=custom\|channel`, paged PlaylistSummary; custom first. Lists the playlists the user chose: TA custom playlists, TA-subscribed ones (`playlist_subscribed`), and the ones taken up here (pinned or marked music). The playlists TA indexed off a channel on its own are left to `GET /channels/{id}/playlists` |
 | POST | `/playlists` | `{ "name" }` → TA `/playlist/custom/` (201) |
 | GET | `/playlists/{id}` | PlaylistSummary + `items: [{ "position", "video": VideoSummary }]` |
 | PATCH | `/playlists/{id}` | `{ "name" }` custom only (rename is client-side + TA re-create if TA has no rename; document limitation) |
@@ -1490,7 +1490,7 @@ height of every video up front.
 | index channel playlists (admin) | `POST /api/channel/{id}/` with `channel_overwrites: { index_playlists: true }` — TA stores the overwrite and queues its discovery task |
 | channel subscribe toggle (admin) | `POST /api/channel/` with `{ data: [{ channel_id, channel_subscribed }] }` |
 | channels | `GET /api/channel/`, `/api/channel/{id}/`, `/aggs/`, `/nav/`, `/api/channel/search/?q=` |
-| playlists | `GET /api/playlist/?type=custom\|regular&channel=`, `POST /api/playlist/custom/`, `POST /api/playlist/custom/{id}/`, `DELETE /api/playlist/{id}/` |
+| playlists | `GET /api/playlist/?type=custom\|regular&channel=`, `POST /api/playlist/custom/`, `POST /api/playlist/custom/{id}/`, `DELETE /api/playlist/{id}/`. A playlist doc's `playlist_subscribed` is TA's "the user follows this one": subscribing in TA sets it, and the channel playlist-discovery task leaves it false, which is the only thing separating a followed playlist from an indexed one (both are `playlist_type: regular`) |
 | search | `GET /api/search/?query=` (prefixes `video:`, `channel:`, `playlist:`, `full:` + `lang:`) |
 | auth | header `Authorization: Token $TA_TOKEN` |
 | media | `/media/…` (TA reports `media_url` as `/youtube/<channel>/<file>`; the `/youtube/` prefix maps to `/media/`), `/cache/videos/{id[0].lower()}/{id}.jpg`, `/cache/channels/{id}_thumb.jpg`, `_banner.jpg`, `/cache/playlists/{id}.jpg` — all gated by TA's nginx `auth_request /api/ping/`, which accepts the Token header |

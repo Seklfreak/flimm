@@ -423,14 +423,18 @@ func (s *Server) listPlaylists(w http.ResponseWriter, r *http.Request) {
 		s.writeDBError(w, "list playlist settings", err)
 		return
 	}
-	// A channel's own playlists belong to its channel page. One shows up here
-	// only once the viewer has taken it up — pinned it, or marked it music —
-	// so an archive that indexes every playlist a prolific channel owns cannot
-	// flood this page with lists nobody asked for.
+	// A playlist the viewer chose is listed; one TA indexed on its own is not.
+	// "Chose" is three things: a custom playlist made in TA, a playlist
+	// subscribed to in TA (the YouTube playlists you follow — TA's own
+	// playlist_subscribed, which its channel playlist-discovery task never
+	// sets), and one taken up here by pinning it or marking it music. What
+	// this leaves out is the rest of what a channel owns, which belongs to
+	// that channel's page: an archive that indexes every playlist a prolific
+	// channel has would otherwise flood this page with lists nobody asked for.
 	kept := lists[:0]
 	for _, p := range lists {
 		st := settings[p.PlaylistID]
-		if p.PlaylistType == "custom" || st.Pinned || st.Music {
+		if p.PlaylistType == "custom" || p.PlaylistSubscribed || st.Pinned || st.Music {
 			kept = append(kept, p)
 		}
 	}

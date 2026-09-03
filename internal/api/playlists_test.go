@@ -83,6 +83,33 @@ func TestListPlaylistsHidesChannelPlaylistsNobodyTookUp(t *testing.T) {
 	}
 }
 
+// A playlist subscribed to in TubeArchivist is one the viewer went and added —
+// the YouTube playlists you follow — so it is listed without having to be
+// pinned or marked music here. It shares `playlist_type: regular` with the
+// playlists TA indexes off a channel on its own, and only
+// `playlist_subscribed` tells the two apart.
+func TestListPlaylistsListsSubscribedOnes(t *testing.T) {
+	client := ta.NewFake()
+	client.Playlists["PL-followed"] = &ta.Playlist{
+		PlaylistID: "PL-followed", PlaylistName: "Cooking", PlaylistType: "regular",
+		PlaylistChannelID: "UC-elsewhere", PlaylistChannel: "Someone Else",
+		PlaylistSubscribed: true,
+	}
+	client.Playlists["PL-indexed"] = &ta.Playlist{
+		PlaylistID: "PL-indexed", PlaylistName: "Everything from UC1", PlaylistType: "regular",
+		PlaylistChannelID: "UC1", PlaylistChannel: "Channel UC1",
+	}
+	h := newTestServer(client, newEventStore().querier()).Router()
+
+	if got := listedPlaylistIDs(t, h, ""); len(got) != 1 || got[0] != "PL-followed" {
+		t.Errorf("playlists = %v, want [PL-followed]", got)
+	}
+	// It is a channel-kind playlist, so the kind filter finds it there.
+	if got := listedPlaylistIDs(t, h, "?kind=channel"); len(got) != 1 || got[0] != "PL-followed" {
+		t.Errorf("kind=channel = %v, want [PL-followed]", got)
+	}
+}
+
 // The playlist "In feeds:" control, mirroring the channel one — including the
 // 404 (not 403) for a feed the user does not own.
 func TestSetPlaylistFeedsAndBadges(t *testing.T) {

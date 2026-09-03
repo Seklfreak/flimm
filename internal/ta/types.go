@@ -98,6 +98,12 @@ type Playlist struct {
 	PlaylistDescription string          `json:"playlist_description"`
 	PlaylistEntries     []PlaylistEntry `json:"playlist_entries"`
 	PlaylistActive      bool            `json:"playlist_active"`
+	// PlaylistSubscribed is TA's own "I follow this playlist" flag, and the
+	// only thing that separates a playlist the user went and added from one
+	// TA indexed on its own while walking a channel: subscribing sets it,
+	// and a playlist discovered by a channel's index_playlists task defaults
+	// to false.
+	PlaylistSubscribed bool `json:"playlist_subscribed"`
 }
 
 type PlaylistEntry struct {
