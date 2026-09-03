@@ -53,6 +53,14 @@ type FakeQuerier struct {
 	PinChannelFn                  func(context.Context, sqlc.PinChannelParams) error
 	UnpinChannelFn                func(context.Context, sqlc.UnpinChannelParams) error
 
+	UpsertPushDeviceFn  func(context.Context, sqlc.UpsertPushDeviceParams) error
+	DeletePushDeviceFn  func(context.Context, sqlc.DeletePushDeviceParams) (int64, error)
+	ForgetPushDeviceFn  func(context.Context, string) error
+	ListPushDevicesFn   func(context.Context, uuid.UUID) ([]sqlc.PushDevice, error)
+	CountPushDevicesFn  func(context.Context, uuid.UUID) (int64, error)
+	ListNotifyFeedsFn   func(context.Context) ([]sqlc.Feed, error)
+	SetFeedNotifiedAtFn func(context.Context, sqlc.SetFeedNotifiedAtParams) error
+
 	AddSeriesWatchFn             func(context.Context, sqlc.AddSeriesWatchParams) error
 	DeleteSeriesWatchesFn        func(context.Context, uuid.UUID) error
 	ListSeriesWatchesFn          func(context.Context, uuid.UUID) ([]string, error)
@@ -340,4 +348,32 @@ func (f *FakeQuerier) SetPlaylistMusic(ctx context.Context, arg sqlc.SetPlaylist
 
 func (f *FakeQuerier) SetPlaylistPinned(ctx context.Context, arg sqlc.SetPlaylistPinnedParams) error {
 	return f.SetPlaylistPinnedFn(ctx, arg)
+}
+
+func (f *FakeQuerier) UpsertPushDevice(ctx context.Context, arg sqlc.UpsertPushDeviceParams) error {
+	return f.UpsertPushDeviceFn(ctx, arg)
+}
+
+func (f *FakeQuerier) DeletePushDevice(ctx context.Context, arg sqlc.DeletePushDeviceParams) (int64, error) {
+	return f.DeletePushDeviceFn(ctx, arg)
+}
+
+func (f *FakeQuerier) ForgetPushDevice(ctx context.Context, token string) error {
+	return f.ForgetPushDeviceFn(ctx, token)
+}
+
+func (f *FakeQuerier) ListPushDevices(ctx context.Context, userID uuid.UUID) ([]sqlc.PushDevice, error) {
+	return f.ListPushDevicesFn(ctx, userID)
+}
+
+func (f *FakeQuerier) CountPushDevices(ctx context.Context, userID uuid.UUID) (int64, error) {
+	return f.CountPushDevicesFn(ctx, userID)
+}
+
+func (f *FakeQuerier) ListNotifyFeeds(ctx context.Context) ([]sqlc.Feed, error) {
+	return f.ListNotifyFeedsFn(ctx)
+}
+
+func (f *FakeQuerier) SetFeedNotifiedAt(ctx context.Context, arg sqlc.SetFeedNotifiedAtParams) error {
+	return f.SetFeedNotifiedAtFn(ctx, arg)
 }

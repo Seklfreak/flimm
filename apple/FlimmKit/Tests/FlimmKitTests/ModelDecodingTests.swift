@@ -255,6 +255,7 @@ final class ModelDecodingTests: XCTestCase {
         XCTAssertEqual(feed.playlistIds, ["PL-9"])
         XCTAssertEqual(feed.playlistCount, 1)
         XCTAssertEqual(feed.seriesWatchChannelIds, ["UC-watch"])
+        XCTAssertTrue(feed.notify)
 
         let everything = try decode(Feed.self, Fixtures.everythingFeed)
         XCTAssertTrue(everything.isEverything)
@@ -276,6 +277,7 @@ final class ModelDecodingTests: XCTestCase {
         XCTAssertEqual(object["hide_seen"] as? Bool, true)
         XCTAssertEqual(object["subtitles_only"] as? Bool, false)
         XCTAssertEqual(object["pinned"] as? Bool, true)
+        XCTAssertEqual(object["notify"] as? Bool, true)
     }
 
     func testPlaylistSummaryAndDetail() throws {
@@ -362,6 +364,7 @@ final class ModelDecodingTests: XCTestCase {
     func testMeAndPrefs() throws {
         let me = try decode(Me.self, Fixtures.me)
         XCTAssertTrue(me.isAdmin)
+        XCTAssertEqual(me.pushDevices, 2)
         XCTAssertEqual(me.prefs.playbackSpeed, 1.25)
         XCTAssertEqual(me.prefs.subtitleSize, .large)
         XCTAssertEqual(me.prefs.theme, .dark)
@@ -384,6 +387,10 @@ final class ModelDecodingTests: XCTestCase {
         XCTAssertNotNil(config.issuerURL)
 
         // AUTH_DISABLED=true deployments publish no issuer.
+        // Push is off unless the server says otherwise — a server from
+        // before the field is one with no key.
+        XCTAssertFalse(config.pushEnabled)
+        XCTAssertTrue(try decode(ServerConfig.self, Fixtures.serverConfigWithPush).pushEnabled)
         let bare = try decode(ServerConfig.self, Fixtures.serverConfigWithoutOIDC)
         XCTAssertFalse(bare.hasOIDC)
     }

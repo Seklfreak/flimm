@@ -5,6 +5,7 @@ package config
 import (
 	"bufio"
 	"cmp"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/url"
@@ -91,6 +92,21 @@ type Config struct {
 	// their preferences, which is what an offline deployment wants.
 	DeArrowURL string
 
+	// APNSKey is the PEM text of the .p8 key from the developer portal, or a
+	// path to the file holding it. With APNSKeyID and APNSTeamID it turns
+	// feed notifications on; without them the flag is stored and nothing is
+	// sent. Empty leaves push off.
+	APNSKey    []byte
+	APNSKeyID  string
+	APNSTeamID string
+	// APNSTopic is the bundle id of the iPhone app the notifications are
+	// for. Defaults to the one this repo builds; a fork that renamed the app
+	// sets its own.
+	APNSTopic string
+	// APNSURL replaces Apple's hosts — for a development stack pointed at a
+	// stand-in. Empty (the default) sends to Apple.
+	APNSURL string
+
 	// RYDURL is the Return YouTube Dislike API dislike counts are read from.
 	//
 	// Empty — the default — disables it, and deliberately: unlike SponsorBlock
@@ -145,6 +161,10 @@ func Load() (*Config, error) {
 		SponsorblockCategories: splitCSV(os.Getenv("SPONSORBLOCK_CATEGORIES")),
 		DeArrowURL:             strings.TrimRight(envOrDefault("DEARROW_URL", dearrow.DefaultBaseURL), "/"),
 		RYDURL:                 strings.TrimRight(os.Getenv("RYD_URL"), "/"),
+		APNSKeyID:              strings.TrimSpace(os.Getenv("APNS_KEY_ID")),
+		APNSTeamID:             strings.TrimSpace(os.Getenv("APNS_TEAM_ID")),
+		APNSTopic:              getenvDefault("APNS_TOPIC", DefaultAPNSTopic),
+		APNSURL:                strings.TrimRight(os.Getenv("APNS_URL"), "/"),
 		PublicURL:              strings.TrimRight(os.Getenv("PUBLIC_URL"), "/"),
 		CORSOrigins:            splitCSV(os.Getenv("CORS_ORIGINS")),
 		AppName:                getenvDefault("APP_NAME", "Flimm"),
@@ -200,7 +220,43 @@ func Load() (*Config, error) {
 			return nil, fmt.Errorf("invalid RYD_URL: %w", err)
 		}
 	}
+	key, err := readAPNSKey(os.Getenv("APNS_KEY"))
+	if err != nil {
+		return nil, err
+	}
+	cfg.APNSKey = key
+	// Half a push configuration is a misconfiguration, not "off": an operator
+	// who set the key meant to have notifications, and a server that quietly
+	// sent none would be found out weeks later.
+	if (len(cfg.APNSKey) > 0 || cfg.APNSKeyID != "" || cfg.APNSTeamID != "") &&
+		(len(cfg.APNSKey) == 0 || cfg.APNSKeyID == "" || cfg.APNSTeamID == "") {
+		return nil, errors.New("APNS_KEY, APNS_KEY_ID and APNS_TEAM_ID must be set together")
+	}
 	return cfg, nil
+}
+
+// DefaultAPNSTopic is the bundle id of the iPhone app in this repository.
+const DefaultAPNSTopic = "dev.winktech.flimm"
+
+// PushEnabled reports whether the server can send notifications at all.
+func (c *Config) PushEnabled() bool { return len(c.APNSKey) > 0 }
+
+// readAPNSKey accepts the key itself or a path to it. A Kubernetes secret
+// mounts as either, and a PEM block is unmistakable, so no flag has to say
+// which.
+func readAPNSKey(v string) ([]byte, error) {
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return nil, nil
+	}
+	if strings.HasPrefix(v, "-----BEGIN") {
+		return []byte(v), nil
+	}
+	key, err := os.ReadFile(v) //nolint:gosec // the operator chose the path; that is the point of the variable
+	if err != nil {
+		return nil, fmt.Errorf("APNS_KEY: not a PEM key and not a readable file: %w", err)
+	}
+	return key, nil
 }
 
 // SecureCookies reports whether the media cookie should carry the Secure

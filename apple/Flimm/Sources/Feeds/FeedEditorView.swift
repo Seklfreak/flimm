@@ -9,6 +9,8 @@ struct FeedEditorView: View {
     let feedId: String?
 
     @Environment(AppModel.self) private var app
+    @Environment(AuthSession.self) private var session
+    @Environment(PushCoordinator.self) private var push
     @Environment(\.dismiss) private var dismiss
 
     @State private var name = ""
@@ -23,6 +25,10 @@ struct FeedEditorView: View {
     @State private var includeShorts = false
     @State private var subtitlesOnly = false
     @State private var pinned = false
+    @State private var notify = false
+    /// The person said no to notifications, now or in Settings some time
+    /// ago; the switch cannot mean anything until that changes.
+    @State private var notifyDenied = false
     @State private var isSaving = false
     @State private var error: String?
     @State private var confirmDelete = false
@@ -33,6 +39,8 @@ struct FeedEditorView: View {
     @State private var hasLoaded = false
 
     private var isNew: Bool { feedId == nil }
+
+    private var deviceName: String { UIDevice.current.userInterfaceIdiom == .pad ? "iPad" : "iPhone" }
 
     private var seriesSummary: String {
         var parts: [String] = []
@@ -81,6 +89,28 @@ struct FeedEditorView: View {
                 Toggle("Only videos with subtitles", isOn: $subtitlesOnly)
                 Toggle("Pin to top", isOn: $pinned)
             }
+            // Only a server that can send them offers the switch: a control
+            // that does nothing is worse than none. Everything else about
+            // notifications is the server's business (docs/api.md).
+            if session.server?.config.pushEnabled == true {
+                Section("Notifications") {
+                    Toggle("New videos", isOn: $notify)
+                        .onChange(of: notify) { _, on in
+                            if on { Task { await enableNotifications() } }
+                        }
+                    if notifyDenied {
+                        Text("Notifications are off for Flimm. Turn them on in Settings to be told about new videos.")
+                            .font(.footnote)
+                            .foregroundStyle(Palette.danger)
+                        Button("Open Settings") { openNotificationSettings() }
+                            .font(.footnote)
+                    } else {
+                        Text("A notification on this \(deviceName) when TubeArchivist downloads something for this feed.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
             if let error {
                 Section {
                     Text(error)
@@ -123,6 +153,23 @@ struct FeedEditorView: View {
         includeShorts = feed.includeShorts
         subtitlesOnly = feed.subtitlesOnly
         pinned = feed.pinned
+        notify = feed.notify
+    }
+
+    /// Switching the feed on is the moment to ask: the question makes sense
+    /// with the reason on screen, and never before then.
+    private func enableNotifications() async {
+        if await push.requestPermission() {
+            notifyDenied = false
+        } else {
+            notifyDenied = true
+            notify = false
+        }
+    }
+
+    private func openNotificationSettings() {
+        guard let url = URL(string: UIApplication.openNotificationSettingsURLString) else { return }
+        UIApplication.shared.open(url)
     }
 
     private func save() async {
@@ -137,7 +184,8 @@ struct FeedEditorView: View {
             hideSeen: hideSeen,
             includeShorts: includeShorts,
             subtitlesOnly: subtitlesOnly,
-            pinned: pinned
+            pinned: pinned,
+            notify: notify
         )
         do {
             if let feedId {

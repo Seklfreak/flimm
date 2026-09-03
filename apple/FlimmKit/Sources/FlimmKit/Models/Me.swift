@@ -210,13 +210,17 @@ public struct Me: Codable, Sendable, Hashable, Identifiable {
     public let email: String
     public let isAdmin: Bool
     public let prefs: Prefs
+    /// How many iPhones and iPads the account has registered for feed
+    /// notifications. Zero means a feed's notify flag reaches nobody yet.
+    public let pushDevices: Int
 
-    public init(id: String, name: String = "", email: String = "", isAdmin: Bool = false, prefs: Prefs = .init()) {
+    public init(id: String, name: String = "", email: String = "", isAdmin: Bool = false, prefs: Prefs = .init(), pushDevices: Int = 0) {
         self.id = id
         self.name = name
         self.email = email
         self.isAdmin = isAdmin
         self.prefs = prefs
+        self.pushDevices = pushDevices
     }
 
     public init(from decoder: any Decoder) throws {
@@ -226,5 +230,6 @@ public struct Me: Codable, Sendable, Hashable, Identifiable {
         email = try c.decode(.email, or: "")
         isAdmin = try c.decode(.isAdmin, or: false)
         prefs = try c.decode(.prefs, or: Prefs())
+        pushDevices = try c.decode(.pushDevices, or: 0)
     }
 }

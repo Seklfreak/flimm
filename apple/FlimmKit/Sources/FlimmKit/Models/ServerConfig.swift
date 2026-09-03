@@ -20,6 +20,10 @@ public struct ServerConfig: Codable, Sendable, Hashable {
     /// to be reported on, whatever analytics endpoint the app was built with.
     /// See ``Analytics/apply(_:)``.
     public let analyticsDisabled: Bool
+    /// The server has an APNs key: a feed's notify flag reaches a phone.
+    /// Without it the editor does not offer the switch at all — a control
+    /// that does nothing is worse than none.
+    public let pushEnabled: Bool
 
     /// `false` when the deployment runs with `AUTH_DISABLED=true`, or is
     /// otherwise missing OIDC settings.
@@ -42,7 +46,8 @@ public struct ServerConfig: Codable, Sendable, Hashable {
         oidcClientId: String = "",
         version: String = "",
         authDisabled: Bool = false,
-        analyticsDisabled: Bool = false
+        analyticsDisabled: Bool = false,
+        pushEnabled: Bool = false
     ) {
         self.appName = appName
         self.oidcIssuer = oidcIssuer
@@ -50,6 +55,7 @@ public struct ServerConfig: Codable, Sendable, Hashable {
         self.version = version
         self.authDisabled = authDisabled
         self.analyticsDisabled = analyticsDisabled
+        self.pushEnabled = pushEnabled
     }
 
     public init(from decoder: any Decoder) throws {
@@ -60,6 +66,7 @@ public struct ServerConfig: Codable, Sendable, Hashable {
         version = try c.decode(.version, or: "")
         authDisabled = try c.decode(.authDisabled, or: false)
         analyticsDisabled = try c.decode(.analyticsDisabled, or: false)
+        pushEnabled = try c.decode(.pushEnabled, or: false)
     }
 }
 

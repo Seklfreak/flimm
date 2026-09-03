@@ -15,6 +15,9 @@ type Querier interface {
 	AddFeedPlaylist(ctx context.Context, arg AddFeedPlaylistParams) error
 	AddSeriesWatch(ctx context.Context, arg AddSeriesWatchParams) error
 	CountHistory(ctx context.Context, arg CountHistoryParams) (int64, error)
+	CountPushDevices(ctx context.Context, userID uuid.UUID) (int64, error)
+	// A feed born notifying starts its high-water mark at now: nothing already in
+	// the archive is news.
 	CreateFeed(ctx context.Context, arg CreateFeedParams) (Feed, error)
 	// Removes a channel from every feed the user owns (before re-adding it to the
 	// selected ones).
@@ -25,10 +28,14 @@ type Querier interface {
 	// Removes a playlist from every feed the user owns (before re-adding it to
 	// the selected ones).
 	DeletePlaylistFromUserFeeds(ctx context.Context, arg DeletePlaylistFromUserFeedsParams) error
+	// User-scoped: signing out removes the caller's own registration only.
+	DeletePushDevice(ctx context.Context, arg DeletePushDeviceParams) (int64, error)
 	DeleteSeriesWatches(ctx context.Context, feedID uuid.UUID) error
 	// Idempotent: dismissing an already-dismissed video keeps the original time,
 	// so a double tap does not look like a fresh decision.
 	DismissVideo(ctx context.Context, arg DismissVideoParams) error
+	// Server-side: APNs said the token is dead, whoever it belonged to.
+	ForgetPushDevice(ctx context.Context, token string) error
 	GetFeed(ctx context.Context, arg GetFeedParams) (Feed, error)
 	GetPrefs(ctx context.Context, userID uuid.UUID) ([]byte, error)
 	GetUser(ctx context.Context, id uuid.UUID) (User, error)
@@ -65,9 +72,13 @@ type Querier interface {
 	ListHistory(ctx context.Context, arg ListHistoryParams) ([]WatchEvent, error)
 	// "Continue watching": started, not finished, newest activity first.
 	ListInProgress(ctx context.Context, arg ListInProgressParams) ([]WatchEvent, error)
+	// Every feed of every user that asked to be notified — what the notifier
+	// walks each pass.
+	ListNotifyFeeds(ctx context.Context) ([]Feed, error)
 	ListPinnedChannels(ctx context.Context, userID uuid.UUID) ([]PinnedChannel, error)
 	ListPinnedPlaylists(ctx context.Context, userID uuid.UUID) ([]PlaylistSetting, error)
 	ListPlaylistSettings(ctx context.Context, userID uuid.UUID) ([]PlaylistSetting, error)
+	ListPushDevices(ctx context.Context, userID uuid.UUID) ([]PushDevice, error)
 	// Every playlist the user already knows for the given channels.
 	ListSeriesSeen(ctx context.Context, arg ListSeriesSeenParams) ([]string, error)
 	ListSeriesWatches(ctx context.Context, feedID uuid.UUID) ([]string, error)
@@ -86,6 +97,7 @@ type Querier interface {
 	PruneEmptyPlaylistSettings(ctx context.Context, userID uuid.UUID) error
 	// "Start over": position back to 0, completion untouched.
 	ResetPosition(ctx context.Context, arg ResetPositionParams) error
+	SetFeedNotifiedAt(ctx context.Context, arg SetFeedNotifiedAtParams) error
 	SetFeedPosition(ctx context.Context, arg SetFeedPositionParams) error
 	SetPlaylistMusic(ctx context.Context, arg SetPlaylistMusicParams) error
 	// Appends to the end of the user's pins on first insert; re-pinning an
@@ -112,6 +124,9 @@ type Querier interface {
 	// opened by accident does not undo having seen it; see postProgress.
 	// A hidden (deleted-from-history) entry resurfaces on the next play.
 	UpsertProgress(ctx context.Context, arg UpsertProgressParams) (WatchEvent, error)
+	// A token is a device; registering it again (a new launch, a token Apple
+	// rotated, a different account on the same phone) moves it to the caller.
+	UpsertPushDevice(ctx context.Context, arg UpsertPushDeviceParams) error
 	// Called on every authenticated request from the JWT's sub/email/name. The sub
 	// is the stable identity; email/name are refreshed and last_seen_at bumped.
 	UpsertUser(ctx context.Context, arg UpsertUserParams) (User, error)

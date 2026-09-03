@@ -137,6 +137,7 @@ export function feed(over: Partial<Feed> = {}): Feed {
     include_shorts: false,
     subtitles_only: false,
     pinned: true,
+    notify: false,
     position: 0,
     created_at: "",
     updated_at: "",

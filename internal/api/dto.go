@@ -219,16 +219,22 @@ type FeedDTO struct {
 	// a playlist TubeArchivist indexes for one of them later is announced
 	// once in this feed (GET /feeds/{id}/new-series) until subscribed or
 	// dismissed.
-	SeriesWatchChannelIDs []string  `json:"series_watch_channel_ids"`
-	UnseenCount           int       `json:"unseen_count"`
-	Sort                  string    `json:"sort"`
-	HideSeen              bool      `json:"hide_seen"`
-	IncludeShorts         bool      `json:"include_shorts"`
-	SubtitlesOnly         bool      `json:"subtitles_only"`
-	Pinned                bool      `json:"pinned"`
-	Position              int       `json:"position"`
-	CreatedAt             time.Time `json:"created_at"`
-	UpdatedAt             time.Time `json:"updated_at"`
+	SeriesWatchChannelIDs []string `json:"series_watch_channel_ids"`
+	UnseenCount           int      `json:"unseen_count"`
+	Sort                  string   `json:"sort"`
+	HideSeen              bool     `json:"hide_seen"`
+	IncludeShorts         bool     `json:"include_shorts"`
+	SubtitlesOnly         bool     `json:"subtitles_only"`
+	Pinned                bool     `json:"pinned"`
+	// Notify: new downloads for this feed are pushed to the user's iPhone
+	// and iPad — one notification per feed per pass, for what arrived since
+	// the flag was switched on. Only reaches anyone when the server has an
+	// APNs key (`push_enabled` on /config) and the user has a device
+	// registered (`push_devices` on /me).
+	Notify    bool      `json:"notify"`
+	Position  int       `json:"position"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 // ---- playlist ----
@@ -708,6 +714,7 @@ func feedDTO(f sqlc.Feed, channelIDs, playlistIDs, watchIDs []string, unseen int
 		IncludeShorts:         f.IncludeShorts,
 		SubtitlesOnly:         f.SubtitlesOnly,
 		Pinned:                f.Pinned,
+		Notify:                f.Notify,
 		Position:              int(f.Position),
 		CreatedAt:             ts(f.CreatedAt),
 		UpdatedAt:             ts(f.UpdatedAt),

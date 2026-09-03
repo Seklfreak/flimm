@@ -35,6 +35,8 @@ type Feed struct {
 	Position      int32              `json:"position"`
 	CreatedAt     pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
+	Notify        bool               `json:"notify"`
+	NotifiedAt    pgtype.Timestamptz `json:"notified_at"`
 }
 
 type FeedChannel struct {
@@ -69,6 +71,15 @@ type PlaylistSetting struct {
 	CreatedAt  pgtype.Timestamptz `json:"created_at"`
 	Pinned     bool               `json:"pinned"`
 	Music      bool               `json:"music"`
+}
+
+type PushDevice struct {
+	Token       string             `json:"token"`
+	UserID      uuid.UUID          `json:"user_id"`
+	Platform    string             `json:"platform"`
+	Environment string             `json:"environment"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
 }
 
 type SeriesSeen struct {

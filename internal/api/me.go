@@ -36,12 +36,21 @@ func (s *Server) getMe(w http.ResponseWriter, r *http.Request) {
 		s.writeDBError(w, "load prefs", err)
 		return
 	}
+	devices, err := s.q.CountPushDevices(r.Context(), uid)
+	if err != nil {
+		s.writeDBError(w, "count devices", err)
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"id":       uid.String(),
 		"name":     currentName(r.Context()),
 		"email":    currentEmail(r.Context()),
 		"is_admin": isAdmin(r.Context()),
 		"prefs":    prefs,
+		// How many phones and tablets a feed's notify flag reaches. Zero is
+		// what the web editor warns about: the flag does nothing until the
+		// iPhone app has registered.
+		"push_devices": devices,
 	})
 }
 

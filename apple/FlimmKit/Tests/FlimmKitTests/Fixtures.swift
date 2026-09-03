@@ -174,6 +174,7 @@ enum Fixtures {
       "include_shorts": false,
       "subtitles_only": false,
       "pinned": true,
+      "notify": true,
       "position": 0,
       "created_at": "2026-08-01T00:00:00Z",
       "updated_at": "2026-08-20T12:00:00Z"
@@ -281,6 +282,7 @@ enum Fixtures {
     static let me = """
     {
       "id": "user-1", "name": "A User", "email": "user@example.com", "is_admin": true,
+      "push_devices": 2,
       "prefs": {
         "autoplay": true,
         "playback_speed": 1.25,
@@ -306,6 +308,11 @@ enum Fixtures {
     /// and nothing can sign in to it.
     static let serverConfigWithoutOIDC = """
     { "app_name": "Flimm", "oidc_issuer": "", "oidc_client_id": "", "version": "dev" }
+    """
+
+    /// A server with an APNs key: the feed editor offers notifications.
+    static let serverConfigWithPush = """
+    { "app_name": "Flimm", "oidc_issuer": "", "oidc_client_id": "", "version": "dev", "auth_disabled": true, "push_enabled": true }
     """
 
     /// A server running `AUTH_DISABLED=true`, which says so.

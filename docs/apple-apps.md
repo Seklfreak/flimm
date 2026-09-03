@@ -19,7 +19,8 @@ What is there:
 
 - `apple/project.yml` — xcodegen input for two targets. `Flimm` is the
   iOS/iPadOS app (iOS 17, `dev.winktech.flimm`, background audio, the
-  `dev.winktech.flimm://auth` redirect scheme); `FlimmTV` is the Apple TV app
+  `dev.winktech.flimm://auth` redirect scheme, and the `aps-environment`
+  entitlement for feed notifications — see below); `FlimmTV` is the Apple TV app
   (tvOS 17, `dev.winktech.flimm.tv`, background audio, a layered
   App Icon & Top Shelf brand-assets catalogue, and **no** URL scheme, because
   the device grant never redirects back). Both take signing and Sentry from
@@ -974,6 +975,26 @@ a side effect of caching.
   `state` a preview 404 carries, `hls_progress` on each rung, the loudness
   `state` — so building it would be a view plus the gate reporting its own
   reason the way the web one does, not a redesign.
+- ~~Whether Apple TV takes part in feed notifications.~~ **It does not.**
+  tvOS shows no notification banners, so there is nothing to deliver, and
+  the top shelf already surfaces the pinned feed — which is the television's
+  version of "there is something new". The iPhone and iPad register and
+  receive (`PushCoordinator`, the `aps-environment` entitlement, the switch
+  in the feed editor, a tap opens the video in its feed or the feed itself);
+  the web client sets the flag and says how many devices it reaches; the TV
+  reads `Feed.notify` like any other field and shows nothing for it. Two
+  things sit outside the repo: the **Push Notifications capability** on the
+  `dev.winktech.flimm` App ID (enabling it invalidates the existing App Store
+  profile, which then has to be regenerated and the `APP_STORE_PROFILE`
+  secret updated), and the **APNs auth key** the server sends with
+  (`APNS_KEY`, see the README) — a key is per team, made once in the
+  developer portal, and cannot be created through the App Store Connect API.
+  A build from Xcode registers a *sandbox* token and says so
+  (`PushEnvironment.current`), a TestFlight or App Store build a *production*
+  one; the server sends to whichever host the token named. In the simulator,
+  `xcrun simctl push <device> dev.winktech.flimm payload.apns` delivers a
+  payload straight to the app, which is how the tap path is checked without a
+  key at all.
 - ~~Whether tvOS gets its own simplified feed editor or defers editing to the
   other platforms.~~ **It defers.** Feeds are read-only on Apple TV and the
   screens say "Edit feeds on your phone" where the control would be. Naming a

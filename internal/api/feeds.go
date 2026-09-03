@@ -31,6 +31,9 @@ type feedBody struct {
 	IncludeShorts         *bool    `json:"include_shorts"`
 	SubtitlesOnly         *bool    `json:"subtitles_only"`
 	Pinned                *bool    `json:"pinned"`
+	// Notify: push new downloads to the user's devices. Nil on PUT keeps
+	// the current setting, like every other option here.
+	Notify *bool `json:"notify"`
 }
 
 func boolOr(p *bool, def bool) bool {
@@ -234,6 +237,7 @@ func (s *Server) createFeed(w http.ResponseWriter, r *http.Request) {
 			IncludeShorts: boolOr(req.IncludeShorts, false),
 			SubtitlesOnly: boolOr(req.SubtitlesOnly, false),
 			Pinned:        boolOr(req.Pinned, false),
+			Notify:        boolOr(req.Notify, false),
 			Position:      pos,
 		})
 		if err != nil {
@@ -502,6 +506,7 @@ func (s *Server) updateFeed(w http.ResponseWriter, r *http.Request) {
 			IncludeShorts: boolOr(req.IncludeShorts, cur.IncludeShorts),
 			SubtitlesOnly: boolOr(req.SubtitlesOnly, cur.SubtitlesOnly),
 			Pinned:        pinned,
+			Notify:        boolOr(req.Notify, cur.Notify),
 		})
 		if err != nil {
 			return err

@@ -1,7 +1,8 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router";
 import { EVERYTHING_ID, type ChannelSummary, type Feed, type FeedInput, type FeedSort } from "@/lib/api";
-import { useAllChannels, useChannelPlaylists, useDeleteFeed, useSaveFeed, useUpdatePrefs, usePrefs } from "@/lib/queries";
+import { useAllChannels, useChannelPlaylists, useDeleteFeed, useMe, useSaveFeed, useUpdatePrefs, usePrefs } from "@/lib/queries";
+import { useConfig } from "@/lib/config";
 import { plural } from "@/lib/format";
 import { trackFeedCreated } from "@/lib/analytics";
 import { Avatar, CheckIcon, Modal, SearchBox, Segmented, Spinner, Toggle } from "./ui";
@@ -20,6 +21,8 @@ const SORTS: { value: FeedSort; label: string }[] = [
 export function FeedEditor({ feed, onClose }: { feed?: Feed; onClose: () => void }) {
   const navigate = useNavigate();
   const isEverything = feed?.id === EVERYTHING_ID;
+  const config = useConfig();
+  const me = useMe().data;
   const prefs = usePrefs();
   const updatePrefs = useUpdatePrefs();
   const save = useSaveFeed();
@@ -37,6 +40,7 @@ export function FeedEditor({ feed, onClose }: { feed?: Feed; onClose: () => void
   const [shorts, setShorts] = useState(isEverything ? (prefs?.everything_include_shorts ?? false) : (feed?.include_shorts ?? false));
   const [subsOnly, setSubsOnly] = useState(feed?.subtitles_only ?? false);
   const [pinned, setPinned] = useState(feed?.pinned ?? false);
+  const [notify, setNotify] = useState(feed?.notify ?? false);
   const [filter, setFilter] = useState("");
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -90,6 +94,7 @@ export function FeedEditor({ feed, onClose }: { feed?: Feed; onClose: () => void
         include_shorts: shorts,
         subtitles_only: subsOnly,
         pinned,
+        notify,
       };
       const saved = await save.mutateAsync({ id: feed?.id, input });
       if (feed) onClose();
@@ -215,6 +220,22 @@ export function FeedEditor({ feed, onClose }: { feed?: Feed; onClose: () => void
                 <OptionRow title="Pin to top" hint="The feed the app opens on">
                   <Toggle on={pinned} onChange={setPinned} label="Pin to top" />
                 </OptionRow>
+                {/* Only a server that can send them offers the switch. The
+                    notification lands on a phone, so the hint says which —
+                    or that there is none yet, which is the one case where a
+                    switched-on flag does nothing. */}
+                {config.push_enabled && (
+                  <OptionRow
+                    title="Notify"
+                    hint={
+                      me && me.push_devices === 0
+                        ? "No iPhone or iPad signed in yet"
+                        : `New videos, on your ${me?.push_devices === 1 ? "iPhone or iPad" : "iPhones and iPads"}`
+                    }
+                  >
+                    <Toggle on={notify} onChange={setNotify} label="Notify" />
+                  </OptionRow>
+                )}
               </>
             )}
           </div>

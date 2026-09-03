@@ -35,6 +35,15 @@ stringData:
   MEDIA_TOKEN_SECRET: "<openssl rand -hex 32>"
   # optional
   # SENTRY_DSN: "https://…"
+  # Feed notifications for the iPhone/iPad app: the APNs auth key from the
+  # developer portal (Keys → the .p8 file), with its id and your team id.
+  # Leave all three out to run without push.
+  # APNS_KEY: |
+  #   -----BEGIN PRIVATE KEY-----
+  #   …
+  #   -----END PRIVATE KEY-----
+  # APNS_KEY_ID: "ABC123DEFG"
+  # APNS_TEAM_ID: "TEAM123456"
 ```
 
 Use a sealed/external secret mechanism rather than committing this.
@@ -382,6 +391,15 @@ Configure the provider to also allow:
   `device_authorization_endpoint` in its discovery document and issue
   `offline_access` on this grant too. The iOS, iPadOS and web clients are
   unaffected either way.
+
+**Feed notifications** on the iPhone and iPad need nothing from the provider,
+only the APNs key in the Secret above. The key is made once per developer
+team in the developer portal (Certificates, Identifiers & Profiles → Keys →
+enable *Apple Push Notifications service*) and is not tied to one app, so a
+deployment that builds its own copy of the app under another bundle id sets
+`APNS_TOPIC` to that id and reuses the same key. Without the key the server
+starts, stores the per-feed flag and sends nothing, and every client hides the
+switch.
 
 ## Postgres
 

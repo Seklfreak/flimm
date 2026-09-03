@@ -20,7 +20,10 @@ One container image: a Go backend with the React frontend embedded.
   also hold a single **series** — one of a channel's playlists — so one Let's
   Play follows you around without the channel's other thousands of videos
   (TubeArchivist must have the playlist indexed; an admin can trigger that
-  from the channel page).
+  from the channel page). A feed can **notify**: when TubeArchivist downloads
+  something for it, your iPhone or iPad gets one notification per feed —
+  a single video by name, or a digest — and a tap opens it. Needs an APNs
+  key on the server (`APNS_KEY`); off otherwise.
 - **Channels** directory — search, sort, see which feeds each channel is in,
   find channels in no feed; add/remove from feeds right on the channel page.
 - **Resume & seen state per user** — heartbeat progress, automatic resume
@@ -222,6 +225,10 @@ All configuration is via environment variables.
 | `VITE_SENTRY_DSN` | no | frontend error reporting; a **build arg**, baked into the bundle at image build time (not a runtime env var) |
 | `VITE_UMAMI_URL`, `VITE_UMAMI_WEBSITE_ID` | no | self-hosted [Umami](https://umami.is) analytics for the web app; **build args**, baked in at image build time. See [Analytics](#analytics) |
 | `ANALYTICS_DISABLED` | no | `true` turns analytics off for every client of this deployment at runtime, whatever they were built with. See [Analytics](#analytics) |
+| `APNS_KEY` | no | feed notifications for the iPhone/iPad app: the `.p8` APNs auth key from the Apple developer portal (Certificates, Identifiers & Profiles → Keys, with the APNs service enabled) — its PEM text, or a path to the file. **Empty (the default) turns notifications off**; the switch is then hidden in every client |
+| `APNS_KEY_ID`, `APNS_TEAM_ID` | with `APNS_KEY` | the key's id and the developer team. All three go together; one without the others refuses to start |
+| `APNS_TOPIC` | no | the app's bundle id, default `dev.winktech.flimm`. Only a fork that renamed the app changes it |
+| `APNS_URL` | no | send to a stand-in instead of Apple — development only |
 | `LOG_LEVEL` | no | `debug`, `info` (default), `warn`, `error` |
 
 ## Running locally
@@ -270,6 +277,13 @@ resume or a chapter jump can be checked by eye.
 the archive is longer than a page and anything that lists channels — the feed
 editor's picker most of all — can be checked against a subscription list of a
 realistic size rather than one that fits in a single response.
+
+Nothing in a fixed catalogue is ever *new*, and "new" is the one thing a feed
+set to notify reacts to, so the fake has a side door TubeArchivist does not:
+`curl -X POST localhost:8001/fake/redownload/<video id>` makes that video read
+as downloaded just now (and unwatched). With the server pointed at a stand-in
+APNs (`APNS_URL`) and a P-256 key from `openssl` in `APNS_KEY`, the whole path
+from download to alert can be watched without an Apple account.
 
 Set `SPONSORBLOCK_URL=` (empty) alongside it: the real SponsorBlock service has
 never heard of these video ids, and its answer of "no segments" is

@@ -6,6 +6,7 @@ import SwiftUI
 struct SettingsView: View {
     @Environment(AppModel.self) private var app
     @Environment(AuthSession.self) private var session
+    @Environment(PushCoordinator.self) private var push
     /// Quality is per device, so it comes from here rather than from ``Prefs``.
     @Environment(PlaybackSettings.self) private var playback
 
@@ -36,11 +37,21 @@ struct SettingsView: View {
             titleVisibility: .visible
         ) {
             Button(session.requiresSignIn ? "Sign out" : "Disconnect", role: .destructive) {
-                Task { await session.signOut() }
+                // The device stops being this account's before the session
+                // that could tell the server so is gone.
+                Task {
+                    await push.unregister()
+                    await session.signOut()
+                }
             }
         }
         .confirmationDialog("Change server?", isPresented: $confirmChangeServer, titleVisibility: .visible) {
-            Button("Sign out and change server", role: .destructive) { Task { await session.forgetServer() } }
+            Button("Sign out and change server", role: .destructive) {
+                Task {
+                    await push.unregister()
+                    await session.forgetServer()
+                }
+            }
         } message: {
             Text("You'll be signed out and asked for a new server address.")
         }

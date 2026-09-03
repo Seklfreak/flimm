@@ -41,6 +41,11 @@ public struct Feed: Codable, Sendable, Hashable, Identifiable {
     public let subtitlesOnly: Bool
     /// At most one feed is pinned; it is the one the app opens on.
     public let pinned: Bool
+    /// New downloads for this feed are pushed to the account's iPhones and
+    /// iPads. Only reaches anyone on a server with an APNs key
+    /// (``ServerConfig/pushEnabled``) and once this device has registered
+    /// (``Me/pushDevices``).
+    public let notify: Bool
     public let position: Int
     public let createdAt: Date?
     public let updatedAt: Date?
@@ -63,6 +68,7 @@ public struct Feed: Codable, Sendable, Hashable, Identifiable {
         includeShorts: Bool = false,
         subtitlesOnly: Bool = false,
         pinned: Bool = false,
+        notify: Bool = false,
         position: Int = 0,
         createdAt: Date? = nil,
         updatedAt: Date? = nil
@@ -80,6 +86,7 @@ public struct Feed: Codable, Sendable, Hashable, Identifiable {
         self.includeShorts = includeShorts
         self.subtitlesOnly = subtitlesOnly
         self.pinned = pinned
+        self.notify = notify
         self.position = position
         self.createdAt = createdAt
         self.updatedAt = updatedAt
@@ -100,6 +107,7 @@ public struct Feed: Codable, Sendable, Hashable, Identifiable {
         includeShorts = try c.decode(.includeShorts, or: false)
         subtitlesOnly = try c.decode(.subtitlesOnly, or: false)
         pinned = try c.decode(.pinned, or: false)
+        notify = try c.decode(.notify, or: false)
         position = try c.decode(.position, or: 0)
         createdAt = try c.decodeIfPresent(Date.self, forKey: .createdAt)
         updatedAt = try c.decodeIfPresent(Date.self, forKey: .updatedAt)
@@ -123,6 +131,9 @@ public struct FeedInput: Codable, Sendable, Hashable {
     public var subtitlesOnly: Bool
     /// `true` unpins every other feed server-side.
     public var pinned: Bool
+    /// Push new downloads to the account's devices. Always sent, like the
+    /// rest: the editor owns the whole form.
+    public var notify: Bool
 
     public init(
         name: String,
@@ -133,7 +144,8 @@ public struct FeedInput: Codable, Sendable, Hashable {
         hideSeen: Bool = true,
         includeShorts: Bool = false,
         subtitlesOnly: Bool = false,
-        pinned: Bool = false
+        pinned: Bool = false,
+        notify: Bool = false
     ) {
         self.name = name
         self.channelIds = channelIds
@@ -144,6 +156,7 @@ public struct FeedInput: Codable, Sendable, Hashable {
         self.includeShorts = includeShorts
         self.subtitlesOnly = subtitlesOnly
         self.pinned = pinned
+        self.notify = notify
     }
 
     public init(feed: Feed) {
@@ -156,7 +169,8 @@ public struct FeedInput: Codable, Sendable, Hashable {
             hideSeen: feed.hideSeen,
             includeShorts: feed.includeShorts,
             subtitlesOnly: feed.subtitlesOnly,
-            pinned: feed.pinned
+            pinned: feed.pinned,
+            notify: feed.notify
         )
     }
 }

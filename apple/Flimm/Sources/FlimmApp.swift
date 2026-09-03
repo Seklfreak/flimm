@@ -4,6 +4,9 @@ import SwiftUI
 
 @main
 struct FlimmApp: App {
+    /// Owns the push coordinator: Apple's token and tap callbacks land on
+    /// the delegate, which exists before any view does.
+    @UIApplicationDelegateAdaptor(AppDelegate.self) private var delegate
     @State private var session = AuthSession(redirectURI: AppConfig.redirectURI)
 
     init() {
@@ -29,6 +32,7 @@ struct FlimmApp: App {
         WindowGroup {
             ContentView()
                 .environment(session)
+                .environment(delegate.push)
                 .task { await session.restore() }
         }
     }

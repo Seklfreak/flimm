@@ -80,6 +80,11 @@ final class NavigationModel {
             case "stats": path.append(Route.stats)
             case "settings": path.append(Route.settings)
             case "feeds": path.append(Route.feedManager)
+            // The editor itself, empty: the one screen with the notify
+            // switch, which is otherwise two taps behind the manager.
+            case "new-feed":
+                path.append(Route.feedManager)
+                path.append(Route.feedEditor(feedId: nil))
             default: break
             }
             if !path.isEmpty { stacks[tab] = path }

@@ -75,8 +75,10 @@ func (es *eventStore) querier() *sqlctest.FakeQuerier {
 		// Feed playlist sources default to none, so the many feed tests that
 		// predate them keep working; tests about them override these.
 		ListPinnedChannelsFn: func(context.Context, uuid.UUID) ([]sqlc.PinnedChannel, error) { return nil, nil },
-		ListFeedsFn:          func(context.Context, uuid.UUID) ([]sqlc.Feed, error) { return nil, nil },
-		ListFeedPlaylistsFn:  func(context.Context, uuid.UUID) ([]string, error) { return nil, nil },
+		// No phone registered unless a test says so; /me reports the count.
+		CountPushDevicesFn:  func(context.Context, uuid.UUID) (int64, error) { return 0, nil },
+		ListFeedsFn:         func(context.Context, uuid.UUID) ([]sqlc.Feed, error) { return nil, nil },
+		ListFeedPlaylistsFn: func(context.Context, uuid.UUID) ([]string, error) { return nil, nil },
 		ListFeedPlaylistsForUserFn: func(context.Context, uuid.UUID) ([]sqlc.ListFeedPlaylistsForUserRow, error) {
 			return nil, nil
 		},

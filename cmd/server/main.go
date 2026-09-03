@@ -18,6 +18,7 @@ import (
 
 	"github.com/Seklfreak/flimm"
 	"github.com/Seklfreak/flimm/internal/api"
+	"github.com/Seklfreak/flimm/internal/apns"
 	"github.com/Seklfreak/flimm/internal/config"
 	"github.com/Seklfreak/flimm/internal/db"
 	"github.com/Seklfreak/flimm/internal/dearrow"
@@ -171,6 +172,25 @@ func main() {
 		log.Info("return youtube dislike disabled; videos carry no dislike count")
 	}
 
+	// Feed notifications. Off unless the operator set an APNs key; the flag
+	// on a feed is stored either way, so a key added later starts sending.
+	var pushClient *apns.Client
+	if cfg.PushEnabled() {
+		pushClient, err = apns.New(apns.Options{
+			Key: cfg.APNSKey, KeyID: cfg.APNSKeyID, TeamID: cfg.APNSTeamID, Topic: cfg.APNSTopic,
+			BaseURL:   cfg.APNSURL,
+			UserAgent: "flimm/" + version,
+			Log:       log,
+		})
+		if err != nil {
+			log.Error("apns", "err", err)
+			os.Exit(1)
+		}
+		log.Info("push notifications", "topic", cfg.APNSTopic, "key_id", cfg.APNSKeyID)
+	} else {
+		log.Info("push notifications disabled; no APNS_KEY")
+	}
+
 	srv := api.NewServer(api.Options{
 		Pool:              pool,
 		TA:                client,
@@ -188,6 +208,7 @@ func main() {
 		Sponsorblock:      sbClient,
 		DeArrow:           deClient,
 		RYD:               rydClient,
+		Push:              pushClient,
 		FFmpegPath:        cfg.FFmpegPath,
 		HWAccel:           hwaccel,
 		SegmentWait:       cfg.MediaSegmentWait,
@@ -217,6 +238,9 @@ func main() {
 	// loudness measurement for what is near the top of their feeds, derived
 	// while nothing is playing.
 	srv.StartMediaPrepare(ctx)
+	// And the one that tells a phone: what TubeArchivist downloaded for a
+	// feed that asked to be told, since the last time it was.
+	srv.StartFeedNotifier(ctx)
 
 	log.Info("listening", "port", cfg.Port)
 	serveErr := make(chan error, 1)

@@ -33,6 +33,14 @@ targets:
         product: FlimmKit
       - package: Sentry
         product: Sentry
+    # Feed notifications arrive through APNs. `development` is what a build
+    # from Xcode registers with (the sandbox); an App Store export rewrites
+    # it to `production`. The App ID needs the Push Notifications capability
+    # for the profile to carry it — see docs/apple-apps.md.
+    entitlements:
+      path: Flimm/Flimm.entitlements
+      properties:
+        aps-environment: development
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.winktech.flimm

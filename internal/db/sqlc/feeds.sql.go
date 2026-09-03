@@ -46,9 +46,9 @@ func (q *Queries) AddFeedPlaylist(ctx context.Context, arg AddFeedPlaylistParams
 }
 
 const createFeed = `-- name: CreateFeed :one
-INSERT INTO feeds (user_id, name, sort, hide_seen, include_shorts, subtitles_only, pinned, position)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-RETURNING id, user_id, name, sort, hide_seen, include_shorts, subtitles_only, pinned, position, created_at, updated_at
+INSERT INTO feeds (user_id, name, sort, hide_seen, include_shorts, subtitles_only, pinned, position, notify, notified_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, CASE WHEN $9::boolean THEN now() END)
+RETURNING id, user_id, name, sort, hide_seen, include_shorts, subtitles_only, pinned, position, created_at, updated_at, notify, notified_at
 `
 
 type CreateFeedParams struct {
@@ -60,8 +60,11 @@ type CreateFeedParams struct {
 	SubtitlesOnly bool      `json:"subtitles_only"`
 	Pinned        bool      `json:"pinned"`
 	Position      int32     `json:"position"`
+	Notify        bool      `json:"notify"`
 }
 
+// A feed born notifying starts its high-water mark at now: nothing already in
+// the archive is news.
 func (q *Queries) CreateFeed(ctx context.Context, arg CreateFeedParams) (Feed, error) {
 	row := q.db.QueryRow(ctx, createFeed,
 		arg.UserID,
@@ -72,6 +75,7 @@ func (q *Queries) CreateFeed(ctx context.Context, arg CreateFeedParams) (Feed, e
 		arg.SubtitlesOnly,
 		arg.Pinned,
 		arg.Position,
+		arg.Notify,
 	)
 	var i Feed
 	err := row.Scan(
@@ -86,6 +90,8 @@ func (q *Queries) CreateFeed(ctx context.Context, arg CreateFeedParams) (Feed, e
 		&i.Position,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Notify,
+		&i.NotifiedAt,
 	)
 	return i, err
 }
@@ -162,7 +168,7 @@ func (q *Queries) DeletePlaylistFromUserFeeds(ctx context.Context, arg DeletePla
 }
 
 const getFeed = `-- name: GetFeed :one
-SELECT id, user_id, name, sort, hide_seen, include_shorts, subtitles_only, pinned, position, created_at, updated_at FROM feeds WHERE id = $1 AND user_id = $2
+SELECT id, user_id, name, sort, hide_seen, include_shorts, subtitles_only, pinned, position, created_at, updated_at, notify, notified_at FROM feeds WHERE id = $1 AND user_id = $2
 `
 
 type GetFeedParams struct {
@@ -185,6 +191,8 @@ func (q *Queries) GetFeed(ctx context.Context, arg GetFeedParams) (Feed, error) 
 		&i.Position,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Notify,
+		&i.NotifiedAt,
 	)
 	return i, err
 }
@@ -322,7 +330,7 @@ func (q *Queries) ListFeedPlaylistsForUser(ctx context.Context, userID uuid.UUID
 }
 
 const listFeeds = `-- name: ListFeeds :many
-SELECT id, user_id, name, sort, hide_seen, include_shorts, subtitles_only, pinned, position, created_at, updated_at FROM feeds WHERE user_id = $1 ORDER BY position, created_at
+SELECT id, user_id, name, sort, hide_seen, include_shorts, subtitles_only, pinned, position, created_at, updated_at, notify, notified_at FROM feeds WHERE user_id = $1 ORDER BY position, created_at
 `
 
 func (q *Queries) ListFeeds(ctx context.Context, userID uuid.UUID) ([]Feed, error) {
@@ -346,6 +354,8 @@ func (q *Queries) ListFeeds(ctx context.Context, userID uuid.UUID) ([]Feed, erro
 			&i.Position,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.Notify,
+			&i.NotifiedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -422,9 +432,18 @@ SET name = $3,
     include_shorts = $6,
     subtitles_only = $7,
     pinned = $8,
+    -- Switching notifications on (re)starts the high-water mark at now;
+    -- switching them off clears it, so a later switch-on cannot announce
+    -- everything that arrived in between.
+    notified_at = CASE
+        WHEN $9::boolean AND NOT notify THEN now()
+        WHEN NOT $9::boolean THEN NULL
+        ELSE notified_at
+    END,
+    notify = $9,
     updated_at = now()
 WHERE id = $1 AND user_id = $2
-RETURNING id, user_id, name, sort, hide_seen, include_shorts, subtitles_only, pinned, position, created_at, updated_at
+RETURNING id, user_id, name, sort, hide_seen, include_shorts, subtitles_only, pinned, position, created_at, updated_at, notify, notified_at
 `
 
 type UpdateFeedParams struct {
@@ -436,6 +455,7 @@ type UpdateFeedParams struct {
 	IncludeShorts bool      `json:"include_shorts"`
 	SubtitlesOnly bool      `json:"subtitles_only"`
 	Pinned        bool      `json:"pinned"`
+	Notify        bool      `json:"notify"`
 }
 
 func (q *Queries) UpdateFeed(ctx context.Context, arg UpdateFeedParams) (Feed, error) {
@@ -448,6 +468,7 @@ func (q *Queries) UpdateFeed(ctx context.Context, arg UpdateFeedParams) (Feed, e
 		arg.IncludeShorts,
 		arg.SubtitlesOnly,
 		arg.Pinned,
+		arg.Notify,
 	)
 	var i Feed
 	err := row.Scan(
@@ -462,6 +483,8 @@ func (q *Queries) UpdateFeed(ctx context.Context, arg UpdateFeedParams) (Feed, e
 		&i.Position,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Notify,
+		&i.NotifiedAt,
 	)
 	return i, err
 }

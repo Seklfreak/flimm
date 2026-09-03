@@ -8,6 +8,7 @@ import SwiftUI
 /// are instead of throwing them back to the setup screen.
 struct ContentView: View {
     @Environment(AuthSession.self) private var session
+    @Environment(PushCoordinator.self) private var push
     @Environment(\.scenePhase) private var scenePhase
 
     @State private var app: AppModel?
@@ -52,6 +53,10 @@ struct ContentView: View {
         }
         .preferredColorScheme(app?.prefs.theme.colorScheme)
         .task(id: sessionKey) { syncAppModel() }
+        // A tapped notification. Handled here rather than in the delegate
+        // because opening anything needs the player and the navigation
+        // model, and a tap that launched the app arrives before either.
+        .onChange(of: push.pendingLink) { _, _ in openPendingLink() }
         // A backgrounded phone has nobody to show a scrubber to, and the poll
         // it holds open would be a connection kept alive for nothing.
         .onChange(of: scenePhase) { _, phase in
@@ -68,6 +73,7 @@ struct ContentView: View {
     private func syncAppModel() {
         guard session.state == .signedIn, let client = session.client else {
             app = nil
+            push.attach(client: nil)
             remote?.stop()
             remote = nil
             // A signed-out session has no client to report progress with, so
@@ -81,8 +87,24 @@ struct ContentView: View {
             remote = RemoteControl(client: client)
         }
         remote?.start()
+        push.attach(client: client)
         player.configure(app: app, playback: playback)
+        openPendingLink()
         openDebugVideo()
+    }
+
+    /// Opens what a tapped notification asked for, once there is an app to
+    /// open it in. A single new video plays in its feed, so *up next* is the
+    /// rest of that feed; a digest goes to the feed itself.
+    private func openPendingLink() {
+        guard app != nil, let link = push.pendingLink else { return }
+        push.pendingLink = nil
+        switch link {
+        case .video(let id, let feedID):
+            player.play(id, context: PlaybackContext(source: .feed(feedID)))
+        case .feed(let id):
+            nav.select(feed: id)
+        }
     }
 
     /// Opens a video straight from launch, so a screen that only exists during

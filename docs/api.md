@@ -40,7 +40,8 @@ Base path: `/api/v1`. JSON, snake_case. Times are RFC 3339 UTC. IDs are strings.
   away.
 - OIDC discovery for clients: `GET /api/v1/config` (unauthenticated) returns
   `{ "app_name", "oidc_issuer", "oidc_client_id", "version", "auth_disabled",
-  "analytics_disabled" }` so native apps need only the server URL.
+  "analytics_disabled", "push_enabled" }` so native apps need only the server
+  URL.
 - **`auth_disabled: true`** means the deployment runs with `AUTH_DISABLED=true`:
   there is no sign-in, and every request is the same fixed dev user. A client
   connects to such a server without an OIDC flow and sends any non-empty bearer
@@ -55,6 +56,10 @@ Base path: `/api/v1`. JSON, snake_case. Times are RFC 3339 UTC. IDs are strings.
   loads the tracker, the Apple apps as soon as the server is known — and one
   built without an endpoint reports nothing either way. See the README's
   "Analytics".
+- **`push_enabled: true`** means the server has an APNs key and a feed's
+  `notify` flag reaches an iPhone or iPad — see [Notifications](#notifications).
+  A client hides the switch on a server that says `false`: a control that does
+  nothing is worse than none.
 
 ## Errors
 
@@ -267,6 +272,7 @@ that is later deleted in TubeArchivist simply drops out of
   "include_shorts": false,
   "subtitles_only": false,
   "pinned": true,                      // at most one; the feed the app opens on
+  "notify": false,                     // push new downloads to the user's iPhones/iPads (see Notifications)
   "position": 0,                       // sidebar order
   "created_at": "…", "updated_at": "…"
 }
@@ -380,8 +386,10 @@ Note that TA paginates at a size it chooses (12 by default) and ignores the
 | GET | `/config` | unauthenticated; app name, OIDC issuer/client id, version |
 | GET | `/healthz` | unauthenticated **readiness**: 200 when the DB answers, 503 when it does not. `ta` reports TubeArchivist as `ok`/`slow`/`unreachable` beside that verdict without deciding it — the check is time-boxed and cached, so a slow archive cannot make the probe late. An admin (`ADMIN_EMAILS`) also gets `stalls`: the recent [playback stalls](#playback-stalls) with the server's attribution |
 | GET | `/livez` | unauthenticated **liveness**: 200 whenever the process is answering. Touches neither the DB nor TA — restarting fixes neither |
-| GET | `/me` | `{ "id", "name", "email", "is_admin", "prefs": Prefs }` |
+| GET | `/me` | `{ "id", "name", "email", "is_admin", "prefs": Prefs, "push_devices": 1 }` — `push_devices` is how many iPhones and iPads are registered for [notifications](#notifications) |
 | PATCH | `/me/prefs` | partial update of Prefs, returns Prefs |
+| PUT | `/me/devices/{token}` | registers an APNs device token for the caller; body `{ "platform": "ios\|ipados", "environment": "production\|sandbox" }`, both optional (defaults `ios`, `production`); 204. Idempotent — the app sends it on every launch |
+| DELETE | `/me/devices/{token}` | sign-out: forgets the caller's registration; 204, or 404 for a token that is not theirs |
 | POST | `/session/media` | sets `flimm_media` cookie, 204 |
 
 Prefs:
@@ -452,6 +460,55 @@ its default — send the whole map back, which is what the settings screens do.
 | POST | `/feeds/{id}/new-series/{playlistId}/dismiss` | never announce this series again, in any feed; 204 |
 | GET | `/feeds/{id}/videos` | query `view=unseen\|all` (default: feed's `hide_seen` → unseen else all), paged. **`view=unseen` opens with the videos the viewer is part-way through**, most recently played first, then the rest of the unseen feed; each appears once, and paging carries across the join. `view=continue` is accepted for clients built before that and answers with those in-progress videos alone |
 | POST | `/feeds/{id}/mark-seen` | marks every currently unseen video in the feed watched; 204 |
+
+#### Notifications
+
+"Tell me when this feed has something new." A feed with `notify: true` is
+polled by the server: every **five minutes** it asks TubeArchivist what it
+**downloaded** for the feed's sources since the last look, and sends **one
+notification per feed per pass** to every device the user has registered.
+
+- **Downloaded, not published.** A channel backfill fetches old uploads today,
+  and those are news to the archive. The poll reads each source's newest
+  downloads (one page, `sort=downloaded`) and keeps what arrived after the
+  feed's high-water mark, minus what the viewer has already watched or
+  dismissed and minus what the feed's own filters (Shorts, subtitles-only)
+  would hide.
+- **The mark starts at *now*.** Switching `notify` on sets it to the moment of
+  the switch (`CreateFeed` / `UpdateFeed`), so a feed over a channel with a
+  thousand videos announces nothing until the next one lands — the same
+  baseline rule series watches follow. Switching it off clears the mark, so a
+  later switch-on cannot announce everything that arrived in between. After a
+  pass the mark moves to the newest download announced. It also moves when
+  the user has **no device registered**: a phone that registers next week
+  must not get last week's downloads in one burst. It does *not* move when
+  Apple could not be reached, so an outage delays the news rather than losing
+  it.
+- **The alert.** One new video is announced by name: title = channel name,
+  subtitle = feed name, body = video title, and the payload carries `feed`
+  and `video` ids, so a tap opens the video *in that feed* (up next is the
+  rest of the feed). Several are a digest — title = feed name, body =
+  `3 new videos: A, B and C` (three named, the rest counted) — with `feed`
+  only, and a tap opens the feed. Alerts are threaded per feed
+  (`thread-id`), never collapsed, and expire after a day.
+- **Devices.** `PUT /me/devices/{token}` is what the iPhone app sends on every
+  launch: Apple may rotate a token at any time and the old one then delivers
+  nothing without a word. A token is a device, so registering it again moves
+  it to the caller — a phone that signs in as someone else notifies them, not
+  both. `environment` says which APNs the token came from: a build run from
+  Xcode registers a *sandbox* token, a TestFlight or App Store build a
+  *production* one, and a push sent to the wrong host is refused. A token
+  Apple reports dead (`410 Unregistered`, `BadDeviceToken`) is forgotten
+  server-side.
+- **Where it makes sense.** iPhone and iPad register and receive; the web
+  client can set the flag (the alert still lands on the phone) and says how
+  many devices it reaches; Apple TV does neither — tvOS shows no banners, and
+  the top shelf already surfaces the pinned feed. `everything` cannot notify:
+  it is not a row, and "every download in the archive" is TubeArchivist's own
+  notification to send.
+- **Off by default, per deployment.** Without `APNS_KEY` (see
+  [Configuration](#configuration-env)) the flag is stored and nothing is sent;
+  `push_enabled` on `/config` says which.
 
 ### Channels
 | Method | Path | Notes |
@@ -1526,6 +1583,10 @@ tested against a fake.
 | `PORT` | no | default 8080 |
 | `SENTRY_DSN` | no | |
 | `ANALYTICS_DISABLED` | no | `true` publishes `analytics_disabled` on `/config`, turning client analytics off for this deployment |
+| `APNS_KEY` | no | the `.p8` APNs auth key from the developer portal — its PEM text, or a path to the file. Turns [feed notifications](#notifications) on; empty (the default) leaves them off and `push_enabled` false. Needs the two below |
+| `APNS_KEY_ID`, `APNS_TEAM_ID` | with `APNS_KEY` | the key's ten-character id and the team it belongs to. Setting one of the three without the others is a start-up error, not "off" |
+| `APNS_TOPIC` | no | the iPhone app's bundle id; default `dev.winktech.flimm`, the app this repo builds |
+| `APNS_URL` | no | replaces Apple's hosts — for a development stack pointed at a stand-in. Empty sends to Apple, sandbox or production per device |
 | `LOG_LEVEL` | no | |
 
 The web client's analytics endpoint is a **build arg**, not an env var:

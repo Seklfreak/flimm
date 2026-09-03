@@ -37,15 +37,20 @@ type Server struct {
 	position map[string]float64
 	// custom holds playlists created through the API, in creation order.
 	custom []*ta.Playlist
+	// redownloaded overrides a video's date_downloaded — the side door that
+	// makes something in the fixed catalogue count as *just arrived*, which
+	// is the only state the feed notifier reacts to.
+	redownloaded map[string]int64
 }
 
 func NewServer(catalogue *Catalogue, media *Media, log *slog.Logger) *Server {
 	return &Server{
-		catalogue: catalogue,
-		media:     media,
-		log:       log,
-		watched:   map[string]bool{},
-		position:  map[string]float64{},
+		catalogue:    catalogue,
+		media:        media,
+		log:          log,
+		watched:      map[string]bool{},
+		position:     map[string]float64{},
+		redownloaded: map[string]int64{},
 	}
 }
 
@@ -72,6 +77,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/playlist/{id}/", s.getPlaylist)
 	mux.HandleFunc("DELETE /api/playlist/{id}/", s.deletePlaylist)
 	mux.HandleFunc("GET /api/search/", s.search)
+	// Not a TubeArchivist route. The catalogue is fixed, so nothing in it
+	// is ever *new*; this makes one video count as downloaded just now,
+	// which is what a feed set to notify is waiting for.
+	mux.HandleFunc("POST /fake/redownload/{id}", s.redownload)
 	mux.HandleFunc("GET /media/", s.serveMedia)
 	// TA's thumbnail cache, which Flimm proxies /media/thumb/* to.
 	mux.HandleFunc("GET /cache/", s.serveThumb)
@@ -163,6 +172,21 @@ func (s *Server) getVideo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"data": v})
+}
+
+// redownload answers POST /fake/redownload/{id}: from now on the video reads
+// as downloaded at this moment, and as unwatched — a fresh arrival.
+func (s *Server) redownload(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if _, ok := s.video(id); !ok {
+		notFound(w)
+		return
+	}
+	s.mu.Lock()
+	s.redownloaded[id] = time.Now().Unix()
+	delete(s.watched, id)
+	s.mu.Unlock()
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) similar(w http.ResponseWriter, r *http.Request) {
@@ -676,6 +700,9 @@ func (s *Server) videoLocked(id string) (ta.Video, bool) {
 
 func (s *Server) applyStateLocked(v ta.Video) ta.Video {
 	v.Player.Watched = s.watched[v.YoutubeID]
+	if at, ok := s.redownloaded[v.YoutubeID]; ok {
+		v.DateDownloaded = at
+	}
 	if position, ok := s.position[v.YoutubeID]; ok && v.Player.Duration > 0 {
 		v.Player.Progress = position / v.Player.Duration
 	}

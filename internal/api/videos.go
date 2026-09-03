@@ -48,9 +48,17 @@ type listOpts struct {
 	ExcludeIDs map[string]bool
 }
 
+// sortDownloaded orders by when TubeArchivist fetched the file, newest first.
+// Internal — the notifier's question is "what arrived", which is not the
+// same as "what was published": a channel backfill downloads old uploads
+// today. A feed cannot be set to it (see validSorts).
+const sortDownloaded = "downloaded"
+
 // taSort maps an API sort to TA's sort/order pair.
 func taSort(sortKey string) (field, order string) {
 	switch sortKey {
+	case sortDownloaded:
+		return "downloaded", "desc"
 	case "oldest":
 		return "published", "asc"
 	case "shortest":
@@ -66,6 +74,10 @@ func sortSummaries(items []VideoSummary, sortKey string) {
 	sort.SliceStable(items, func(i, j int) bool {
 		a, b := items[i], items[j]
 		switch sortKey {
+		case sortDownloaded:
+			if !a.Downloaded.Equal(b.Downloaded) {
+				return a.Downloaded.After(b.Downloaded)
+			}
 		case "oldest":
 			if !a.Published.Equal(b.Published) {
 				return a.Published.Before(b.Published)

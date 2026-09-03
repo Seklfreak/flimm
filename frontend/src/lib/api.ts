@@ -10,6 +10,9 @@ export interface AppConfig {
   /** The deployment runs with `ANALYTICS_DISABLED=true`: clients report
    *  nothing, whatever analytics endpoint they were built with. */
   analytics_disabled?: boolean;
+  /** The server has an APNs key: a feed's `notify` reaches an iPhone or
+   *  iPad. Without it the editor does not offer the switch. */
+  push_enabled?: boolean;
 }
 
 export type VideoType = "video" | "short" | "stream";
@@ -291,6 +294,9 @@ export interface Feed {
   include_shorts: boolean;
   subtitles_only: boolean;
   pinned: boolean;
+  /** New downloads for this feed are pushed to the account's iPhones and
+   *  iPads (see `push_enabled` on the config and `push_devices` on Me). */
+  notify: boolean;
   position: number;
   created_at: string;
   updated_at: string;
@@ -308,6 +314,7 @@ export interface FeedInput {
   include_shorts: boolean;
   subtitles_only: boolean;
   pinned: boolean;
+  notify: boolean;
 }
 
 export interface PlaylistSummary {
@@ -394,6 +401,9 @@ export interface Me {
   email: string;
   is_admin: boolean;
   prefs: Prefs;
+  /** iPhones and iPads registered for feed notifications. Zero means a
+   *  feed's `notify` reaches nobody until the iPhone app has signed in. */
+  push_devices: number;
 }
 
 export interface SubtitleHit {

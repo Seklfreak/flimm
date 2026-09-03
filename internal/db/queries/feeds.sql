@@ -5,8 +5,10 @@ SELECT * FROM feeds WHERE user_id = $1 ORDER BY position, created_at;
 SELECT * FROM feeds WHERE id = $1 AND user_id = $2;
 
 -- name: CreateFeed :one
-INSERT INTO feeds (user_id, name, sort, hide_seen, include_shorts, subtitles_only, pinned, position)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+-- A feed born notifying starts its high-water mark at now: nothing already in
+-- the archive is news.
+INSERT INTO feeds (user_id, name, sort, hide_seen, include_shorts, subtitles_only, pinned, position, notify, notified_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, CASE WHEN $9::boolean THEN now() END)
 RETURNING *;
 
 -- name: UpdateFeed :one
@@ -17,6 +19,15 @@ SET name = $3,
     include_shorts = $6,
     subtitles_only = $7,
     pinned = $8,
+    -- Switching notifications on (re)starts the high-water mark at now;
+    -- switching them off clears it, so a later switch-on cannot announce
+    -- everything that arrived in between.
+    notified_at = CASE
+        WHEN $9::boolean AND NOT notify THEN now()
+        WHEN NOT $9::boolean THEN NULL
+        ELSE notified_at
+    END,
+    notify = $9,
     updated_at = now()
 WHERE id = $1 AND user_id = $2
 RETURNING *;

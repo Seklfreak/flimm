@@ -22,6 +22,7 @@ import (
 	"github.com/go-chi/cors"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/Seklfreak/flimm/internal/apns"
 	"github.com/Seklfreak/flimm/internal/db/sqlc"
 	"github.com/Seklfreak/flimm/internal/dearrow"
 	"github.com/Seklfreak/flimm/internal/media"
@@ -69,6 +70,9 @@ type Options struct {
 	// RYD supplies dislike counts, or is nil when RYD_URL is unset — which is
 	// the default. See the ryd package for why that is not mere caution.
 	RYD *ryd.Client
+	// Push sends feed notifications to iPhones and iPads; nil (no APNs key
+	// configured) stores the per-feed flag and sends nothing.
+	Push *apns.Client
 	// FFmpegPath is the ffmpeg binary used for derivations.
 	FFmpegPath string
 	// HWAccel is the hardware-transcode decision made at start-up; the zero
@@ -126,6 +130,9 @@ type Server struct {
 	// viewer waits for one at most once per video. See extcache.go.
 	cacheJobs chan cacheJob
 	ryd       *ryd.Client
+	// push is the APNs client feed notifications go out through; nil means
+	// the deployment has no key and the notifier never starts. See notify.go.
+	push *apns.Client
 	// minPlaySeconds gates recording a watch event; see Options.
 	minPlaySeconds float64
 	mediaCache     *media.Cache
@@ -185,6 +192,7 @@ func NewServer(o Options) *Server {
 		dearrow:        o.DeArrow,
 		cacheJobs:      make(chan cacheJob, cacheJobsQueue),
 		ryd:            o.RYD,
+		push:           o.Push,
 		minPlaySeconds: cmp.Or(o.MinPlaySeconds, defaultMinPlaySeconds),
 		mediaCache:     o.MediaCache,
 		ffmpegPath:     cmp.Or(o.FFmpegPath, "ffmpeg"),
@@ -262,6 +270,8 @@ func (s *Server) Router() http.Handler {
 
 			r.Get("/me", s.getMe)
 			r.Patch("/me/prefs", s.patchPrefs)
+			r.Put("/me/devices/{token}", s.putPushDevice)
+			r.Delete("/me/devices/{token}", s.deletePushDevice)
 			r.Post("/session/media", s.setMediaCookie)
 
 			r.Get("/feeds", s.listFeeds)
@@ -374,6 +384,9 @@ type ConfigResponse struct {
 	// its clients were built with (ANALYTICS_DISABLED=true). Clients that were
 	// built without an analytics endpoint report nothing either way.
 	AnalyticsDisabled bool `json:"analytics_disabled"`
+	// PushEnabled says the server has an APNs key: a feed's notify flag
+	// reaches a phone. Clients hide the option on a server that has none.
+	PushEnabled bool `json:"push_enabled"`
 }
 
 // getConfig is unauthenticated so native clients need only the server URL.
@@ -387,6 +400,7 @@ func (s *Server) getConfig(w http.ResponseWriter, _ *http.Request) {
 		// the fixed dev user.
 		AuthDisabled:      s.verifier == nil,
 		AnalyticsDisabled: s.analyticsOff,
+		PushEnabled:       s.push != nil,
 	})
 }
 
