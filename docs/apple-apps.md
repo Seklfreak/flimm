@@ -239,6 +239,17 @@ What is there:
     description and a comment thread are a wall of text nobody reads at two
     metres, and are simply a page in your hand.
 
+    **The scrubber is the player's own** (``ScrubberView``, with
+    ``ScrubberStyle/onSurface`` for the colours that sit on a page rather than
+    over a picture): the same scrub-preview stills above the thumb, the same
+    chapter ticks and SponsorBlock tints. A bar dragged from across the room
+    is the one that most needs to say what it is about to land on, and one
+    scrubber is what keeps a still or a tint from existing on the player and
+    not on the companion. Asking for the stills is what makes the server
+    derive them and tvOS never asks, so the companion is usually the first
+    request for a video — a cost paid once, and paid because somebody holding
+    the phone is the person about to drag the bar.
+
     **The direction is one way, deliberately.** The television publishes a
     session and the phone steers it; the phone never tells it what to *open*.
     Casting is a different feature with a different question behind it ("play
@@ -255,7 +266,9 @@ What is there:
     no local-network discovery — which also means it works from the bus.
     `FLIMM_OPEN_REMOTE=1` (Debug only) opens the companion at launch, because
     the bar only exists while another screen is playing and a simulator cannot
-    tap it.
+    tap it. `FLIMM_SCRUB_AT=<seconds>` parks the bar mid-drag, on the player
+    and the companion alike: the preview still exists for the length of a
+    touch and is otherwise invisible to a screenshot.
   - **The Home screen's top shelf shows the pinned feed.** When Flimm is
     focused in the Home screen's top row, tvOS draws a row of what is waiting
     in the feed the app opens on — titles, artwork, and the resume bar on

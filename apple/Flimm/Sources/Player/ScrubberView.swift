@@ -2,11 +2,42 @@ import FlimmKit
 import SwiftUI
 import UIKit
 
+/// How a scrubber is coloured.
+///
+/// The player draws its bar over the picture, where white is the only colour
+/// that survives an arbitrary frame behind it. The companion draws the same
+/// bar on a page, where white is nothing at all. Only the parts that sit on
+/// the background differ — the thumb stays white with its shadow in both, the
+/// way a system `Slider`'s knob does in light and dark alike.
+struct ScrubberStyle {
+    /// The unplayed bar.
+    var track: Color
+    /// Chapter boundary ticks.
+    var marker: Color
+    /// The timestamp under the scrub-preview still.
+    var label: Color
+
+    static let overVideo = ScrubberStyle(
+        track: .white.opacity(0.25),
+        marker: .white.opacity(0.85),
+        label: .white
+    )
+
+    /// On an app background: the companion's transport.
+    static let onSurface = ScrubberStyle(
+        track: Color.primary.opacity(0.18),
+        marker: Color.primary.opacity(0.6),
+        label: .primary
+    )
+}
+
 /// The transport bar's timeline: played position, buffered-agnostic track,
 /// SponsorBlock tints and chapter boundary ticks, with a draggable thumb.
 ///
 /// Drawing it here rather than using `VideoPlayer`'s built-in controls is the
-/// whole reason the player is built on `AVPlayerLayer`.
+/// whole reason the player is built on `AVPlayerLayer`. It is also what the
+/// companion scrubs the television with — one scrubber, so a preview still or
+/// a chapter tick cannot exist on one screen and not the other.
 struct ScrubberView: View {
     let currentTime: Double
     let duration: Double
@@ -15,10 +46,25 @@ struct ScrubberView: View {
     /// The scrub-preview stills, empty until the server has derived them.
     var preview: [PreviewTile] = []
     var previewSheet: UIImage?
+    var style: ScrubberStyle = .overVideo
     let onScrub: (Double) -> Void
     let onCommit: (Double) -> Void
 
-    @State private var dragValue: Double?
+    @State private var dragValue: Double? = Self.pinnedScrub
+
+    /// Debug door: `FLIMM_SCRUB_AT=<seconds>` parks the bar mid-drag.
+    ///
+    ///     SIMCTL_CHILD_FLIMM_SCRUB_AT=42 xcrun simctl launch <device> …
+    ///
+    /// The preview still exists for the length of a touch and not one frame
+    /// longer, so it is invisible to a screenshot — and a state nobody can see
+    /// is a state nobody checks. This is the only way to look at it without a
+    /// finger on the glass, on the player and on the companion alike.
+    #if DEBUG
+    private static let pinnedScrub = ProcessInfo.processInfo.environment["FLIMM_SCRUB_AT"].flatMap(Double.init)
+    #else
+    private static let pinnedScrub: Double? = nil
+    #endif
 
     private var fraction: Double {
         guard duration > 0 else { return 0 }
@@ -31,7 +77,7 @@ struct ScrubberView: View {
             let width = geo.size.width
             ZStack(alignment: .leading) {
                 Capsule()
-                    .fill(Color.white.opacity(0.25))
+                    .fill(style.track)
                     .frame(height: 4)
 
                 ForEach(SponsorRules.ranges(sponsors, duration: duration), id: \.self) { range in
@@ -57,7 +103,7 @@ struct ScrubberView: View {
 
                 ForEach(Array(ChapterMath.markerFractions(chapters, duration: duration).enumerated()), id: \.offset) { _, mark in
                     Rectangle()
-                        .fill(Color.white.opacity(0.85))
+                        .fill(style.marker)
                         .frame(width: 2, height: 10)
                         .offset(x: width * mark - 1)
                 }
@@ -97,6 +143,23 @@ struct ScrubberView: View {
         .frame(height: 44)
         .padding(.vertical, -(44 - PlayerMetrics.scrubberBar) / 2)
         .animation(.easeOut(duration: 0.12), value: dragValue == nil)
+        // A drag gesture is invisible to VoiceOver, so the bar has to say what
+        // it is and be adjustable by itself. The step is a proportion rather
+        // than a fixed ten seconds, which would be a hundred swipes across a
+        // long video and a jump across a short one.
+        .accessibilityElement()
+        .accessibilityLabel("Position")
+        .accessibilityValue(Fmt.duration(dragValue ?? currentTime))
+        .accessibilityAdjustableAction { direction in
+            guard duration > 0 else { return }
+            let step = max(5, duration / 20)
+            let from = dragValue ?? currentTime
+            switch direction {
+            case .increment: onCommit(min(from + step, duration))
+            case .decrement: onCommit(max(from - step, 0))
+            @unknown default: break
+            }
+        }
     }
 
     /// The still above the thumb, while a drag is in progress and only then:
@@ -120,7 +183,7 @@ struct ScrubberView: View {
                     )
                 Text(Fmt.duration(target))
                     .font(.caption2.monospacedDigit().weight(.semibold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(style.label)
             }
             .shadow(radius: 8)
             // Centred on the thumb, but never pushed off either end of the bar.

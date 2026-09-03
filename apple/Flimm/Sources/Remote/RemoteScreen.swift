@@ -13,9 +13,21 @@ struct RemoteScreen: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var details = RemoteDetails()
+    @State private var scrubPreview = ScrubPreviewState()
     /// Set while a finger is on the scrubber. The projected clock keeps running
     /// underneath, and this is what stops it fighting the drag.
     @State private var scrubbing: Double?
+
+    /// The stills to load, or nil while there is nothing to load them for.
+    ///
+    /// Asking is what makes the server derive them, and the television never
+    /// asks — tvOS scrubs without pictures. So this is the first request for
+    /// most videos, and it is deliberately tied to the companion being open:
+    /// somebody holding the phone is the person about to drag the bar. The
+    /// result is a cached variant, so it is a cost paid once per video.
+    private var scrubPreviewPath: String? {
+        details.video?.scrubPreviewPath
+    }
 
     var body: some View {
         NavigationStack {
@@ -39,6 +51,13 @@ struct RemoteScreen: View {
         .task(id: remote.current?.videoId) {
             guard let id = remote.current?.videoId else { return }
             await details.load(videoID: id, client: app.client)
+        }
+        // Separate from the details load: the path only exists once that has
+        // come back, and the key is nil until then, so this runs on the
+        // transition and once per video.
+        .task(id: scrubPreviewPath) {
+            guard let path = scrubPreviewPath else { return }
+            await scrubPreview.load(path: path, client: app.client)
         }
     }
 
@@ -117,25 +136,29 @@ struct RemoteScreen: View {
         }
     }
 
+    /// The player's own scrubber, steering the television instead of a local
+    /// `AVPlayer`: the same preview stills, chapter ticks and SponsorBlock
+    /// tints, because a bar you drag from across the room is the one that most
+    /// needs to say what it is about to land on.
     private func scrubber(_ session: RemoteSession, at position: Double) -> some View {
-        Slider(
-            value: Binding(
-                get: { min(position, max(session.duration, 1)) },
-                set: { scrubbing = $0 }
-            ),
-            in: 0...max(session.duration, 1),
-            onEditingChanged: { editing in
-                // The seek goes on release, not on every value: dragging across
-                // a video would otherwise be dozens of commands, each of which
-                // the television would honour.
-                guard !editing, let target = scrubbing else { return }
+        ScrubberView(
+            currentTime: position,
+            duration: session.duration,
+            chapters: details.chapters,
+            sponsors: details.video?.sponsorblock ?? [],
+            preview: scrubPreview.tiles,
+            previewSheet: scrubPreview.sheet,
+            style: .onSurface,
+            // Held locally while the finger is down. The seek goes on release,
+            // not on every value: dragging across a video would otherwise be
+            // dozens of commands, each of which the television would honour.
+            onScrub: { scrubbing = $0 },
+            onCommit: { target in
                 scrubbing = nil
                 Task { await remote.seek(to: target) }
             }
         )
-        .tint(Palette.accent)
         .disabled(session.duration <= 0)
-        .accessibilityLabel("Position")
     }
 
     private func times(_ session: RemoteSession, at position: Double) -> some View {
