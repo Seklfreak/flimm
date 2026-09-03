@@ -125,7 +125,7 @@ struct TVPlayerOverlay: View {
             if let image = model.artwork {
                 Image(uiImage: image)
                     .resizable()
-                    .aspectRatio(contentMode: .fill)
+                    .scaledToFill()
                     .blur(radius: 60)
                     .opacity(0.4)
             }
