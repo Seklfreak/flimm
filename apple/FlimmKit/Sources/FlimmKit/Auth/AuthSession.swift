@@ -100,6 +100,7 @@ public final class AuthSession {
     /// screen asked for this, and only `invalid_grant` — which ``TokenStore``
     /// reports through ``handleDefinitiveSignOut()`` — ends a session.
     public func refreshIfNeeded() async {
+        await refreshConfig()
         guard state == .signedIn, requiresSignIn else { return }
         await tokenStore.refreshIfStale()
     }
@@ -128,6 +129,9 @@ public final class AuthSession {
     public func restore() async {
         if let stored = storedServer() {
             adopt(server: stored)
+            // Behind the restore, not in its way: the app comes up on what
+            // it knows and learns what changed a moment later.
+            Task { await refreshConfig() }
             if stored.config.authDisabled {
                 state = .signedIn
                 return
@@ -137,6 +141,24 @@ public final class AuthSession {
         } else {
             state = .needsServer
         }
+    }
+
+    /// Re-reads `/config` and adopts what changed.
+    ///
+    /// The stored config is a snapshot from the day the server was
+    /// connected. A deployment that gains something later — an APNs key,
+    /// an analytics opt-out — would otherwise never reach a phone that is
+    /// already signed in, and the feed editor would go on hiding a switch
+    /// the server now honours. Only the facts move: the URL and the client
+    /// stay, so nothing on screen is rebuilt. A server that cannot be
+    /// reached right now keeps what it had.
+    public func refreshConfig() async {
+        guard let current = server else { return }
+        guard let probed = try? await ServerProbe(session: session).probe(baseURL: current.baseURL),
+              probed.config != current.config else { return }
+        storeServer(probed)
+        server = probed
+        Analytics.apply(probed.config)
     }
 
     /// Validate and remember a server URL. Throws ``ServerProbeError``.

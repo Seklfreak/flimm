@@ -68,6 +68,28 @@ final class AuthSessionTests: XCTestCase {
         XCTAssertEqual(restored.state, .signedIn)
     }
 
+    /// The stored config is a snapshot; a server that gained a feature since
+    /// (here: an APNs key) has to reach a phone that connected before it did,
+    /// or the switch for it stays hidden for ever.
+    func testRestoreLearnsWhatTheServerGainedSince() async throws {
+        let defaults = emptyDefaults()
+        try await session(StubURLProtocol.session(json: Fixtures.serverConfigAuthDisabled), defaults: defaults)
+            .connect(to: "localhost:8080")
+
+        let restored = session(StubURLProtocol.session(json: Fixtures.serverConfigWithPush), defaults: defaults)
+        await restored.restore()
+        XCTAssertEqual(restored.state, .signedIn)
+        await restored.refreshConfig()
+        XCTAssertTrue(restored.server?.config.pushEnabled ?? false)
+
+        // And it is remembered: the next launch knows before asking.
+        let again = session(StubURLProtocol.session { _, _ in (503, Data()) }, defaults: defaults)
+        await again.restore()
+        XCTAssertTrue(again.server?.config.pushEnabled ?? false)
+        await again.refreshConfig()
+        XCTAssertTrue(again.server?.config.pushEnabled ?? false, "an unreachable server must not take back what it said")
+    }
+
     /// With nothing to sign out of, "sign out" can only mean leaving the
     /// server — anything else strands the app on a dead sign-in screen.
     func testSigningOutOfAnAuthDisabledServerForgetsIt() async throws {

@@ -155,6 +155,10 @@ type Server struct {
 	// remoteWait is how long a remote-control poll waits before answering
 	// "nothing changed". A field so tests need not wait it out.
 	remoteWait time.Duration
+	// live is the present tense: every playback happening on this server
+	// right now, assembled from the requests clients already make. Admin-only
+	// and in memory; see sessions.go.
+	live *liveHub
 }
 
 func NewServer(o Options) *Server {
@@ -205,6 +209,7 @@ func NewServer(o Options) *Server {
 
 		remote:     newRemoteHub(),
 		remoteWait: defaultRemoteWait,
+		live:       newLiveHub(),
 	}
 	if o.MediaProxy != nil {
 		// Thumbnails are immutable per id; let the browser keep them a day.
@@ -332,6 +337,10 @@ func (s *Server) Router() http.Handler {
 			r.Post("/playback/sessions/{id}/commands", s.postRemoteCommand)
 
 			r.Get("/prepare", s.getPrepareStatus)
+
+			// What the server is doing right now, across every account. Admin
+			// only; see sessions.go.
+			r.Get("/admin/sessions", s.listLiveSessions)
 
 			r.Get("/history", s.listHistory)
 			r.Get("/stats", s.getStats)

@@ -989,6 +989,10 @@ a side effect of caching.
   secret updated), and the **APNs auth key** the server sends with
   (`APNS_KEY`, see the README) — a key is per team, made once in the
   developer portal, and cannot be created through the App Store Connect API.
+  The app re-reads `/config` behind every launch and foregrounding
+  (`AuthSession.refreshConfig`), because the stored config is a snapshot
+  from the day the server was connected, and a key added later would
+  otherwise never reach a phone already signed in.
   A build from Xcode registers a *sandbox* token and says so
   (`PushEnvironment.current`), a TestFlight or App Store build a *production*
   one; the server sends to whichever host the token named. In the simulator,

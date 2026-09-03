@@ -66,7 +66,8 @@ func (s *Server) rangeSource(src string) media.RangeSourceFunc {
 }
 
 func (s *Server) mediaVideo(w http.ResponseWriter, r *http.Request) {
-	v, err := s.ta.GetVideo(r.Context(), chi.URLParam(r, "id"))
+	id := chi.URLParam(r, "id")
+	v, err := s.ta.GetVideo(r.Context(), id)
 	if err != nil {
 		s.writeTAError(w, "get video", err)
 		return
@@ -75,6 +76,11 @@ func (s *Server) mediaVideo(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "not found")
 		return
 	}
+	// Direct play is one request that can run the length of the film, so it is
+	// also the one delivery path that would be invisible to anything sampling
+	// requests: the live view holds the session open for as long as this runs.
+	w, done := s.live.streaming(w, r, id, liveDelivery{Kind: liveDirect, Height: v.Player.Height()})
+	defer done()
 	s.proxyTo(w, r, s.mediaProxy, taMediaPath(v.MediaURL))
 }
 
@@ -212,6 +218,8 @@ func (s *Server) serveDerivedAudio(w http.ResponseWriter, r *http.Request, varia
 	}
 	w.Header().Set("Content-Type", contentType)
 	w.Header().Set("Cache-Control", "private, max-age=3600")
+	w, done := s.live.streaming(w, r, id, liveDelivery{Kind: liveAudio})
+	defer done()
 	http.ServeContent(w, r, id+ext, st.ModTime(), f)
 }
 
