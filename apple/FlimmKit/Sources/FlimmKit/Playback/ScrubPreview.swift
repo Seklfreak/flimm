@@ -68,13 +68,22 @@ public enum ScrubPreview {
     /// longer than three quarters of a minute to derive never reached the
     /// scrubber it was made for, however long the video stayed on screen.
     /// Nothing waits on this either way; the video is already playing.
-    public static func load(trackPath: String, client: APIClient) async -> [PreviewTile] {
+    /// - Parameter onAsk: called with the number of asks made so far, before
+    ///   each one. The playback stats panel shows the count, because a sheet
+    ///   that has been asked for six times is a queue and the same sheet asked
+    ///   for once is simply a wait.
+    public static func load(
+        trackPath: String,
+        client: APIClient,
+        onAsk: (@Sendable (Int) -> Void)? = nil
+    ) async -> [PreviewTile] {
         var attempt = 0
         while !Task.isCancelled {
             if attempt > 0 {
                 let gap = retryGaps[min(attempt, retryGaps.count - 1)]
                 guard (try? await Task.sleep(nanoseconds: UInt64(gap * 1_000_000_000))) != nil else { return [] }
             }
+            onAsk?(attempt + 1)
             if let vtt = await fetch(trackPath, client: client) {
                 return tiles(from: vtt, trackPath: trackPath)
             }

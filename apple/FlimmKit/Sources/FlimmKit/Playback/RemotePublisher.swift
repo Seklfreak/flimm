@@ -169,7 +169,8 @@ public final class RemotePublisher {
             speed: session.speed,
             audioOnly: session.audioOnly,
             canNext: session.canNext,
-            canPrevious: session.canPrevious
+            canPrevious: session.canPrevious,
+            stats: session.stats
         )
     }
 }

@@ -59,6 +59,10 @@ struct PlayerControls: View {
     let onClose: () -> Void
     let onToggleFullScreen: () -> Void
     let scrubPreview: ScrubPreviewState
+    /// The playback stats panel's switch. It lives in the options menu rather
+    /// than the transport: it is a thing you turn on when something looks
+    /// wrong, not a control you reach for while watching.
+    @Binding var showStats: Bool
 
     @Binding var isVisible: Bool
     @Environment(\.horizontalSizeClass) private var sizeClass
@@ -177,6 +181,14 @@ struct PlayerControls: View {
                 } label: {
                     Label(model.isWatched ? "Mark unseen" : "Mark seen", systemImage: "checkmark.circle")
                 }
+            }
+            Button {
+                showStats.toggle()
+            } label: {
+                Label(
+                    showStats ? "Hide playback stats" : "Playback stats",
+                    systemImage: "chart.bar"
+                )
             }
         } label: {
             Image(systemName: "ellipsis.circle")

@@ -55,6 +55,12 @@ final class TVWatchModel {
     /// archived file plays, and on a server that offers `hls_url` without
     /// `hls_variants` — there the rendition has no height to name.
     private(set) var activeVariant: HLSVariant?
+    /// Why the gate landed where it did, and what the player was handed.
+    /// Published with the session so the companion can show this television's
+    /// playback stats; nothing on the television branches on either.
+    private(set) var playbackReason: PlaybackReason = .codecsUnknown
+    private(set) var deliveryKind: DeliveryKind = .none
+    private(set) var mediaPath = ""
     /// Set when the rendition never became playable inside the retry window.
     private(set) var compatibleGaveUp = false
     /// True once the current item reports `readyToPlay`.
@@ -232,11 +238,17 @@ final class TVWatchModel {
                 return
             }
             path = nativeAudioURL
+            playbackReason = .audioOnly
+            deliveryKind = .audio
         } else {
-            switch CodecGate.decision(for: detail, preference: playback.videoQuality, device: .current) {
+            let outcome = CodecGate.outcome(for: detail, preference: playback.videoQuality, device: .current)
+            playbackReason = outcome.reason
+            switch outcome.decision {
             case .native:
                 path = detail.mediaUrl
+                deliveryKind = .direct
             case .hls(let choice):
+                deliveryKind = .rendition
                 path = choice.url
                 mediaFrom = resume > 0 ? Int(resume.rounded(.down)) : nil
                 usingCompatibleRendition = true
@@ -253,9 +265,11 @@ final class TVWatchModel {
                 steering.adopt(state: compatibleState)
             case .audioOnly(let issue), .unplayable(let issue):
                 codecIssue = issue
+                deliveryKind = .none
                 return
             }
         }
+        mediaPath = path
         guard !path.isEmpty, let url = client.mediaURL(path, from: mediaFrom) else {
             loadError = "This video has no playable media URL."
             return
@@ -669,7 +683,47 @@ private extension TVWatchModel {
             // Whether stepping is possible is this player's answer, from its
             // own context; the phone must never derive it.
             canNext: canGoNext,
-            canPrevious: canGoPrevious
+            canPrevious: canGoPrevious,
+            // The television's playback stats, for a panel that is deliberately
+            // not on the television: sixteen readings in small type at two
+            // metres is not something anybody reads, and the phone is already
+            // in the viewer's hand. They are not part of
+            // ``RemotePublishRule``'s change test, so they ride the heartbeat
+            // rather than turning it into one publish a second.
+            stats: stats
+        )
+    }
+
+    /// This television's readings.
+    ///
+    /// The scrub preview is reported as never asked for, because it never is:
+    /// tvOS scrubs without stills, and saying so is the honest answer to "why
+    /// is there no sheet for this video yet".
+    private var stats: PlaybackStats {
+        PlaybackStatsReader.stats(
+            player: player,
+            PlaybackStatsReader.Input(
+                video: video,
+                reason: playbackReason,
+                kind: deliveryKind,
+                url: mediaPath,
+                rendition: usingCompatibleRendition
+                    ? PlaybackStats.Rendition(
+                        height: activeVariant?.height ?? 0,
+                        codec: activeVariant?.codec.rawValue ?? "",
+                        state: compatibleState ?? .unknown,
+                        progress: compatibleProgress,
+                        preparing: isPreparingCompatible
+                    )
+                    : nil,
+                preview: PlaybackStats.Preview(offered: video?.scrubPreviewPath != nil),
+                loudness: PlaybackStats.Loudness(
+                    enabled: prefs.normalizeLoudness,
+                    info: services.loudnessInfo
+                ),
+                startedAt: resumedFrom ?? 0,
+                device: .current
+            )
         )
     }
 

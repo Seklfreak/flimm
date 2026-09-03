@@ -14,6 +14,11 @@ public final class LoudnessNormalizer {
     /// tick — which is how both players wait for playback to actually begin
     /// before spending anything on this.
     private var applied: Key?
+    /// The measurement behind the gain currently applied, kept for the
+    /// playback stats panel and read by nothing else. A reading, not a
+    /// decision: the gain has already been handed to the player by the time
+    /// this is set, and setting it changes nothing about what you hear.
+    public private(set) var latest: LoudnessInfo?
 
     private struct Key: Equatable {
         let videoID: String
@@ -45,6 +50,7 @@ public final class LoudnessNormalizer {
         applied = key
         task?.cancel()
         task = nil
+        latest = nil
         setGain(0)
         guard enabled, !videoID.isEmpty else { return }
         task = Task {
@@ -52,6 +58,7 @@ public final class LoudnessNormalizer {
                   !Task.isCancelled else {
                 return
             }
+            latest = info
             setGain(info.gainDB)
         }
     }
@@ -60,5 +67,6 @@ public final class LoudnessNormalizer {
         task?.cancel()
         task = nil
         applied = nil
+        latest = nil
     }
 }

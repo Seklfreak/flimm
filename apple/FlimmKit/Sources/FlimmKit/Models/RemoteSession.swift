@@ -42,6 +42,19 @@ public struct RemoteSession: Codable, Sendable, Hashable, Identifiable {
     /// reasoned about at all; ``RemoteClock`` deliberately does *not* use it,
     /// because a phone's clock and a server's clock are not the same clock.
     public let updatedAt: Date
+    /// What this player is actually doing: the delivery path and why, the
+    /// derivations, the item's own counters. `nil` from a player that does not
+    /// report them.
+    ///
+    /// This is how the television's playback stats are read at all — the panel
+    /// is on the phone, because sixteen numbers in small type at two metres is
+    /// not a panel anybody reads. It is deliberately **not** in
+    /// ``RemotePublishRule``'s change test: a buffer figure moves every tick,
+    /// and publishing on it would turn a heartbeat every ten seconds into one
+    /// every second for a panel almost nobody has open. The readings ride
+    /// whatever publish the session was making anyway, which for a debug panel
+    /// is exactly often enough.
+    public let stats: PlaybackStats?
 
     public init(
         id: String = "",
@@ -58,7 +71,8 @@ public struct RemoteSession: Codable, Sendable, Hashable, Identifiable {
         audioOnly: Bool = false,
         canNext: Bool = false,
         canPrevious: Bool = false,
-        updatedAt: Date = Date(timeIntervalSince1970: 0)
+        updatedAt: Date = Date(timeIntervalSince1970: 0),
+        stats: PlaybackStats? = nil
     ) {
         self.id = id
         self.device = device
@@ -75,6 +89,7 @@ public struct RemoteSession: Codable, Sendable, Hashable, Identifiable {
         self.canNext = canNext
         self.canPrevious = canPrevious
         self.updatedAt = updatedAt
+        self.stats = stats
     }
 
     public init(from decoder: any Decoder) throws {
@@ -96,6 +111,7 @@ public struct RemoteSession: Codable, Sendable, Hashable, Identifiable {
         canNext = try c.decode(.canNext, or: false)
         canPrevious = try c.decode(.canPrevious, or: false)
         updatedAt = try c.decode(.updatedAt, or: Date(timeIntervalSince1970: 0))
+        stats = try c.decodeIfPresent(PlaybackStats.self, forKey: .stats)
     }
 
     /// A copy with new playback numbers, for a publisher that only has to say
@@ -106,7 +122,7 @@ public struct RemoteSession: Codable, Sendable, Hashable, Identifiable {
             title: title, channelName: channelName, thumbUrl: thumbUrl,
             position: position, duration: duration, paused: paused, speed: speed,
             audioOnly: audioOnly, canNext: canNext, canPrevious: canPrevious,
-            updatedAt: updatedAt
+            updatedAt: updatedAt, stats: stats
         )
     }
 }

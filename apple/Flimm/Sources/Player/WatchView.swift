@@ -24,6 +24,8 @@ struct WatchView: View {
     @State private var stageHeight: CGFloat = 0
     @State private var chromeTop: CGFloat = 0
     @State private var scrubPreview = ScrubPreviewState()
+    /// The playback stats panel, off until asked for from the options menu.
+    @State private var showStats = PlaybackStatsView.openAtLaunch
     @State private var hideTask: Task<Void, Never>?
     @FocusState private var keyboardFocused: Bool
 
@@ -123,6 +125,7 @@ struct WatchView: View {
             VStack(alignment: .leading, spacing: 16) {
                 stage(model)
                     .aspectRatio(16 / 9, contentMode: .fit)
+                statsPanel(model)
                 header(model)
                 ChapterListView(chapters: model.chapters, activeIndex: model.activeChapter) { model.seek(to: $0) }
                 CommentsSection(videoID: model.videoId, duration: model.video?.duration) { model.seek(to: $0) }
@@ -149,6 +152,7 @@ struct WatchView: View {
                     VStack(alignment: .leading, spacing: 16) {
                         stage(model)
                             .aspectRatio(16 / 9, contentMode: .fit)
+                        statsPanel(model)
                         header(model)
                         // Under the description, as on the phone and the web,
                         // rather than in the column beside the video: comments
@@ -171,6 +175,28 @@ struct WatchView: View {
             }
             .padding(.horizontal, 20)
             .padding(.top, 8)
+        }
+    }
+
+    /// The stats panel, under the picture and never over it: sixteen readings
+    /// do not fit in a player box a few hundred points tall, and the questions
+    /// it answers are asked while looking at a page. The cost is that it is
+    /// not there in full screen, which is the same trade the web client makes.
+    ///
+    /// Re-read on a timeline rather than on playback state: the item's
+    /// counters change with the decoder, not with anything SwiftUI observes,
+    /// so nothing here would redraw on its own.
+    @ViewBuilder
+    private func statsPanel(_ model: WatchModel) -> some View {
+        if showStats {
+            TimelineView(.periodic(from: .now, by: 0.5)) { _ in
+                PlaybackStatsView(
+                    stats: model.stats(
+                        preview: scrubPreview.stats(offered: model.video?.scrubPreviewPath != nil)
+                    ),
+                    onClose: { showStats = false }
+                )
+            }
         }
     }
 
@@ -258,6 +284,7 @@ struct WatchView: View {
                     onClose: close,
                     onToggleFullScreen: { player.isFullScreen.toggle() },
                     scrubPreview: scrubPreview,
+                    showStats: $showStats,
                     isVisible: $controlsVisible
                 )
                 if let resumed = model.resumedFrom, controlsVisible {

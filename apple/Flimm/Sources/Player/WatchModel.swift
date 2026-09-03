@@ -76,6 +76,13 @@ final class WatchModel {
     private(set) var isLoading = true
     private(set) var audioOnly: Bool
     private(set) var lastSkippedSponsor: String?
+    /// Why the gate landed where it did, and what the player was handed —
+    /// recorded at the moment of the decision, for the playback stats panel.
+    /// Nothing branches on either: a panel that worked out for itself why a
+    /// video is transcoding could disagree with the picture.
+    private(set) var playbackReason: PlaybackReason = .codecsUnknown
+    private(set) var deliveryKind: DeliveryKind = .none
+    private(set) var mediaPath = ""
 
     @ObservationIgnored private let app: AppModel
     @ObservationIgnored private let client: APIClient
@@ -92,7 +99,9 @@ final class WatchModel {
     @ObservationIgnored private var artwork: UIImage?
     /// Mutes and unmutes for SponsorBlock `mute` segments, keeping the
     /// viewer's own mute setting intact.
-    @ObservationIgnored private lazy var services = PlaybackServices(client: client, platform: "ios")
+    /// Not private: ``WatchModel+Stats`` reads the loudness measurement off
+    /// it, and an extension in another file cannot see a private member.
+    @ObservationIgnored lazy var services = PlaybackServices(client: client, platform: "ios")
     /// When the current run of attempts at the compatible rendition began. It
     /// rolls forward while the rendition actually plays, so a mid-playback
     /// stumble gets its own window rather than inheriting a spent one.
@@ -212,11 +221,17 @@ final class WatchModel {
                 return
             }
             path = nativeAudioURL
+            playbackReason = .audioOnly
+            deliveryKind = .audio
         } else {
-            switch CodecGate.decision(for: detail, preference: playback.videoQuality, device: .current) {
+            let outcome = CodecGate.outcome(for: detail, preference: playback.videoQuality, device: .current)
+            playbackReason = outcome.reason
+            switch outcome.decision {
             case .native:
                 path = detail.mediaUrl
+                deliveryKind = .direct
             case .hls(let choice):
+                deliveryKind = .rendition
                 path = choice.url
                 mediaFrom = resume > 0 ? Int(resume.rounded(.down)) : nil
                 usingCompatibleRendition = true
@@ -233,9 +248,11 @@ final class WatchModel {
                 steering.adopt(state: compatibleState)
             case .audioOnly(let issue), .unplayable(let issue):
                 codecIssue = issue
+                deliveryKind = .none
                 return
             }
         }
+        mediaPath = path
         guard !path.isEmpty, let url = client.mediaURL(path, from: mediaFrom) else {
             loadError = "This video has no playable media URL."
             return
@@ -370,26 +387,6 @@ final class WatchModel {
 
     func toggleMute() {
         engine.toggleMute()
-    }
-
-    /// `[` and `]`. The maths is `FlimmKit`'s, shared with the web client, so
-    /// "back to the start of this chapter" behaves identically in both.
-    func jumpChapter(_ direction: Int) {
-        let time = engine.currentTime
-        let target = direction < 0
-            ? ChapterMath.previousStart(before: time, in: chapters)
-            : ChapterMath.nextStart(after: time, in: chapters)
-        guard let target else { return }
-        seek(to: target)
-    }
-
-    /// `,` and `.` — one step along the same speed list the menu offers.
-    func stepSpeed(_ direction: Int) async {
-        let speeds = PlaybackSpeeds.all
-        let current = speeds.firstIndex(of: prefs.playbackSpeed) ?? speeds.firstIndex(of: 1.0) ?? 0
-        let next = min(max(current + direction, 0), speeds.count - 1)
-        guard next != current else { return }
-        await setSpeed(speeds[next])
     }
 
     /// The list after "Not interested" took a video out or an undo put one

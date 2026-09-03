@@ -92,6 +92,14 @@ What is there:
     one close control, the bar's ✕: the overlay's top-left button exists only
     in full screen, where the bar is hidden.
     It also holds the screen awake itself while video plays (`ScreenSleep`).
+    The options menu carries a **playback stats** switch: the delivery path and
+    the gate's own reason for it, the source and the rendition, where the
+    derivations stand, and the item's own counters — the web client's panel,
+    the same readings in the same order (`PlaybackStatsView`, drawn from
+    ``PlaybackStats`` in FlimmKit). It sits under the picture and never over
+    it, for the reason the web records: sixteen readings do not fit in a player
+    box a few hundred points tall, and the questions it answers are asked while
+    looking at a page. The cost is that it is not there in full screen.
   - **Search** — sectioned results with subtitle hits that open the player at
     their timestamp.
   - **iPad** — the same screens under a `NavigationSplitView`:
@@ -239,6 +247,15 @@ What is there:
     description and a comment thread are a wall of text nobody reads at two
     metres, and are simply a page in your hand.
 
+    **The television's playback stats are read here too.** The Apple TV
+    publishes them with its session and the companion draws them; there is no
+    panel on the television at all, and deliberately so — sixteen readings in
+    small type at two metres is not something anybody reads, and the phone is
+    already in the hand of the person asking. The switch is in the companion's
+    toolbar menu, and only appears when the session is actually reporting, so
+    an older tvOS build offers no switch rather than an empty panel. See
+    *Playback stats* in [api.md](api.md#remote-control) for the shape.
+
     **The scrubber is the player's own** (``ScrubberView``, with
     ``ScrubberStyle/onSurface`` for the colours that sit on a page rather than
     over a picture): the same scrub-preview stills above the thumb, the same
@@ -268,7 +285,9 @@ What is there:
     the bar only exists while another screen is playing and a simulator cannot
     tap it. `FLIMM_SCRUB_AT=<seconds>` parks the bar mid-drag, on the player
     and the companion alike: the preview still exists for the length of a
-    touch and is otherwise invisible to a screenshot.
+    touch and is otherwise invisible to a screenshot. `FLIMM_SHOW_STATS=1` opens
+    the playback stats panel at launch, on the player and the companion both,
+    because it lives behind a menu a simulator cannot open.
   - **The Home screen's top shelf shows the pinned feed.** When Flimm is
     focused in the Home screen's top row, tvOS draws a row of what is waiting
     in the feed the app opens on — titles, artwork, and the resume bar on
@@ -354,7 +373,9 @@ What is there:
     exposes no way to supply trick-play images — it generates its own from the
     asset, which it does for the archived file and not for an HLS rendition
     without an I-frame playlist. Nothing is derived for the TV, so a viewer who
-    only ever watches there never pays for a sheet.
+    only ever watches there never pays for a sheet — which is why the
+    television's stats panel reports the sheet as never asked for, and why the
+    companion's scrubber is usually the first request for one.
   - **"Not interested" is one action in one place.** `apple/Shared/DismissAction.swift`
     holds both the round trip and the context-menu row, because `.contextMenu`
     is the same SwiftUI API on iOS and tvOS — only the gesture that opens it

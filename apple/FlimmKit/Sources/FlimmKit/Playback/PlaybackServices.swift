@@ -58,6 +58,10 @@ public final class PlaybackServices {
         self.stalls = StallReporter(client: client, platform: platform)
     }
 
+    /// The measurement behind the gain now applied, for the playback stats
+    /// panel. Nothing about playback reads it.
+    public var loudnessInfo: LoudnessInfo? { loudness.latest }
+
     /// One tick. Returns what SponsorBlock wants done; everything else is
     /// handled here or handed back through `setGain`.
     @discardableResult

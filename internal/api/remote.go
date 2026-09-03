@@ -59,6 +59,9 @@ const (
 	// The furthest a single skip may move. Bounded so a controller cannot use
 	// it to express a seek it should have sent as one.
 	maxRemoteSkip = 600
+	// maxRemoteDecoders bounds the codec list a player may publish about
+	// itself. Four or five is the real answer on any device that exists.
+	maxRemoteDecoders = 16
 )
 
 // RemoteSession is one player saying what it is playing.
@@ -93,6 +96,115 @@ type RemoteSession struct {
 	CanNext     bool      `json:"can_next"`
 	CanPrevious bool      `json:"can_previous"`
 	UpdatedAt   time.Time `json:"updated_at"`
+	// Stats is what the player is actually doing — the delivery path and why,
+	// the derivations, the item's own counters. Omitted by a player that does
+	// not report them.
+	//
+	// The server relays it and reads none of it: every value is a reading the
+	// publisher took of itself, and anything worked out here could disagree
+	// with the picture on the screen it describes. It is typed all the same,
+	// rather than passed through as an opaque blob, so this file bounds what a
+	// session can grow to and api.md describes something real.
+	//
+	// It exists because the television's panel is not on the television: the
+	// Apple TV publishes these and the phone draws them. See docs/api.md.
+	Stats *RemotePlaybackStats `json:"stats,omitempty"`
+}
+
+// RemotePlaybackStats is one player's readings, as published with its session.
+// Every field is what some client measured about itself; the server neither
+// derives nor validates any of it beyond bounding the free-form strings.
+type RemotePlaybackStats struct {
+	Delivery RemoteStatsDelivery `json:"delivery"`
+	Derived  RemoteStatsDerived  `json:"derived"`
+	Player   RemoteStatsPlayer   `json:"player"`
+	Device   RemoteStatsDevice   `json:"device"`
+}
+
+// RemoteStatsDelivery is what is on screen and how it got there.
+type RemoteStatsDelivery struct {
+	// Kind is "direct", "rendition", "audio" or "none".
+	Kind string `json:"kind"`
+	// Reason is the codec gate's own word for why — the same vocabulary the
+	// web client's stats panel uses ("archive-decodes", "no-decoder", …).
+	Reason       string                `json:"reason"`
+	SourceHeight int                   `json:"source_height"`
+	SourceCodec  string                `json:"source_codec"`
+	Rendition    *RemoteStatsRendition `json:"rendition,omitempty"`
+	URL          string                `json:"url"`
+}
+
+// RemoteStatsRendition is the rung being played, when one is.
+type RemoteStatsRendition struct {
+	Height int    `json:"height"`
+	Codec  string `json:"codec"`
+	State  string `json:"state"`
+	// Progress is how much of the rendition has been encoded, 0..1 — not
+	// where playback is.
+	Progress  float64 `json:"progress"`
+	Preparing bool    `json:"preparing"`
+}
+
+// RemoteStatsDerived covers the two things the server makes on the side.
+type RemoteStatsDerived struct {
+	Preview  RemoteStatsPreview  `json:"preview"`
+	Loudness RemoteStatsLoudness `json:"loudness"`
+}
+
+// RemoteStatsPreview is the scrub-preview sheet's state.
+type RemoteStatsPreview struct {
+	Offered bool `json:"offered"`
+	Tiles   int  `json:"tiles"`
+	// Every is the seconds one still stands for.
+	Every  float64 `json:"every"`
+	Width  int     `json:"width"`
+	Height int     `json:"height"`
+	// Asked is how many times the client has asked for it: a sheet is one
+	// decode of the whole file and can queue, so the count is the difference
+	// between a wait and a bug.
+	Asked int `json:"asked"`
+}
+
+// RemoteStatsLoudness is loudness normalisation as it reaches the ear.
+type RemoteStatsLoudness struct {
+	// Enabled is the client's preference; a measurement that exists while it
+	// is off changes nothing about what you hear.
+	Enabled bool           `json:"enabled"`
+	Info    *LoudnessStats `json:"info,omitempty"`
+}
+
+// LoudnessStats mirrors the loudness endpoint's own body, so a controller
+// decodes one shape wherever it meets it.
+type LoudnessStats struct {
+	State        string  `json:"state"`
+	GainDB       float64 `json:"gain_db"`
+	TargetLUFS   float64 `json:"target_lufs"`
+	MeasuredLUFS float64 `json:"measured_lufs"`
+	PeakDBTP     float64 `json:"peak_dbtp"`
+	RangeLU      float64 `json:"range_lu"`
+}
+
+// RemoteStatsPlayer is the player item's own counters.
+type RemoteStatsPlayer struct {
+	Status         string `json:"status"`
+	LikelyToKeepUp bool   `json:"likely_to_keep_up"`
+	PictureWidth   int    `json:"picture_width"`
+	PictureHeight  int    `json:"picture_height"`
+	// BufferAhead is seconds of contiguous buffer ahead of the playhead.
+	BufferAhead     *float64 `json:"buffer_ahead,omitempty"`
+	DroppedFrames   *int     `json:"dropped_frames,omitempty"`
+	ObservedBitrate *float64 `json:"observed_bitrate,omitempty"`
+	Position        float64  `json:"position"`
+	Duration        float64  `json:"duration"`
+	StartedAt       float64  `json:"started_at"`
+	Volume          float64  `json:"volume"`
+	Muted           bool     `json:"muted"`
+}
+
+// RemoteStatsDevice is the screen the video is on.
+type RemoteStatsDevice struct {
+	Decoders     []string `json:"decoders"`
+	ScreenHeight int      `json:"screen_height"`
 }
 
 // RemoteCommand is one instruction for a player, in the order it was sent.
@@ -472,6 +584,7 @@ func (s *Server) putRemoteSession(w http.ResponseWriter, r *http.Request) {
 	req.Title = clampRemoteText(req.Title, 300)
 	req.ChannelName = clampRemoteText(req.ChannelName, 200)
 	req.ThumbURL = clampRemoteText(req.ThumbURL, 500)
+	clampRemoteStats(req.Stats)
 	s.remote.publish(uid, req)
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -575,4 +688,34 @@ func clampRemoteText(v string, limit int) string {
 		return v
 	}
 	return v[:limit]
+}
+
+// clampRemoteStats bounds the free-form parts of a published stats block.
+//
+// The numbers bound themselves — they are fixed-width fields — but the strings
+// and the decoder list come straight from a client, and a session lives in
+// memory until it lapses. Nothing here judges a value; it only stops one
+// player from making every controller's poll carry a novel.
+func clampRemoteStats(stats *RemotePlaybackStats) {
+	if stats == nil {
+		return
+	}
+	stats.Delivery.Kind = clampRemoteText(stats.Delivery.Kind, 32)
+	stats.Delivery.Reason = clampRemoteText(stats.Delivery.Reason, 64)
+	stats.Delivery.SourceCodec = clampRemoteText(stats.Delivery.SourceCodec, 64)
+	stats.Delivery.URL = clampRemoteText(stats.Delivery.URL, 500)
+	if r := stats.Delivery.Rendition; r != nil {
+		r.Codec = clampRemoteText(r.Codec, 64)
+		r.State = clampRemoteText(r.State, 32)
+	}
+	if info := stats.Derived.Loudness.Info; info != nil {
+		info.State = clampRemoteText(info.State, 32)
+	}
+	stats.Player.Status = clampRemoteText(stats.Player.Status, 64)
+	if len(stats.Device.Decoders) > maxRemoteDecoders {
+		stats.Device.Decoders = stats.Device.Decoders[:maxRemoteDecoders]
+	}
+	for i, d := range stats.Device.Decoders {
+		stats.Device.Decoders[i] = clampRemoteText(d, 32)
+	}
 }

@@ -970,12 +970,15 @@ pausing or lapsing:
       "audio_only": false,
       "can_next": true,
       "can_previous": false,
-      "updated_at": "2026-09-01T19:04:11Z"
+      "updated_at": "2026-09-01T19:04:11Z",
+      "stats": { … }
     }
   ],
   "version": 12
 }
 ```
+
+`stats` is optional and covered under *Playback stats* below.
 
 `position` is a **fix, not a clock**. A controller runs it forward itself at
 `speed` while `paused` is false, or its scrubber jumps once a heartbeat and
@@ -1026,6 +1029,60 @@ a time; over that, the least recently published makes way.
 **Clients.** Apple TV publishes (FlimmKit's `RemotePublisher`); iPhone and iPad
 control (`RemoteControl`, and the companion screen behind the "playing on…"
 bar). The web client does neither — see `docs/apple-apps.md`.
+
+**Playback stats.** A session may carry a `stats` object: what that player is
+actually doing. Everything Flimm derives is invisible by design — a transcode
+nobody asked for, a sheet of stills queued behind it, a measurement that
+quietly turns the volume down — and every one of them fails in a way that looks
+exactly like nothing happening. This is how a player says so.
+
+```json
+"stats": {
+  "delivery": {
+    "kind": "rendition",
+    "reason": "no-decoder",
+    "source_height": 1080,
+    "source_codec": "vp09.00.50.08",
+    "rendition": { "height": 720, "codec": "h264", "state": "running", "progress": 0.42, "preparing": false },
+    "url": "/media/hls/yt-id/720/index.m3u8"
+  },
+  "derived": {
+    "preview":  { "offered": true, "tiles": 100, "every": 14.8, "width": 160, "height": 90, "asked": 2 },
+    "loudness": { "enabled": true, "info": { "state": "done", "gain_db": -3.2, "measured_lufs": -10.8, … } }
+  },
+  "player": {
+    "status": "ready to play", "likely_to_keep_up": true,
+    "picture_width": 1280, "picture_height": 720,
+    "buffer_ahead": 21.4, "dropped_frames": 0, "observed_bitrate": 4830000,
+    "position": 561, "duration": 1476, "started_at": 0, "volume": 1, "muted": false
+  },
+  "device": { "decoders": ["H.264", "HEVC"], "screen_height": 2160 }
+}
+```
+
+Three rules hold it together:
+
+- **The server relays it and reads none of it.** Every value is a reading a
+  publisher took of itself, and anything the server worked out could disagree
+  with the picture on the screen it describes. It is typed here all the same,
+  rather than passed through as an opaque blob, so a session's size is bounded
+  and this document describes something real. A field a server does not know is
+  dropped, so a client must render a missing reading as unknown, never as zero.
+- **`delivery.reason` is the codec gate's own word**, not prose: `audio-only`,
+  `codecs-unknown`, `archive-decodes`, `archive-is-enough`, `quality-picked`,
+  `no-decoder`, `no-rung`, `default-rendition`, `nothing-plays`. It is what
+  makes "why is this transcoding?" answerable, and it is produced beside the
+  decision so a panel cannot invent a different answer.
+- **It is not part of the publish rule.** A buffer figure moves every tick;
+  publishing on it would turn a heartbeat every 10 s into one a second, for a
+  panel almost nobody has open. The readings ride whatever publish the session
+  was making anyway.
+
+Which is also why the field exists at all: the television's panel is not on the
+television. Sixteen readings in small type at two metres is not something
+anybody reads, so the Apple TV publishes them and the companion in the viewer's
+hand draws them. The web client and the phone each read their own player
+directly and never go near this.
 
 ### Derived media
 

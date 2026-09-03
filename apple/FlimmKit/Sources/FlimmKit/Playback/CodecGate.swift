@@ -93,25 +93,62 @@ public enum CodecGate {
         audioOnly: Bool = false,
         device: DeviceCapabilities
     ) -> Decision {
-        guard !audioOnly else { return .native }
-        guard let streams = video.streams, !streams.isEmpty else { return .native }
+        outcome(for: video, preference: preference, audioOnly: audioOnly, device: device).decision
+    }
+
+    /// A decision together with the reason it was reached.
+    ///
+    /// The reason exists for the playback stats panel and nothing else — no
+    /// code branches on it. It is produced *here*, beside each `return`,
+    /// because a panel that worked out for itself why the gate landed
+    /// somewhere could disagree with the gate, and a panel that disagrees with
+    /// the picture is worse than no panel.
+    public struct Outcome: Sendable, Hashable {
+        public let decision: Decision
+        public let reason: PlaybackReason
+
+        public init(_ decision: Decision, _ reason: PlaybackReason) {
+            self.decision = decision
+            self.reason = reason
+        }
+    }
+
+    /// ``decision(for:preference:audioOnly:device:)``, with the reason kept.
+    public static func outcome(
+        for video: Video,
+        preference: QualityPreference = .auto,
+        audioOnly: Bool = false,
+        device: DeviceCapabilities
+    ) -> Outcome {
+        guard !audioOnly else { return Outcome(.native, .audioOnly) }
+        guard let streams = video.streams, !streams.isEmpty else { return Outcome(.native, .codecsUnknown) }
         let videoStreams = streams.filter { $0.type == .video }
-        guard !videoStreams.isEmpty else { return .native }
+        guard !videoStreams.isEmpty else { return Outcome(.native, .codecsUnknown) }
         let archivePlays = videoStreams.contains(where: device.canDecode)
-        if archivePlays, preference == .auto { return .native }
+        if archivePlays, preference == .auto { return Outcome(.native, .archiveDecodes) }
         // An explicit pick at or above the source's own height buys nothing
         // over the archive when the archive plays — skip the transcode.
         if archivePlays, case .height(let h) = preference,
            let source = videoStreams.map(\.height).filter({ $0 > 0 }).max(), h >= source {
-            return .native
+            return Outcome(.native, .archiveIsEnough)
         }
         if let picked = variant(for: preference, in: video.hlsLadder, on: device) {
-            return .hls(HLSChoice(url: picked.url, variant: picked))
+            // Which of the two this is turns entirely on whether the archive
+            // would have played: a rung chosen over a decodable file is a
+            // viewer asking for less data, and the same rung chosen over one
+            // this device cannot decode is the gate doing its actual job. The
+            // decision is identical and the answer to "why is this
+            // transcoding?" is not.
+            return Outcome(.hls(HLSChoice(url: picked.url, variant: picked)), archivePlays ? .qualityPicked : .noDecoder)
         }
-        if archivePlays { return .native }
-        if let compatible = video.compatibleVideoURL { return .hls(HLSChoice(url: compatible)) }
+        if archivePlays { return Outcome(.native, .noRung) }
+        if let compatible = video.compatibleVideoURL {
+            return Outcome(.hls(HLSChoice(url: compatible)), .defaultRendition)
+        }
         let issue = Issue(videoCodec: videoStreams[0].codec, audioAvailable: video.nativeAudioURL != nil)
-        return issue.audioAvailable ? .audioOnly(issue) : .unplayable(issue)
+        return issue.audioAvailable
+            ? Outcome(.audioOnly(issue), .noDecoder)
+            : Outcome(.unplayable(issue), .nothingPlays)
     }
 
     /// Whether the archived file itself decodes on this device — what makes

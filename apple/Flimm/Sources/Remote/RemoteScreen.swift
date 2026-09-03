@@ -17,6 +17,10 @@ struct RemoteScreen: View {
     /// Set while a finger is on the scrubber. The projected clock keeps running
     /// underneath, and this is what stops it fighting the drag.
     @State private var scrubbing: Double?
+    /// The television's playback stats, off until asked for. They arrive in
+    /// the session whether or not this is open — they cost the same either
+    /// way — so the switch is purely about what is on screen.
+    @State private var showStats = PlaybackStatsView.openAtLaunch
 
     /// The stills to load, or nil while there is nothing to load them for.
     ///
@@ -41,6 +45,21 @@ struct RemoteScreen: View {
             .navigationTitle(remote.current?.device ?? "Remote")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                // Only offered when the television is actually reporting: a
+                // switch that turns on an empty panel would read as a broken
+                // one, and an older tvOS build publishes no stats at all.
+                if remote.current?.stats != nil {
+                    ToolbarItem(placement: .secondaryAction) {
+                        Button {
+                            showStats.toggle()
+                        } label: {
+                            Label(
+                                showStats ? "Hide playback stats" : "Playback stats",
+                                systemImage: "chart.bar"
+                            )
+                        }
+                    }
+                }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { dismiss() }
                 }
@@ -66,6 +85,9 @@ struct RemoteScreen: View {
             VStack(alignment: .leading, spacing: 20) {
                 header(session)
                 transport(session)
+                if let stats = session.stats, showStats {
+                    PlaybackStatsView(stats: stats, device: session.device) { showStats = false }
+                }
                 if !details.chapters.isEmpty {
                     chapters(session)
                 }

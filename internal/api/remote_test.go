@@ -347,3 +347,111 @@ func TestRemoteSessionsAreCapped(t *testing.T) {
 		}
 	}
 }
+
+// The stats a player publishes about itself reach a controller whole. They are
+// the only reason the television's panel can exist at all — it is drawn on the
+// phone — so a field quietly dropped in the relay is the whole feature gone.
+func TestRemoteSessionCarriesPlaybackStats(t *testing.T) {
+	s := remoteTestServer(t)
+	h := s.Router()
+	id := uuid.NewString()
+
+	body, _ := json.Marshal(map[string]any{
+		"video_id": "v1", "duration": 600, "speed": 1,
+		"stats": map[string]any{
+			"delivery": map[string]any{
+				"kind": "rendition", "reason": "no-decoder",
+				"source_height": 1080, "source_codec": "vp09.00.50.08",
+				"rendition": map[string]any{
+					"height": 720, "codec": "h264", "state": "running", "progress": 0.42,
+				},
+				"url": "/media/hls/v1/720/index.m3u8",
+			},
+			"derived": map[string]any{
+				"preview": map[string]any{"offered": true, "tiles": 100, "asked": 2},
+			},
+			"player": map[string]any{"status": "ready to play", "buffer_ahead": 21.4},
+			"device": map[string]any{"decoders": []string{"H.264", "HEVC"}, "screen_height": 2160},
+		},
+	})
+	if rec := do(t, h, http.MethodPut, "/api/v1/playback/sessions/"+id, string(body)); rec.Code != http.StatusNoContent {
+		t.Fatalf("publish: %d %s", rec.Code, rec.Body.String())
+	}
+
+	type listing struct {
+		Sessions []RemoteSession `json:"sessions"`
+	}
+	got := decode[listing](t, do(t, h, http.MethodGet, "/api/v1/playback/sessions", ""))
+	if len(got.Sessions) != 1 || got.Sessions[0].Stats == nil {
+		t.Fatalf("stats did not survive the relay: %+v", got.Sessions)
+	}
+	stats := got.Sessions[0].Stats
+	if stats.Delivery.Reason != "no-decoder" || stats.Delivery.SourceHeight != 1080 {
+		t.Fatalf("delivery = %+v", stats.Delivery)
+	}
+	if stats.Delivery.Rendition == nil || stats.Delivery.Rendition.Height != 720 {
+		t.Fatalf("rendition = %+v", stats.Delivery.Rendition)
+	}
+	if stats.Derived.Preview.Asked != 2 || !stats.Derived.Preview.Offered {
+		t.Fatalf("preview = %+v", stats.Derived.Preview)
+	}
+	if stats.Player.BufferAhead == nil || *stats.Player.BufferAhead != 21.4 {
+		t.Fatalf("buffer_ahead = %v, want it kept: a missing reading must not read as zero", stats.Player.BufferAhead)
+	}
+	if len(stats.Device.Decoders) != 2 || stats.Device.ScreenHeight != 2160 {
+		t.Fatalf("device = %+v", stats.Device)
+	}
+}
+
+// A session without stats is the ordinary case — an older tvOS build, or the
+// web — and must publish and list exactly as it always did.
+func TestRemoteSessionWithoutStats(t *testing.T) {
+	s := remoteTestServer(t)
+	h := s.Router()
+	id := uuid.NewString()
+	if rec := do(t, h, http.MethodPut, "/api/v1/playback/sessions/"+id, publishBody("v1", 42, false)); rec.Code != http.StatusNoContent {
+		t.Fatalf("publish: %d", rec.Code)
+	}
+	type listing struct {
+		Sessions []RemoteSession `json:"sessions"`
+	}
+	got := decode[listing](t, do(t, h, http.MethodGet, "/api/v1/playback/sessions", ""))
+	if len(got.Sessions) != 1 || got.Sessions[0].Stats != nil {
+		t.Fatalf("want one session reporting no stats, got %+v", got.Sessions)
+	}
+}
+
+// A publisher must not be able to make every controller's poll carry a novel.
+func TestRemoteStatsAreClamped(t *testing.T) {
+	s := remoteTestServer(t)
+	h := s.Router()
+	id := uuid.NewString()
+	long := make([]byte, 4000)
+	for i := range long {
+		long[i] = 'x'
+	}
+	decoders := make([]string, 40)
+	for i := range decoders {
+		decoders[i] = string(long)
+	}
+	body, _ := json.Marshal(map[string]any{
+		"video_id": "v1", "speed": 1,
+		"stats": map[string]any{
+			"delivery": map[string]any{"url": string(long), "reason": string(long)},
+			"device":   map[string]any{"decoders": decoders},
+		},
+	})
+	if rec := do(t, h, http.MethodPut, "/api/v1/playback/sessions/"+id, string(body)); rec.Code != http.StatusNoContent {
+		t.Fatalf("publish: %d", rec.Code)
+	}
+	type listing struct {
+		Sessions []RemoteSession `json:"sessions"`
+	}
+	stats := decode[listing](t, do(t, h, http.MethodGet, "/api/v1/playback/sessions", "")).Sessions[0].Stats
+	if len(stats.Delivery.URL) != 500 || len(stats.Delivery.Reason) != 64 {
+		t.Fatalf("strings not clamped: url %d, reason %d", len(stats.Delivery.URL), len(stats.Delivery.Reason))
+	}
+	if len(stats.Device.Decoders) != maxRemoteDecoders || len(stats.Device.Decoders[0]) != 32 {
+		t.Fatalf("decoders not clamped: %d entries, first %d long", len(stats.Device.Decoders), len(stats.Device.Decoders[0]))
+	}
+}

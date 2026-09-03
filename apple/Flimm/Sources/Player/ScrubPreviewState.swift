@@ -16,6 +16,11 @@ import UIKit
 final class ScrubPreviewState {
     private(set) var tiles: [PreviewTile] = []
     private(set) var sheet: UIImage?
+    /// How many times the track has been asked for, for the playback stats
+    /// panel. Asking is what makes the server derive the sheet, and a sheet is
+    /// one decode of the whole file, so the count is the difference between a
+    /// wait and a queue.
+    private(set) var asked = 0
 
     /// What ``tiles`` and ``sheet`` were loaded for, so a rotation or a
     /// window resize — which rebuilds the view and re-runs its task — reuses
@@ -32,12 +37,28 @@ final class ScrubPreviewState {
         guard loadedPath != path else { return }
         tiles = []
         sheet = nil
-        let loaded = await ScrubPreview.load(trackPath: path, client: client)
+        asked = 0
+        let loaded = await ScrubPreview.load(trackPath: path, client: client) { [weak self] count in
+            Task { @MainActor in self?.asked = count }
+        }
         guard !Task.isCancelled, let first = loaded.first else { return }
         let image = await MediaImageStore.shared.image(at: first.sheetPath, client: client)
         guard !Task.isCancelled, let image else { return }
         loadedPath = path
         tiles = loaded
         sheet = image
+    }
+
+    /// What the playback stats panel says about the sheet.
+    func stats(offered: Bool) -> PlaybackStats.Preview {
+        let first = tiles.first
+        return PlaybackStats.Preview(
+            offered: offered,
+            tiles: tiles.count,
+            every: first.map { $0.end - $0.start } ?? 0,
+            width: Int(first?.rect.width ?? 0),
+            height: Int(first?.rect.height ?? 0),
+            asked: asked
+        )
     }
 }
