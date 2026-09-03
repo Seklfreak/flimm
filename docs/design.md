@@ -248,9 +248,11 @@ Your own custom playlists, plus the channel playlists you have taken up —
 pinned, or marked as music. A channel's full set of playlists lives on its
 channel page instead: the archive may index every playlist a prolific channel
 owns, and a page that listed them all would bury the lists that are yours
-under hundreds that are not. Taking one up is what puts it here. Each card
-shows watched progress across the playlist and a resume target (the first
-in-progress video, else the first unseen). Custom playlists are created,
+under hundreds that are not. Taking one up is what puts it here. Pinned
+playlists lead the page in a section of their own and are not repeated in the
+list below it — a pin is a shortcut to a playlist, not a second playlist.
+Each card shows watched progress across the playlist and a resume target
+(the first in-progress video, else the first unseen). Custom playlists are created,
 reordered and deleted through TubeArchivist so they exist there too.
 
 ## History

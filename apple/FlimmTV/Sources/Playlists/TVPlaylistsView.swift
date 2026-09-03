@@ -1,9 +1,10 @@
 import FlimmKit
 import SwiftUI
 
-/// Custom playlists and the channel playlists the viewer took up, pinned first. A pin is
-/// Flimm's own per-user state, so it follows the account here from wherever it
-/// was set.
+/// Custom playlists and the channel playlists the viewer took up. Pinned ones
+/// lead in a section of their own — a pin is Flimm's own per-user state, so it
+/// follows the account here from wherever it was set — and the rows below hold
+/// everything else, never a second copy of a pin.
 struct TVPlaylistsView: View {
     @Environment(AppModel.self) private var app
 
@@ -38,21 +39,28 @@ struct TVPlaylistsView: View {
         .task(id: kind) { await reload() }
     }
 
+    /// What the list below the pins shows: the paged list, minus the playlists
+    /// the *Pinned* section is already showing. A pin is a shortcut to a
+    /// playlist, not a second playlist.
+    private var rest: [PlaylistSummary] {
+        (pager?.items ?? []).excludingPinned(app.pinnedPlaylists)
+    }
+
     @ViewBuilder
     private var content: some View {
         if let pager {
             if let error = pager.error, pager.items.isEmpty {
                 TVErrorState(message: error) { Task { await pager.reload() } }
-            } else if pager.items.isEmpty && pager.hasLoaded {
+            } else if rest.isEmpty && app.pinnedPlaylists.isEmpty && pager.hasLoaded {
                 TVEmptyState(icon: "list.and.film", title: "No playlists")
-            } else {
+            } else if !rest.isEmpty {
                 VStack(alignment: .leading, spacing: 16) {
                     if !app.pinnedPlaylists.isEmpty {
-                        Text("All playlists")
+                        Text("More playlists")
                             .font(.title3.weight(.semibold))
                             .foregroundStyle(.secondary)
                     }
-                    grid(pager.items) { playlist in
+                    grid(rest) { playlist in
                         Task { await pager.loadMoreIfNeeded(after: playlist) }
                     }
                 }

@@ -170,3 +170,14 @@ public enum PlaylistAction: String, Codable, Sendable, CaseIterable {
     case top
     case bottom
 }
+
+extension Array where Element == PlaylistSummary {
+    /// The list without the playlists a *Pinned* section already shows above
+    /// it. A pin is a shortcut to a playlist, not a second playlist, so a
+    /// screen that leads with the pins must not list them again underneath.
+    public func excludingPinned(_ pinned: [PlaylistSummary]) -> [PlaylistSummary] {
+        guard !pinned.isEmpty else { return self }
+        let ids = Set(pinned.map(\.id))
+        return filter { !ids.contains($0.id) }
+    }
+}

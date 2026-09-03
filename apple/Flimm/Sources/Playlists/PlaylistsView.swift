@@ -2,8 +2,9 @@ import FlimmKit
 import SwiftUI
 
 /// Custom playlists and the ones archived from channels, side by side. Pinned
-/// ones come first — a pin is Flimm's own per-user state, so it follows the
-/// account across clients.
+/// ones lead in a section of their own — a pin is Flimm's own per-user state,
+/// so it follows the account across clients — and the list below holds
+/// everything else, never a second copy of a pin.
 ///
 /// A phone gets the rows; a wide window gets a grid of the same playlists,
 /// because artwork is most of what tells them apart.
@@ -17,15 +18,25 @@ struct PlaylistsView: View {
     @State private var showNewPlaylist = false
     @State private var newName = ""
 
+    /// Everything the list below the pins shows: the paged list, minus the
+    /// playlists the *Pinned* section is already showing, since a pin is a
+    /// shortcut to a playlist and not a second one. A search has no pinned
+    /// section, so it searches all of them.
     private var visible: [PlaylistSummary] {
         let all = pager?.items ?? []
         let text = searchText.trimmingCharacters(in: .whitespaces)
-        guard !text.isEmpty else { return all }
+        guard !text.isEmpty else { return all.excludingPinned(app.pinnedPlaylists) }
         return all.filter { $0.name.localizedCaseInsensitiveContains(text) }
     }
 
     private var showsPinned: Bool {
         !app.pinnedPlaylists.isEmpty && searchText.isEmpty
+    }
+
+    /// "No playlists" belongs to a screen with nothing on it — a pinned
+    /// section above an empty rest is a full screen.
+    private var showsEmptyState: Bool {
+        visible.isEmpty && !showsPinned
     }
 
     var body: some View {
@@ -67,28 +78,37 @@ struct PlaylistsView: View {
                     }
                 }
             }
-            Section {
-                if let pager {
-                    if let error = pager.error, pager.items.isEmpty {
-                        ErrorState(message: error) { Task { await pager.reload() } }
-                            .listRowSeparator(.hidden)
-                    } else if visible.isEmpty && pager.hasLoaded {
-                        EmptyState(icon: "list.and.film", title: "No playlists")
-                            .listRowSeparator(.hidden)
-                    }
-                    ForEach(visible) { playlist in
-                        NavigationLink(value: Route.playlist(playlist.id)) {
-                            PlaylistRow(playlist: playlist)
-                        }
-                        .task { await pager.loadMoreIfNeeded(after: playlist) }
-                    }
-                    if pager.isLoading || pager.isLoadingMore {
-                        ProgressView().frame(maxWidth: .infinity)
-                    }
-                }
+            // Named only when the pins lead the screen, so the rest of the
+            // list is visibly a different section and not more pins.
+            if showsPinned && !visible.isEmpty {
+                Section("More playlists") { rest }
+            } else {
+                Section { rest }
             }
         }
         .listStyle(.insetGrouped)
+    }
+
+    @ViewBuilder
+    private var rest: some View {
+        if let pager {
+            if let error = pager.error, pager.items.isEmpty {
+                ErrorState(message: error) { Task { await pager.reload() } }
+                    .listRowSeparator(.hidden)
+            } else if showsEmptyState && pager.hasLoaded {
+                EmptyState(icon: "list.and.film", title: "No playlists")
+                    .listRowSeparator(.hidden)
+            }
+            ForEach(visible) { playlist in
+                NavigationLink(value: Route.playlist(playlist.id)) {
+                    PlaylistRow(playlist: playlist)
+                }
+                .task { await pager.loadMoreIfNeeded(after: playlist) }
+            }
+            if pager.isLoading || pager.isLoadingMore {
+                ProgressView().frame(maxWidth: .infinity)
+            }
+        }
     }
 
     private var grid: some View {
@@ -100,10 +120,10 @@ struct PlaylistsView: View {
                 if let pager {
                     if let error = pager.error, pager.items.isEmpty {
                         ErrorState(message: error) { Task { await pager.reload() } }
-                    } else if visible.isEmpty && pager.hasLoaded {
+                    } else if showsEmptyState && pager.hasLoaded {
                         EmptyState(icon: "list.and.film", title: "No playlists")
-                    } else {
-                        section(showsPinned ? "All playlists" : nil, playlists: visible, pager: pager)
+                    } else if !visible.isEmpty {
+                        section(showsPinned ? "More playlists" : nil, playlists: visible, pager: pager)
                     }
                     if pager.isLoading || pager.isLoadingMore {
                         ProgressView().frame(maxWidth: .infinity)
