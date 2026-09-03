@@ -24,9 +24,37 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # Pinned, not `brew install`. Unpinned, a SwiftLint release that adds a
+      # rule turns main red on the next push whatever that push contains — and
+      # a local binary a version behind lints clean, so nobody sees it coming.
+      # That is the same trap the golangci-lint pin in test.yaml closes on the
+      # Go side. Renovate keeps both current; see the custom manager in
+      # renovate.json, which reads the annotations below.
       - name: Tooling
+        env:
+          # renovate: datasource=github-releases depName=realm/SwiftLint
+          SWIFTLINT_VERSION: "0.65.1"
+          # renovate: datasource=github-releases depName=yonaskolb/XcodeGen
+          XCODEGEN_VERSION: "2.46.0"
         run: |
-          brew install xcodegen swiftlint
+          set -euo pipefail
+          tools="$RUNNER_TEMP/tools"
+          mkdir -p "$tools"
+          curl -sSfL -o "$RUNNER_TEMP/swiftlint.zip" \
+            "https://github.com/realm/SwiftLint/releases/download/$SWIFTLINT_VERSION/portable_swiftlint.zip"
+          unzip -q "$RUNNER_TEMP/swiftlint.zip" -d "$tools/swiftlint"
+          # xcodegen resolves its settings presets from `share/` beside the
+          # binary, so the archive is kept whole rather than the binary copied
+          # out of it.
+          curl -sSfL -o "$RUNNER_TEMP/xcodegen.zip" \
+            "https://github.com/yonaskolb/XcodeGen/releases/download/$XCODEGEN_VERSION/xcodegen.zip"
+          unzip -q "$RUNNER_TEMP/xcodegen.zip" -d "$tools"
+          echo "$tools/swiftlint" >> "$GITHUB_PATH"
+          echo "$tools/xcodegen/bin" >> "$GITHUB_PATH"
+          # $GITHUB_PATH only reaches later steps, so these say by full path
+          # what the rest of the job will be running.
+          "$tools/swiftlint/swiftlint" version
+          "$tools/xcodegen/bin/xcodegen" --version
           xcodebuild -version
 
       - name: Generate project

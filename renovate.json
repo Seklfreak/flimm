@@ -26,7 +26,7 @@
       "automerge": false
     },
     {
-      "description": "Skip TypeScript 7.0.x: it ships no stable programmatic API, so typescript-eslint (peer typescript <6.1.0) can't run on it and the frontend install/lint breaks. The API is targeted for 7.1 \u2014 allow that through so a fresh PR reopens when it lands.",
+      "description": "Skip TypeScript 7.0.x: it ships no stable programmatic API, so typescript-eslint (peer typescript <6.1.0) can't run on it and the frontend install/lint breaks. The API is targeted for 7.1 — allow that through so a fresh PR reopens when it lands.",
       "matchPackageNames": [
         "typescript"
       ],
@@ -54,6 +54,17 @@
       "depNameTemplate": "golangci/golangci-lint",
       "datasourceTemplate": "github-releases",
       "extractVersionTemplate": "^v(?<version>.*)$",
+      "versioningTemplate": "semver"
+    },
+    {
+      "customType": "regex",
+      "description": "SwiftLint and XcodeGen are downloaded from their GitHub releases in apple.yaml, so no built-in manager sees the pinned versions. Reads the `# renovate:` annotation above each env var, so a third pinned tool needs the annotation and nothing here.",
+      "managerFilePatterns": [
+        "/(^|/)\\.github/workflows/.*\\.ya?ml$/"
+      ],
+      "matchStrings": [
+        "# renovate: datasource=(?<datasource>[a-z-]+) depName=(?<depName>\\S+)\\s+[A-Z0-9_]+: \"(?<currentValue>[^\"]+)\""
+      ],
       "versioningTemplate": "semver"
     },
     {
