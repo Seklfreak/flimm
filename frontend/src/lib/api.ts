@@ -185,6 +185,103 @@ export type HLSState = "pending" | "running" | "done" | "failed";
  *  refuse, not something to hide from the picker. */
 export type HLSCodec = "h264" | "hevc" | (string & {});
 
+/** `GET /admin/sessions` — every playback happening on the server right now,
+ *  whoever it belongs to. Admin only; see docs/api.md, "Live sessions". */
+export interface LiveResponse {
+  sessions: LiveSession[];
+  /** Every running transcode, including ones no session is attached to. */
+  jobs: LiveJob[];
+  /** The same recent stalls `/healthz` shows an admin. */
+  stalls: LiveStall[];
+  /** The server's clock, so ages are computed against it rather than the
+   *  browser's — the two are not the same and the difference is unbounded. */
+  now: string;
+}
+
+export interface LiveSession {
+  user_id: string;
+  /** An email or a display name, whichever the account has. */
+  user?: string;
+  video_id: string;
+  title?: string;
+  channel_name?: string;
+  /** Derived from the User-Agent unless a player named itself. `apple` is a
+   *  native client that did not say which one. */
+  client?: "web" | "ios" | "ipados" | "tvos" | "apple" | (string & {});
+  /** The screen's own name — only a player that publishes a session has one. */
+  device?: string;
+  position: number;
+  duration: number;
+  paused: boolean;
+  /** When the session was first *seen*, which is not when playback started. */
+  started_at: string;
+  updated_at: string;
+  /** A media request is open right now. Not the same as "playing": a browser
+   *  that has buffered the whole file asks for nothing for minutes. */
+  streaming: boolean;
+  /** What has left the machine for this session, across every request in it. */
+  bytes: number;
+  stalls: number;
+  last_stall?: string;
+  delivery: LiveDelivery;
+  /** The player's own readings, for a client that publishes them (tvOS). */
+  stats?: LivePlaybackStats;
+}
+
+export interface LiveDelivery {
+  /** Absent until something has been streamed: a heartbeat can arrive first. */
+  kind?: "direct" | "rendition" | "audio";
+  height?: number;
+  /** The transcode behind a rendition, or absent when it is finished — which
+   *  is itself the answer to "why is this stalling". */
+  job?: LiveJob;
+}
+
+export interface LiveJob {
+  video_id: string;
+  height: number;
+  segments: number;
+  /** The fraction of the rendition that exists — not where anyone is watching. */
+  progress: number;
+  /** The segment ffmpeg is on, or -1 when the job is waiting for the slot. */
+  encoder_segment: number;
+}
+
+export interface LiveStall {
+  at: string;
+  video_id: string;
+  position: number;
+  seconds: number;
+  height: number;
+  client: string;
+  /** The server's attribution: `encoder_behind`, `delivery`, `source`, `unknown`. */
+  reason: string;
+  segment: number;
+  encoder: number;
+}
+
+/** What a player published about itself, relayed untouched. The full shape is
+ *  in docs/api.md under "Playback stats"; this is what the admin view reads. */
+export interface LivePlaybackStats {
+  delivery: {
+    kind: string;
+    reason: string;
+    source_height: number;
+    source_codec: string;
+    rendition?: { height: number; codec: string; state: string; progress: number; preparing: boolean };
+  };
+  player: {
+    status: string;
+    likely_to_keep_up: boolean;
+    picture_width: number;
+    picture_height: number;
+    buffer_ahead?: number;
+    dropped_frames?: number;
+    observed_bitrate?: number;
+  };
+  device: { decoders: string[]; screen_height: number };
+}
+
 export type StatsRange = "all" | "year" | "month";
 
 /** `GET /stats` — see docs/api.md, "Watch stats", for what these can honestly say. */
@@ -610,6 +707,10 @@ export const api = {
   history: (filter: HistoryFilter, q: string, page: number) =>
     req<Page<HistoryEntry>>(`/history${qs({ filter, q, page, page_size: PAGE_SIZE })}`),
   deleteHistory: (entryId: string) => req<void>(`/history/${entryId}`, { method: "DELETE" }),
+
+  /** Admin only: what the server is doing right now — every account's
+   *  playback, what is being transcoded for it, and what recently stalled. */
+  liveSessions: () => req<LiveResponse>("/admin/sessions"),
 
   search: (q: string, opts: { scope?: SearchScope; unseen?: boolean; feed?: string }) =>
     req<SearchResult>(

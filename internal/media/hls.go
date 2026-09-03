@@ -673,3 +673,23 @@ func runFFmpegReporting(ctx context.Context, ffmpegPath, dir string, args []stri
 var secretPattern = regexp.MustCompile(`(?i)(authorization:.*|\btoken[=:]\s*\S+|\btoken\s+[A-Za-z0-9._~+/-]{8,})`)
 
 func scrubSecrets(s string) string { return secretPattern.ReplaceAllString(s, "[redacted]") }
+
+// ParseHLSName is HLSName in reverse: the video and the rung a cache entry
+// belongs to. It exists because the registry is keyed by the entry name, and
+// an admin looking at what the server is transcoding wants to be told a video
+// and a height rather than a directory.
+func ParseHLSName(name string) (videoID string, height int, ok bool) {
+	rest, found := strings.CutPrefix(name, HLSVariant+"-")
+	if !found {
+		return "", 0, false
+	}
+	digits, id, found := strings.Cut(rest, "-")
+	if !found || id == "" {
+		return "", 0, false
+	}
+	h, err := strconv.Atoi(digits)
+	if err != nil || h <= 0 {
+		return "", 0, false
+	}
+	return id, h, true
+}

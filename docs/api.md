@@ -964,13 +964,104 @@ not, and that single fact says which half of the system to go and look at.
 
 Each stall is logged as `playback stalled` with its reason, position, segment,
 encoder position and client, and the last 50 are shown to an admin on
-`/healthz` under `stalls` — enough to see a pattern in an evening's watching.
-Nothing is written to the database: this is an operational signal, not history.
+`/healthz` under `stalls` and in [live sessions](#live-sessions-admin), where
+they are also counted against the session that suffered them — enough to see a
+pattern in an evening's watching. Nothing is written to the database: this is an
+operational signal, not history.
 
 **Clients.** Web (`useStallReport`), iPhone/iPad and Apple TV (FlimmKit's
 `StallReporter`, via `PlaybackServices`). All four use the same 0.4 s floor,
 and all four abandon rather than report a stall that was still running when
 playback stopped — its length is unknown, and the viewer may simply have left.
+### Live sessions (admin)
+
+`GET /admin/sessions` is the present tense: every playback happening on this
+server right now, whoever it belongs to.
+
+Every other read in this API is per-viewer and after the fact — history says
+what was watched, stats say how much of it. Neither answers the question whoever
+runs the archive actually asks, which is *is anything playing, is the box
+transcoding for it, and is anyone watching a spinner*. A server quietly
+re-encoding a film for a television nobody is in front of looks, from every
+other endpoint, exactly like a server doing nothing.
+
+It is **admin-only** (`ADMIN_EMAILS`), and the one endpoint that deliberately
+crosses the per-user boundary every other one keeps. Everyone else gets a
+`403` — not the `404` a feed id gets, because there is nothing here whose
+existence is a secret.
+
+**Nothing is asked of a client.** A session is assembled from requests clients
+already make, which is why this needs no client to be updated to appear in it:
+
+| What the server hears | What it learns |
+| --- | --- |
+| `POST /videos/{id}/progress` | who, what, where in it — the only thing that reaches the server while a video is simply playing, on a ten-second beat from every client |
+| a `/media/*` request | the half no client can report: `direct`, `rendition` or `audio`, and the bytes that actually left the machine |
+| `POST /videos/{id}/stall` | the viewer watched a spinner, counted against that session |
+| `PUT /playback/sessions/{id}` | the player's own readings, relayed whole as `stats` (see [Playback stats](#remote-control)) |
+
+Sessions live **in memory** and are keyed by **viewer and video**, not by a
+session id — there is none to be had, since a heartbeat and a segment request
+are unrelated requests tied together only by who sent them and what they are
+about. One account playing the same video on two screens at once is therefore
+one row rather than two. A session lapses **60 s** after the last sign of life
+(six missed heartbeats), except while a media request is still open: a direct
+play is one request that can last the whole film. A paused player stops
+heartbeating and drops off within a minute, deliberately — this list is what
+the server is *doing*.
+
+```json
+{
+  "sessions": [
+    {
+      "user_id": "…", "user": "viewer@example.com",
+      "video_id": "yt-id", "title": "Braising, the long way", "channel_name": "Slow Kitchen",
+      "client": "tvos", "device": "Living Room",
+      "position": 300, "duration": 600, "paused": false,
+      "started_at": "2026-09-03T19:55:00Z", "updated_at": "2026-09-03T20:00:20Z",
+      "streaming": true, "bytes": 3145728,
+      "stalls": 2, "last_stall": "encoder_behind",
+      "delivery": {
+        "kind": "rendition", "height": 720,
+        "job": { "video_id": "yt-id", "height": 720, "segments": 150, "progress": 0.31, "encoder_segment": 107 }
+      },
+      "stats": { … }
+    }
+  ],
+  "jobs": [ { "video_id": "yt-id", "height": 480, "segments": 150, "progress": 0, "encoder_segment": -1 } ],
+  "stalls": [ … ],
+  "now": "2026-09-03T20:00:30Z"
+}
+```
+
+`client` is derived from the **User-Agent**, because nothing else is available:
+AVFoundation names the device it is on (`tvos`, `ios`, `ipados`), a browser is
+`web`, and the API calls FlimmKit makes are indistinguishable between an iPhone
+and an Apple TV — those get `apple` rather than a guess. A platform a player
+named for itself (a stall report's `client`, a published session's `platform`)
+always wins over one derived this way. `device` exists only for a player that
+publishes a remote session.
+
+`delivery.job` is the transcode behind a rendition, read at the moment of the
+request, and absent once the rendition is finished — which is itself the answer
+to "why is this stalling". `progress` is the fraction of the rendition that
+exists, **not** where playback is; `encoder_segment` is the segment ffmpeg is
+on, or `-1` when the job is waiting for the transcode slot. `jobs` is every
+running transcode including the ones no session is attached to — a viewer who
+closed the tab leaves one behind, and that is exactly what is otherwise
+invisible. `now` is the server's clock, so a caller ages these against it
+rather than against its own, which is not the same and differs by an unbounded
+amount.
+
+`bytes` is counted on the way out rather than taken from `Content-Length`: a
+client that seeks away abandons the rest of a response, and a range request
+asks for a slice of a file. What matters to whoever runs the server is what
+actually left it.
+
+**Clients.** The web client only (`/admin`, linked from Settings for an admin,
+re-read every 4 s). Deliberately not on iPhone, iPad or Apple TV — see
+`docs/apple-apps.md`.
+
 ### Remote control
 
 One screen plays; another steers it. A player publishes what it is doing as a

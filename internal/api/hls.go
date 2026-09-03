@@ -118,6 +118,14 @@ func (s *Server) serveHLSVariant(w http.ResponseWriter, r *http.Request, height 
 		writeError(w, http.StatusNotFound, "not found")
 		return
 	}
+	// Every file of a rendition — the playlists and each segment — is the same
+	// stream to whoever is watching it, so they are counted against one
+	// session. The entry name goes with it: it is how the admin view finds the
+	// transcode still running behind this playback.
+	w, done := s.live.streaming(w, r, id, liveDelivery{
+		Kind: liveRendition, Height: height, Name: media.HLSName(id, height),
+	})
+	defer done()
 	switch file {
 	case media.HLSMasterName:
 		s.serveHLSMaster(w, r, id, height, enforceOffered)

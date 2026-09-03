@@ -28,6 +28,7 @@ export const keys = {
   inProgress: ["history", "in-progress-sidebar"] as const,
   search: (q: string, scope: string, unseen: boolean, feed: string | undefined) =>
     ["search", { q, scope, unseen, feed }] as const,
+  live: ["admin", "sessions"] as const,
 };
 
 // Generic paged → infinite adapter for the { items, page, page_size, total }
@@ -387,6 +388,19 @@ export function useStats(range: StatsRange) {
     queryKey: ["stats", range, zone],
     queryFn: () => api.stats(range, zone),
     staleTime: 60_000,
+  });
+}
+
+// What the server is doing right now, re-read on a short beat: this is the one
+// screen in Flimm whose whole subject is the present tense, and a stale one
+// answers a question nobody asked. `staleTime: 0` because every read must go
+// to the server — a cached answer here is a wrong answer.
+export function useLiveSessions() {
+  return useQuery({
+    queryKey: keys.live,
+    queryFn: () => api.liveSessions(),
+    refetchInterval: 4_000,
+    staleTime: 0,
   });
 }
 

@@ -302,6 +302,33 @@ Video quality is deliberately **not** one of them — it belongs to the screen
 and the network in front of it, so it is kept on the device (the browser's
 `localStorage`, `UserDefaults` on Apple platforms) and never synced.
 
+## What the server is doing
+
+Everything else in Flimm is a viewer's own view of their own watching. One
+screen is not: an administrator can see **every account's playback as it
+happens** — who is watching what, whether it is playing the archived file
+directly or costing a transcode, how far that encode has got, how many bytes
+have left the machine, and which viewer is the one watching a spinner. Beside
+it: the renditions being derived for nobody, and the stalls recently reported
+with the server's own attribution.
+
+It exists because everything the server does on a viewer's behalf is otherwise
+invisible, and each of those things fails in a way that looks exactly like
+nothing happening. History says what was watched and stats say how much of it;
+neither can say that the box is re-encoding a film for a television nobody is
+in front of.
+
+It is assembled from requests clients already make — the progress heartbeat,
+the media request itself, a stall report, a published remote session — so every
+client appears in it without knowing it exists, and nothing new is asked of
+one. Sessions are held in memory and lapse a minute after the last sign of
+life: this is the present tense, not a record. Nothing is written down, because
+what it describes stops being true.
+
+It is admin-only and it is the **one** place per-user scoping is deliberately
+crossed. Whoever runs the archive has to answer for what it is doing, and
+cannot from a view of their own screens alone.
+
 ## Platforms
 
 Web first; native iOS, iPadOS and tvOS apps follow the same model and talk to

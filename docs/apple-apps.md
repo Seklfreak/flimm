@@ -975,6 +975,19 @@ a side effect of caching.
   `state` a preview 404 carries, `hls_progress` on each rung, the loudness
   `state` — so building it would be a view plus the gate reporting its own
   reason the way the web one does, not a redesign.
+- ~~Whether the Apple clients get the **live sessions** view (every account's
+  playback, the transcodes running for it, the recent stalls; `GET
+  /admin/sessions`, `/admin` in the web client).~~ **They do not.** It is a
+  maintenance view, read the way maintenance views are read: on a machine, with
+  a terminal and the server's own log open beside it. Two metres from a
+  television is where nobody reads sixteen numbers in small type, and the one
+  thing a phone would add — being able to look while away from the desk — is
+  what a browser on that phone already does. Nothing about it excludes them:
+  it is one authenticated `GET` that returns everything drawn, and every
+  reading in it is the server's, so an Apple view would be a screen and no
+  more. Note that the sessions it lists include the Apple clients from the
+  first release — they are observed from the requests they already make, so
+  neither target needed a line of code.
 - ~~Whether Apple TV takes part in feed notifications.~~ **It does not.**
   tvOS shows no notification banners, so there is nothing to deliver, and
   the top shelf already surfaces the pinned feed — which is the television's

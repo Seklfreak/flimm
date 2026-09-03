@@ -76,6 +76,15 @@ One container image: a Go backend with the React frontend embedded.
   and what the video element itself reports (buffer ahead, dropped frames,
   picture size). Everything the server derives is invisible by design, and
   each of those jobs fails in a way that looks exactly like nothing happening.
+- **What the server is doing right now** (web, admin) — one screen listing
+  every account's playback as it happens: who is watching what, whether it is
+  playing the archived file directly or costing a transcode, how far the
+  encoder has got and where it is working, how many bytes have left the
+  machine, and which viewer is the one watching a spinner. It also lists the
+  renditions being derived for nobody — a viewer who closed the tab leaves one
+  behind — and the recent stalls with the server's own attribution. It is
+  assembled from the requests clients already make, so every client appears in
+  it without knowing it exists.
 - **An even volume across channels** — each video is measured once (EBU R128)
   and the loud ones are turned down to a common target, so you stop reaching
   for the volume between one channel and the next. The measurement is made
@@ -204,7 +213,7 @@ All configuration is via environment variables.
 | `OIDC_ISSUER` | unless `AUTH_DISABLED=true` | issuer URL (discovery at `<issuer>/.well-known/openid-configuration`) |
 | `OIDC_CLIENT_ID` | unless `AUTH_DISABLED=true` | public client id |
 | `AUTH_DISABLED` | no | `true` skips auth and uses a fixed dev user — **dev only** |
-| `ADMIN_EMAILS` | no | comma-separated; admins see `/healthz` details and get the archive-side controls (index a channel's series, subscribe/unsubscribe) |
+| `ADMIN_EMAILS` | no | comma-separated; admins see `/healthz` details and the live sessions view (`/admin`), and get the archive-side controls (index a channel's series, subscribe/unsubscribe) |
 | `APP_NAME` | no | default `Flimm` |
 | `PORT` | no | default `8080` |
 | `MIN_PLAY_SECONDS` | no | how long a video must play before it enters history and gets a resume position (default 15) |

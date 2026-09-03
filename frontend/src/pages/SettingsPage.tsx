@@ -243,6 +243,19 @@ export default function SettingsPage() {
               <Row label="Server version">
                 <span className="text-[13px] font-semibold text-muted-2">{config.version || "—"}</span>
               </Row>
+              {me.data?.is_admin && (
+                <Row
+                  label="What the server is doing"
+                  hint="Every account's playback right now, what is being transcoded for it, and what recently stalled. Nobody but an administrator can read it."
+                >
+                  <Link
+                    to="/admin"
+                    className="rounded-lg border border-hair px-3 py-2 text-[13px] font-bold text-ink no-underline hover:bg-raised"
+                  >
+                    Live sessions
+                  </Link>
+                </Row>
+              )}
             </Section>
           </>
         )}

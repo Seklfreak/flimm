@@ -586,6 +586,10 @@ func (s *Server) putRemoteSession(w http.ResponseWriter, r *http.Request) {
 	req.ThumbURL = clampRemoteText(req.ThumbURL, 500)
 	clampRemoteStats(req.Stats)
 	s.remote.publish(uid, req)
+	// A published session is the only place a player's own readings exist, so
+	// the admin's live view takes a copy of them as they go past. It reads
+	// them no more than the hub does — see sessions.go.
+	s.live.published(r, req)
 	w.WriteHeader(http.StatusNoContent)
 }
 
