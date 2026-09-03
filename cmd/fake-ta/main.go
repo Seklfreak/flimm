@@ -30,6 +30,8 @@ func main() {
 	addr := flag.String("addr", ":8001", "listen address")
 	mediaDir := flag.String("media-dir", filepath.Join(os.TempDir(), "flimm-fake-ta"), "where generated media files are kept")
 	ffmpegPath := flag.String("ffmpeg", "ffmpeg", "ffmpeg binary used to generate media")
+	padChannels := flag.Int("pad-channels", 0,
+		"append this many empty channels, to make the archive longer than one page")
 	verbose := flag.Bool("v", false, "log every request")
 	flag.Parse()
 
@@ -40,6 +42,7 @@ func main() {
 	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level}))
 
 	catalogue := faketa.NewCatalogue()
+	catalogue.PadChannels(*padChannels)
 	media := faketa.NewMedia(*mediaDir, *ffmpegPath, log)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

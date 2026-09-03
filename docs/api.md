@@ -362,7 +362,9 @@ that issued it: sending one to a different list, or a different view of the
 same list, is **400 `invalid cursor`**, because quietly serving page 0 instead
 would show the reader everything twice. Restart the list from `page=0` if that
 happens. Lists that are not composed lazily (playlists, history, channels,
-search, up next, "continue watching") have no cursor and page by offset.
+search, up next, "continue watching") have no cursor and page by offset. They
+still set `has_more` — every paged response does — so a client follows the same
+rule everywhere and never has to fall back to arithmetic on `total`.
 
 `unseen_count` on a feed is unrelated to any of this and can still read higher
 than a list; see the Feed section.

@@ -118,7 +118,8 @@ func (s *Server) listChannels(w http.ResponseWriter, r *http.Request) {
 		window := slicePage(picked, paging)
 		items := s.summarise(r.Context(), window.Items, refs, pins)
 		writeJSON(w, http.StatusOK, Page[ChannelSummary]{
-			Items: items, Page: paging.Page, PageSize: paging.Size, Total: window.Total,
+			Items: items, Page: paging.Page, PageSize: paging.Size,
+			Total: window.Total, HasMore: window.HasMore,
 		})
 		return
 	}

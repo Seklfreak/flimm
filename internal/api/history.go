@@ -90,7 +90,10 @@ func (s *Server) listHistory(w http.ResponseWriter, r *http.Request) {
 	for i := range items {
 		items[i].Video = videos[i]
 	}
-	writeJSON(w, http.StatusOK, Page[HistoryEntry]{Items: items, Page: p.Page, PageSize: p.Size, Total: total})
+	writeJSON(w, http.StatusOK, Page[HistoryEntry]{
+		Items: items, Page: p.Page, PageSize: p.Size,
+		Total: total, HasMore: int64(p.offset()+len(items)) < total,
+	})
 }
 
 // feedHomes is the user's feeds with their source sets, in sidebar order, for

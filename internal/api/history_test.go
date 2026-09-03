@@ -127,3 +127,33 @@ func TestHistoryEntriesCarryTheirHomeFeed(t *testing.T) {
 		t.Errorf("x1 = feed %+v playlist %v, want none", e.Feed, e.PlaylistID)
 	}
 }
+
+// History pages off a SQL window, so `has_more` is the offset against the
+// total count — without it the page always claimed to be the last one.
+func TestHistorySaysWhenThereIsMore(t *testing.T) {
+	client := ta.NewFake()
+	client.AddVideo(video("v1", "A", "2026-08-01", 600, false))
+	now := pgtype.Timestamptz{Time: time.Now(), Valid: true}
+
+	q := newEventStore().querier()
+	q.ListHistoryFn = func(_ context.Context, arg sqlc.ListHistoryParams) ([]sqlc.WatchEvent, error) {
+		const total = 5
+		n := min(int(arg.PageLimit), max(0, total-int(arg.PageOffset)))
+		out := make([]sqlc.WatchEvent, n)
+		for i := range out {
+			out[i] = sqlc.WatchEvent{ID: uuid.New(), VideoID: "v1", ChannelID: "A", Position: 10, Duration: 600, LastPlayedAt: now}
+		}
+		return out, nil
+	}
+	q.CountHistoryFn = func(context.Context, sqlc.CountHistoryParams) (int64, error) { return 5, nil }
+	h := newTestServer(client, q).Router()
+
+	page := decode[Page[HistoryEntry]](t, do(t, h, http.MethodGet, "/api/v1/history?page=0&page_size=2", ""))
+	if !page.HasMore || len(page.Items) != 2 {
+		t.Errorf("page 0 = %d items, has_more %v; want 2 with more", len(page.Items), page.HasMore)
+	}
+	last := decode[Page[HistoryEntry]](t, do(t, h, http.MethodGet, "/api/v1/history?page=2&page_size=2", ""))
+	if last.HasMore || len(last.Items) != 1 {
+		t.Errorf("last page = %d items, has_more %v; want the final one and no more", len(last.Items), last.HasMore)
+	}
+}

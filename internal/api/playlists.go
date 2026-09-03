@@ -457,7 +457,10 @@ func (s *Server) listPlaylists(w http.ResponseWriter, r *http.Request) {
 		s.writeDBError(w, "list feed playlists", err)
 		return
 	}
-	writeJSON(w, http.StatusOK, Page[PlaylistSummary]{Items: items, Page: p.Page, PageSize: p.Size, Total: window.Total})
+	writeJSON(w, http.StatusOK, Page[PlaylistSummary]{
+		Items: items, Page: p.Page, PageSize: p.Size,
+		Total: window.Total, HasMore: window.HasMore,
+	})
 }
 
 func (s *Server) createPlaylist(w http.ResponseWriter, r *http.Request) {

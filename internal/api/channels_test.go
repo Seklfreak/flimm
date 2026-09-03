@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -176,5 +177,50 @@ func TestSubscribeNewChannel(t *testing.T) {
 	s.subscribeNewChannel(w, req)
 	if w.Code != http.StatusForbidden {
 		t.Errorf("non-admin = %d, want 403", w.Code)
+	}
+}
+
+// A channel list longer than one page has to say so. The default order is by
+// name, which the handler answers without enriching every channel — and that
+// path used to build its own page and leave `has_more` at false, so a picker
+// paging until "no more" stopped at the first page and a subscriber with 218
+// channels only ever saw 100 of them.
+func TestListChannelsPagesPastTheFirstPage(t *testing.T) {
+	client := ta.NewFake()
+	for i := range 218 {
+		id := fmt.Sprintf("UC%03d", i)
+		client.Channels[id] = &ta.Channel{ChannelID: id, ChannelName: fmt.Sprintf("Channel %03d", i)}
+	}
+	s := newTestServer(client, newEventStore().querier())
+
+	var seen []string
+	for page := 0; ; page++ {
+		rec := do(t, s.Router(), http.MethodGet,
+			fmt.Sprintf("/api/v1/channels?page=%d&page_size=100", page), "")
+		if rec.Code != http.StatusOK {
+			t.Fatalf("page %d status = %d: %s", page, rec.Code, rec.Body.String())
+		}
+		got := decode[Page[ChannelSummary]](t, rec)
+		if got.Total != 218 {
+			t.Errorf("page %d total = %d, want 218", page, got.Total)
+		}
+		for _, c := range got.Items {
+			seen = append(seen, c.ID)
+		}
+		if !got.HasMore {
+			break
+		}
+		if page > 5 {
+			t.Fatal("paging never ended")
+		}
+	}
+	if len(seen) != 218 {
+		t.Errorf("paged through %d channels, want all 218", len(seen))
+	}
+
+	// The count-dependent orders page through the same list.
+	rec := do(t, s.Router(), http.MethodGet, "/api/v1/channels?sort=videos&page=0&page_size=100", "")
+	if got := decode[Page[ChannelSummary]](t, rec); !got.HasMore {
+		t.Error("sort=videos page 0 says there is nothing more")
 	}
 }

@@ -185,6 +185,28 @@ func NewCatalogue() *Catalogue {
 	return c
 }
 
+// PadChannels appends n subscribed but empty channels, so the archive can be
+// made bigger than one page of anything. A picker that stops at the first page
+// looks perfectly right against four channels and hides two thirds of a real
+// subscription list, which is exactly how `has_more` went unnoticed. They carry
+// no videos, so they cost no media generation.
+func (c *Catalogue) PadChannels(n int) {
+	refreshed := time.Now().AddDate(0, 0, -1).Format("2006-01-02")
+	for i := range n {
+		id := fmt.Sprintf("UC-fake-pad-%03d", i)
+		c.Channels = append(c.Channels, ta.Channel{
+			ChannelID:          id,
+			ChannelName:        fmt.Sprintf("Padding Channel %03d", i),
+			ChannelThumbURL:    "/media/" + id + "/folder.jpg",
+			ChannelBannerURL:   "/media/" + id + "/banner.jpg",
+			ChannelDescription: "One of the empty channels that make the archive long.",
+			ChannelSubscribed:  true,
+			ChannelActive:      true,
+			ChannelLastRefresh: refreshed,
+		})
+	}
+}
+
 // videoID is stable and 11 characters like a real YouTube id, which matters:
 // clients and the media cache key on it.
 func videoID(channelID string, index int) string {

@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"testing"
 
@@ -153,5 +154,26 @@ func TestSetPlaylistFeedsAndBadges(t *testing.T) {
 	}
 	if detail := decode[PlaylistDetail](t, do(t, h, http.MethodGet, "/api/v1/playlists/PL-a", "")); len(detail.Feeds) != 0 {
 		t.Errorf("feeds after clear = %+v", detail.Feeds)
+	}
+}
+
+// The playlist list is paged the same way the channel list is, and it used to
+// drop `has_more` on the floor as well: a client paging until the server says
+// "no more" saw only the first page.
+func TestListPlaylistsSaysWhenThereIsMore(t *testing.T) {
+	client := ta.NewFake()
+	for i := range 5 {
+		id := fmt.Sprintf("PL-%d", i)
+		client.Playlists[id] = &ta.Playlist{PlaylistID: id, PlaylistName: id, PlaylistType: "custom"}
+	}
+	h := newTestServer(client, newEventStore().querier()).Router()
+
+	page := decode[Page[PlaylistSummary]](t, do(t, h, http.MethodGet, "/api/v1/playlists?page=0&page_size=2", ""))
+	if !page.HasMore || page.Total != 5 || len(page.Items) != 2 {
+		t.Errorf("page 0 = %d items, total %d, has_more %v; want 2 of 5 with more", len(page.Items), page.Total, page.HasMore)
+	}
+	last := decode[Page[PlaylistSummary]](t, do(t, h, http.MethodGet, "/api/v1/playlists?page=2&page_size=2", ""))
+	if last.HasMore || len(last.Items) != 1 {
+		t.Errorf("last page = %d items, has_more %v; want the final one and no more", len(last.Items), last.HasMore)
 	}
 }

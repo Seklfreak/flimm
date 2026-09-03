@@ -266,6 +266,11 @@ only shape in the archive that is not 16:9, which is what anything deriving a
 fixed-size still has to survive. The picture is a running timer, so a seek, a
 resume or a chapter jump can be checked by eye.
 
+`-pad-channels 214` appends that many empty channels to the four real ones, so
+the archive is longer than a page and anything that lists channels — the feed
+editor's picker most of all — can be checked against a subscription list of a
+realistic size rather than one that fits in a single response.
+
 Set `SPONSORBLOCK_URL=` (empty) alongside it: the real SponsorBlock service has
 never heard of these video ids, and its answer of "no segments" is
 authoritative, so the fake's own segments only show with the lookup turned off.
