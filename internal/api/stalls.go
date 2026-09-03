@@ -117,9 +117,6 @@ func (s *Server) postStall(w http.ResponseWriter, r *http.Request) {
 	}
 	stall := s.attributeStall(id, report)
 	s.stalls.add(stall)
-	// Against the session too, so the live view can say which viewer is the
-	// one watching a spinner rather than only that somebody was.
-	s.live.stalled(r, id, stall.Reason, report.Client)
 	s.log.Info("playback stalled",
 		"video", stall.VideoID,
 		"reason", stall.Reason,

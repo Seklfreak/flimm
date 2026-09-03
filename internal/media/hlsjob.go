@@ -765,53 +765,6 @@ func (r *HLSRegistry) Get(name string) *HLSJob {
 	return r.jobs[name]
 }
 
-// HLSJobStatus is one running derivation, as an admin sees it: which
-// rendition, how far the encoder has got and where it is working.
-//
-// It is a snapshot taken under the registry's lock, not a handle on the job:
-// a caller listing what the server is busy with must not be able to steer it.
-type HLSJobStatus struct {
-	// Name is the cache entry; ParseHLSName turns it back into a video and a
-	// height.
-	Name string
-	// Segments is how many the finished rendition has.
-	Segments int
-	// Progress is the fraction that exists, 0..1 — not where anyone is
-	// watching.
-	Progress float64
-	// RunPosition is the segment ffmpeg is on, or -1 when the job is
-	// registered but nothing is encoding (it was asked for and is waiting its
-	// turn at the transcode slot).
-	RunPosition int
-}
-
-// List is every job the registry holds, newest ordering unspecified: the
-// caller sorts. A nil registry lists nothing, like every other method here.
-func (r *HLSRegistry) List() []HLSJobStatus {
-	if r == nil {
-		return nil
-	}
-	r.mu.Lock()
-	jobs := make(map[string]*HLSJob, len(r.jobs))
-	for name, j := range r.jobs {
-		jobs[name] = j
-	}
-	r.mu.Unlock()
-	// The readings themselves are taken outside the registry lock: each job
-	// has its own, and holding both would put the registry behind whatever a
-	// job is doing.
-	out := make([]HLSJobStatus, 0, len(jobs))
-	for name, j := range jobs {
-		out = append(out, HLSJobStatus{
-			Name:        name,
-			Segments:    j.Segments(),
-			Progress:    j.Progress(),
-			RunPosition: j.RunPosition(),
-		})
-	}
-	return out
-}
-
 func (r *HLSRegistry) put(name string, j *HLSJob) func() {
 	if r == nil {
 		return func() {}

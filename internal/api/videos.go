@@ -774,11 +774,6 @@ func (s *Server) postProgress(w http.ResponseWriter, r *http.Request) {
 	if duration > 0 {
 		req.Position = min(req.Position, float64(duration))
 	}
-	// The same beat that tells the prepare job to step aside is the only thing
-	// that says a video is being watched at all, so it is also what keeps the
-	// admin's live view honest. Recorded before the music short-circuit below:
-	// a song is still something the server is streaming.
-	s.live.watching(r, id, v.Title, v.Channel.ChannelName, req.Position, float64(duration))
 	// Music carries no watch state: a song is replayed, so "seen" means
 	// nothing, and recording it would fill history and continue-watching with
 	// tracks. The client reports which playlist it is playing from and the
