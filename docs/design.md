@@ -249,10 +249,13 @@ which is why they are admin-gated like series indexing.
 - *Up next* follows the context the video was opened from (feed, playlist or
   channel), falling back to similar videos. The same panel always carries
   **Previous** — what came before the video in that context, closest first,
-  watched entries dimmed: two rows tall, with the history further back a
-  *Show earlier* away — the panel grows into the page rather than scrolling
-  inside it, so the page never scrolls in two places — so a playlist opened
-  in the middle can be walked backwards too. Both halves offer *Not interested*
+  watched entries dimmed — so a playlist opened in the middle can be walked
+  backwards too. On the web the sidebar is one scrolling column with the
+  whole context in it, opened with *Now playing* near the top and two rows
+  of history peeking above it; scrolling up walks further back and loads
+  more as it goes, with no scrollbar and no box of its own. The phone shows
+  two rows and a *Show earlier*; on a phone-width web page only the two
+  closest rows show, since there the panel is part of the page. Both halves offer *Not interested*
   like any other list — a video the viewer went past is as fair a thing to
   be done with as one still to come — and the video leaves the list, since
   up next never contains a dismissed one, with the slot it leaves behind as

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Link } from "react-router";
 import type { Prefs, VideoSummary } from "@/lib/api";
 import { useDismissVideo, useUndismissVideo } from "@/lib/queries";
@@ -30,9 +30,9 @@ function saveCollapsed(collapsed: boolean): void {
   }
 }
 
-/** How many previous videos show at first, and how many each "Show earlier" adds. */
-const PREVIOUS_ROWS = 2;
-const PREVIOUS_STEP = 10;
+/** How far above the "Now playing" row the sidebar opens: about two rows,
+ *  so the history is visibly there without being where the eye lands. */
+const PREVIOUS_PEEK = 180;
 
 /** A video taken out of the list, held at its old position so Undo can put it back. */
 type Removed = { video: VideoSummary; index: number };
@@ -141,21 +141,52 @@ export function UpNextPanel({
     [undismiss],
   );
   const removedPrevIds = new Set(removedPrev.map((r) => r.video.id));
-  const allPrev = previous ? previous.items.filter((v) => !removedPrevIds.has(v.id)) : [];
-  // Two rows tall, and "Show earlier" walks further back — the phone's
-  // shape. A scroll box inside the sidebar put a scrollbar next to the list
-  // and made the page scroll in two places; growing into the page does not.
-  const [shownPrev, setShownPrev] = useState(PREVIOUS_ROWS);
-  useEffect(() => setShownPrev(PREVIOUS_ROWS), [firstId]);
-  const visiblePrev = allPrev.slice(0, shownPrev);
-  const moreBefore = allPrev.length > shownPrev || (previous?.hasNextPage ?? false);
-  const showEarlier = useCallback(() => {
-    setShownPrev((n) => n + PREVIOUS_STEP);
-    // Already showing everything loaded: the next page is what "earlier" is.
-    if (previous && previous.hasNextPage && !previous.isFetchingNextPage && allPrev.length <= shownPrev + PREVIOUS_STEP) {
-      previous.fetchNextPage();
+  const visiblePrev = previous ? previous.items.filter((v) => !removedPrevIds.has(v.id)) : [];
+
+  // The sidebar is one scrolling column (sticky, viewport-high, no visible
+  // scrollbar) with the whole context in it: the history above the "Now
+  // playing" row, the queue below. It opens with the anchor near the top
+  // and about two previous rows peeking above it, and scrolling up walks
+  // further back, fetching older pages as they come into view. A box that
+  // scrolled on its own inside the sidebar was a scrollbar beside a list
+  // and a page that scrolled in two places; a link was a click where a
+  // scroll should do.
+  const asideRef = useRef<HTMLElement>(null);
+  const anchorRef = useRef<HTMLDivElement>(null);
+  const positionedFor = useRef<string | undefined>(undefined);
+  const lastScrollHeight = useRef(0);
+  const lastPrevCount = useRef(0);
+  const prevCount = visiblePrev.length;
+  // Room under the queue so the anchor can reach the top even when little
+  // follows it — a short playlist, or suggestions. Zero once the queue is
+  // long enough to push the anchor up on its own.
+  const [spacer, setSpacer] = useState(0);
+  const queueCount = visible.length;
+  useLayoutEffect(() => {
+    const aside = asideRef.current;
+    const anchor = anchorRef.current;
+    if (!aside || !anchor || !current) return;
+    const anchorTop = anchor.getBoundingClientRect().top - aside.getBoundingClientRect().top + aside.scrollTop;
+    const below = aside.scrollHeight - spacer - anchorTop;
+    const needed = Math.max(0, aside.clientHeight - PREVIOUS_PEEK - below);
+    if (Math.abs(needed - spacer) > 1) {
+      setSpacer(needed);
+      return; // position once the room is there
     }
-  }, [previous, allPrev.length, shownPrev]);
+    if (positionedFor.current !== current.id && !(previous?.isLoading ?? false)) {
+      // Once per video, once the first page of history is known: put the
+      // anchor near the top, about two rows of history peeking above it.
+      aside.scrollTop = Math.max(0, anchorTop - PREVIOUS_PEEK);
+      positionedFor.current = current.id;
+    } else if (prevCount > lastPrevCount.current && lastScrollHeight.current > 0) {
+      // Older history was prepended above the fold: keep what is on screen
+      // where it is, or every page would yank the list down. Only history —
+      // the queue growing *below* changes nothing on screen.
+      aside.scrollTop += aside.scrollHeight - lastScrollHeight.current;
+    }
+    lastPrevCount.current = prevCount;
+    lastScrollHeight.current = aside.scrollHeight;
+  }, [current, prevCount, queueCount, spacer, previous?.isLoading]);
 
   if (collapsed) {
     return (
@@ -176,8 +207,14 @@ export function UpNextPanel({
   }
 
   return (
-    <aside className="flex w-full flex-none flex-col gap-3.5 px-5 md:w-[360px] md:px-0">
-      <div className="flex items-baseline justify-between gap-3">
+    <aside
+      ref={asideRef}
+      className="no-scrollbar flex w-full flex-none flex-col gap-3.5 px-5 md:sticky md:top-0 md:max-h-dvh md:w-[360px] md:overflow-y-auto md:px-0 md:pb-8"
+    >
+      {/* Pinned: the sidebar opens scrolled to the current video, and the
+          name of the context and the autoplay switch must not go with the
+          history above it. */}
+      <div className="flex items-baseline justify-between gap-3 bg-bg md:sticky md:top-0 md:z-10 md:pb-1">
         <span className="text-[16px] font-extrabold">{title}</span>
         <div className="flex items-center gap-3">
           <label className="flex items-center gap-2 meta text-[12px]">
@@ -200,9 +237,12 @@ export function UpNextPanel({
         /* No heading and no frame: the dimmed rows above the raised anchor
            *are* the previous videos, and the panel reads as one continuous
            list in watch order — the closest predecessor touches the anchor,
-           earlier is upward. column-reverse keeps that order and puts "Show
-           earlier" at the visual top, where earlier is. */
-        <div className="flex flex-col-reverse gap-3.5">
+           earlier is upward. column-reverse keeps that order and puts the
+           sentinel at the visual top, where it fetches more as older history
+           scrolls into view. On a phone the sidebar is part of the page and
+           cannot hold its scroll position, so only the two closest rows show
+           there; further back is the player's previous button. */
+        <div className="flex flex-col-reverse gap-3.5 max-md:[&>:nth-child(n+3)]:hidden">
           {slots(visiblePrev, removedPrev).map((slot) =>
             "removed" in slot ? (
               <div key={slot.removed.video.id} className="flex flex-none items-center justify-between gap-3 rounded-[10px] bg-raised-2 px-3 py-2.5">
@@ -239,19 +279,12 @@ export function UpNextPanel({
               </div>
             ),
           )}
-          {previous.isFetchingNextPage ? (
-            <Spinner />
-          ) : (
-            moreBefore && (
-              <button type="button" className="self-start text-[13px] font-bold text-accent" onClick={showEarlier}>
-                Show earlier
-              </button>
-            )
-          )}
+          <InfiniteSentinel enabled={previous.hasNextPage && !previous.isFetchingNextPage} onVisible={previous.fetchNextPage} />
+          {previous.isFetchingNextPage && <Spinner />}
         </div>
       )}
       {previous && current && (
-        <div className="-mx-2 flex items-center gap-3 rounded-[12px] bg-raised px-2 py-2">
+        <div ref={anchorRef} className="-mx-2 flex items-center gap-3 rounded-[12px] bg-raised px-2 py-2">
           <div className="w-32 flex-none">
             <Thumb video={current} compact className="!rounded-[10px]" />
           </div>
@@ -319,6 +352,7 @@ export function UpNextPanel({
           <Spinner />
         </div>
       )}
+      {spacer > 0 && <div aria-hidden className="hidden flex-none md:block" style={{ height: spacer }} />}
     </aside>
   );
 }
