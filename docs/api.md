@@ -78,7 +78,7 @@ return 404 so existence isn't leaked. 502 when TA is unreachable, with
   "thumb_url": "/media/thumb/video/yt-id",
   "duration": 1476,
   "published": "2026-08-23T00:00:00Z",
-  "downloaded": "2026-08-23T04:12:00Z",
+  "downloaded": "2026-08-23T04:12:00Z", // TA's date_downloaded — its *last index* time, rewritten by every metadata refresh; not when the file arrived. No client shows it
   "type": "video|short|stream",
   "subtitle_langs": ["en"],            // archived tracks; [] if none
   "has_auto_subtitles": true,

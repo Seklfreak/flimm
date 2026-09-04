@@ -157,7 +157,10 @@ export default function WatchPage() {
             <h1 className="text-[20px] font-extrabold leading-[1.2] tracking-[-0.02em] md:text-[24px]">{v.title}</h1>
             <span className="meta">
               {fmtDuration(v.duration)}
-              {v.height ? ` · ${v.height}p` : ""} · added {relativeDay(v.downloaded)} ·{" "}
+              {/* The upload date, not the archive's `downloaded`: on
+                  TubeArchivist that field is rewritten by every metadata
+                  refresh, so "added today" was true of nothing. */}
+              {v.height ? ` · ${v.height}p` : ""} · uploaded {relativeDay(v.published)} ·{" "}
               <a href={v.youtube_url} target="_blank" rel="noreferrer" className="!font-medium !text-accent">
                 watch on YouTube
               </a>

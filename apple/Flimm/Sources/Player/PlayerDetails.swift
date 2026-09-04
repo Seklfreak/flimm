@@ -65,7 +65,10 @@ struct VideoHeader: View {
     private var meta: String {
         var parts = [Fmt.duration(video.duration)]
         if video.height > 0 { parts.append("\(video.height)p") }
-        parts.append("added \(Fmt.relativeDay(video.downloaded))")
+        // The upload date, not the archive's `downloaded`: TubeArchivist
+        // rewrites that on every metadata refresh, so "added today" was
+        // true of nothing.
+        parts.append("uploaded \(Fmt.relativeDay(video.published))")
         return parts.joined(separator: " · ")
     }
 
