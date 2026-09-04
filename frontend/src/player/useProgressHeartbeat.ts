@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import { useQueryClient, type QueryClient } from "@tanstack/react-query";
-import { api, sendProgressBeacon, type HistoryEntry, type Page } from "@/lib/api";
+import { api, sendProgressBeacon, type HistoryEntry, type Page, type Video } from "@/lib/api";
 import { keys } from "@/lib/queries";
 
 // Keep the sidebar's continue-watching rail honest while playback runs: each
@@ -24,6 +24,16 @@ function patchInProgressRail(qc: QueryClient, id: string, position: number) {
   };
   const items = [updated, ...cached.items.slice(0, index), ...cached.items.slice(index + 1)];
   qc.setQueryData<Page<HistoryEntry>>(keys.inProgress, { ...cached, items });
+}
+
+// The cached detail is what the player resumes from when this page is opened
+// again — the card, the rail and browser-back all land on it before any
+// refetch answers — so it has to carry the position playback reached, not
+// the one the page was first opened with. Patched in place, like the rail.
+function patchVideoPosition(qc: QueryClient, id: string, position: number) {
+  qc.setQueryData<Video>(keys.video(id), (cached) =>
+    cached ? { ...cached, position, progress: cached.duration > 0 ? position / cached.duration : cached.progress } : cached,
+  );
 }
 
 // POST /videos/:id/progress every 10 s while playing, on pause/seek, and on
@@ -57,6 +67,7 @@ export function useProgressHeartbeat(
       if (pos <= 0 && !force) return;
       lastSent.current = pos;
       patchInProgressRail(qc, id, pos);
+      patchVideoPosition(qc, id, pos);
       api
         .progress(id, pos, playlistIdRef.current)
         .then((r) => {
@@ -82,6 +93,7 @@ export function useProgressHeartbeat(
     const onUnload = () => {
       if (video.currentTime > 0) {
         patchInProgressRail(qc, id, Math.floor(video.currentTime));
+        patchVideoPosition(qc, id, Math.floor(video.currentTime));
         sendProgressBeacon(id, video.currentTime, playlistIdRef.current);
       }
     };
@@ -109,6 +121,7 @@ export function useProgressHeartbeat(
       // land once the beacon has: the refetch waits a beat for it.
       if (video.currentTime > 0) {
         patchInProgressRail(qc, id, Math.floor(video.currentTime));
+        patchVideoPosition(qc, id, Math.floor(video.currentTime));
         sendProgressBeacon(id, video.currentTime, playlistIdRef.current);
       }
       window.setTimeout(() => void qc.invalidateQueries({ queryKey: keys.inProgress }), 1_500);
