@@ -393,6 +393,8 @@ final class WatchModel {
     /// back: up next never holds a dismissed video (`docs/api.md`), and the
     /// caller owns the undo, and with it the position to put it back at.
     func setUpNext(_ videos: [VideoSummary]) { upNext = videos }
+    /// The backwards half, for the same reason: a dismissed video leaves it.
+    func setPrevious(_ videos: [VideoSummary]) { previous = videos }
 
     /// "Start over": clear the server-side position, then rewind.
     func startOver() async {

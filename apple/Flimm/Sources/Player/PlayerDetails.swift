@@ -144,6 +144,10 @@ struct UpNextList: View {
     /// Set right after "Not interested" drops a row — what the undo banner
     /// acts on. Same shape as ``VideoList``'s, for the same reason.
     @State private var pendingUndo: PendingDismiss?
+    /// The same, for the backwards half: a video the viewer went past is as
+    /// fair a thing to be not interested in as one still to come, and its
+    /// undo sits among the previous rows rather than under the queue.
+    @State private var pendingPreviousUndo: PendingDismiss?
     /// How many of the previous videos are shown; starts at two, "Show
     /// earlier" walks further back.
     @State private var visiblePrevious = 2
@@ -198,6 +202,14 @@ struct UpNextList: View {
                     // What was already watched recedes; the row a viewer
                     // would go back for keeps its full weight.
                     .opacity(video.watched ? 0.45 : 1)
+                    .contextMenu {
+                        DismissMenuItem(video: video, onChange: handleDismissPrevious)
+                    }
+                }
+                if let pendingPreviousUndo {
+                    DismissUndoBanner(title: pendingPreviousUndo.video.title) {
+                        Task { await undoDismissPrevious(pendingPreviousUndo) }
+                    }
                 }
             }
             // The anchor: where the viewer is in the context, so the
@@ -242,8 +254,12 @@ struct UpNextList: View {
                 }
             }
         }
-        // A step to another video starts a fresh history: show two again.
-        .onChange(of: model.video?.id) { _, _ in visiblePrevious = 2 }
+        // A step to another video starts a fresh history: show two again,
+        // and nothing held for undo belonged to it.
+        .onChange(of: model.video?.id) { _, _ in
+            visiblePrevious = 2
+            pendingPreviousUndo = nil
+        }
     }
 
     // MARK: - Dismiss / undo
@@ -257,6 +273,26 @@ struct UpNextList: View {
         }
         // Every other cached list contains this video too.
         Task { await app.videoListStateChanged() }
+    }
+
+    private func handleDismissPrevious(_ updated: VideoSummary) {
+        guard updated.dismissed,
+              let index = model.previous.firstIndex(where: { $0.id == updated.id }) else { return }
+        withAnimation {
+            pendingPreviousUndo = PendingDismiss(video: updated, index: index)
+            model.setPrevious(model.previous.filter { $0.id != updated.id })
+        }
+        Task { await app.videoListStateChanged() }
+    }
+
+    private func undoDismissPrevious(_ pending: PendingDismiss) async {
+        if pendingPreviousUndo?.id == pending.id { pendingPreviousUndo = nil }
+        guard let restored = await toggleDismissed(pending.video, client: app.client) else { return }
+        var items = model.previous
+        guard !items.contains(where: { $0.id == restored.id }) else { return }
+        items.insert(restored, at: min(pending.index, items.count))
+        withAnimation { model.setPrevious(items) }
+        await app.videoListStateChanged()
     }
 
     /// Back where it was, so the list a viewer was reading does not reshuffle.

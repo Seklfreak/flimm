@@ -115,6 +115,30 @@ export function UpNextPanel({
   const removedIds = new Set(removed.map((r) => r.video.id));
   const visible = items.filter((v) => !removedIds.has(v.id));
 
+  // The backwards half is the same list, and a video the viewer went past is
+  // as fair a thing to be not interested in as one still to come — so it is
+  // dismissed the same way, with its own undo slot held at its old position.
+  const [removedPrev, setRemovedPrev] = useState<Removed[]>([]);
+  useEffect(() => setRemovedPrev([]), [firstId]);
+  const onDismissPrev = useCallback(
+    (video: VideoSummary, index: number) => {
+      setRemovedPrev((list) => [...list, { video, index }]);
+      dismiss.mutate(video.id, {
+        onError: () => setRemovedPrev((list) => list.filter((r) => r.video.id !== video.id)),
+      });
+    },
+    [dismiss],
+  );
+  const onUndoPrev = useCallback(
+    (video: VideoSummary) => {
+      setRemovedPrev((list) => list.filter((r) => r.video.id !== video.id));
+      undismiss.mutate(video.id);
+    },
+    [undismiss],
+  );
+  const removedPrevIds = new Set(removedPrev.map((r) => r.video.id));
+  const visiblePrev = previous ? previous.items.filter((v) => !removedPrevIds.has(v.id)) : [];
+
   if (collapsed) {
     return (
       <aside className="flex w-full flex-none items-center gap-2 px-5 md:w-auto md:flex-col md:px-0">
@@ -154,7 +178,7 @@ export function UpNextPanel({
           </button>
         </div>
       </div>
-      {previous && previous.items.length > 0 && (
+      {previous && (visiblePrev.length > 0 || removedPrev.length > 0) && (
         /* No heading and no frame: the dimmed rows above the raised anchor
            *are* the previous videos, and the panel reads as one continuous
            list in watch order — the closest predecessor touches the anchor,
@@ -162,23 +186,42 @@ export function UpNextPanel({
            anchored at the bottom and puts the sentinel at the visual top,
            where it fetches more as older history scrolls into view. */
         <div className="flex max-h-[172px] flex-col-reverse gap-3.5 overflow-y-auto">
-          {previous.items.map((v) => (
-            <Link
-              key={v.id}
-              to={watchHref(v, ctx)}
-              className={`flex min-w-0 flex-none items-center gap-3 text-ink no-underline hover:text-ink ${v.watched ? "opacity-45" : ""}`}
-            >
-              <div className="w-32 flex-none">
-                <Thumb video={v} compact className="!rounded-[10px]" />
+          {slots(visiblePrev, removedPrev).map((slot) =>
+            "removed" in slot ? (
+              <div key={slot.removed.video.id} className="flex flex-none items-center justify-between gap-3 rounded-[10px] bg-raised-2 px-3 py-2.5">
+                <span className="meta text-[12px] line-clamp-1">Hidden from feeds</span>
+                <button type="button" className="!text-accent !font-bold text-[12px]" onClick={() => onUndoPrev(slot.removed.video)}>
+                  Undo
+                </button>
               </div>
-              <span className="flex min-w-0 flex-col gap-[3px]">
-                <span className="text-[14px] font-extrabold leading-[1.25] line-clamp-2">{v.title}</span>
-                <span className="meta text-[12px]">
-                  {v.channel.name} · {fmtDuration(v.duration)}
-                </span>
-              </span>
-            </Link>
-          ))}
+            ) : (
+              <div key={slot.video.id} className="group flex flex-none items-center gap-3">
+                <Link
+                  to={watchHref(slot.video, ctx)}
+                  className={`flex min-w-0 flex-1 items-center gap-3 text-ink no-underline hover:text-ink ${slot.video.watched ? "opacity-45" : ""}`}
+                >
+                  <div className="w-32 flex-none">
+                    <Thumb video={slot.video} compact className="!rounded-[10px]" />
+                  </div>
+                  <span className="flex min-w-0 flex-col gap-[3px]">
+                    <span className="text-[14px] font-extrabold leading-[1.25] line-clamp-2">{slot.video.title}</span>
+                    <span className="meta text-[12px]">
+                      {slot.video.channel.name} · {fmtDuration(slot.video.duration)}
+                    </span>
+                  </span>
+                </Link>
+                <button
+                  type="button"
+                  aria-label="Not interested"
+                  title="Not interested — hide from feeds"
+                  className="flex-none text-muted-3 opacity-100 hover:text-danger focus-visible:opacity-100 md:opacity-0 md:group-hover:opacity-100"
+                  onClick={() => onDismissPrev(slot.video, slot.index)}
+                >
+                  <CloseIcon size={14} />
+                </button>
+              </div>
+            ),
+          )}
           <InfiniteSentinel enabled={previous.hasNextPage && !previous.isFetchingNextPage} onVisible={previous.fetchNextPage} />
           {previous.isFetchingNextPage && <Spinner />}
         </div>

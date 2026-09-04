@@ -67,6 +67,52 @@ describe("dismissing from up next", () => {
   });
 });
 
+describe("dismissing from previous", () => {
+  const previous = {
+    items: [video({ id: "p1", title: "Just before" }), video({ id: "p2", title: "Further back" })],
+    isLoading: false,
+    hasNextPage: false,
+    isFetchingNextPage: false,
+    fetchNextPage: () => {},
+  };
+
+  it("offers the same control on the videos before the current one", async () => {
+    const { calls } = mockFetch({
+      "POST /api/v1/videos/p1/dismiss": undefined,
+      "DELETE /api/v1/videos/p1/dismiss": undefined,
+    });
+    renderWithProviders(
+      <UpNextPanel
+        items={items}
+        title="Up next"
+        isLoading={false}
+        hasNextPage={false}
+        isFetchingNextPage={false}
+        fetchNextPage={() => {}}
+        previous={previous}
+        current={video({ id: "now", title: "Playing now" })}
+        autoplay={false}
+        onAutoplay={() => {}}
+      />,
+    );
+    // Previous rows come first in the DOM (column-reverse only flips the
+    // paint order), so index 0 is the closest predecessor.
+    expect(screen.getAllByLabelText("Not interested")).toHaveLength(5);
+    fireEvent.click(screen.getAllByLabelText("Not interested")[0]);
+
+    await waitFor(() => expect(calls.some((c) => c.url.endsWith("/videos/p1/dismiss"))).toBe(true));
+    expect(screen.queryByText("Just before")).toBeNull();
+    expect(screen.getByText("Further back")).toBeTruthy();
+    expect(screen.getByText("First up")).toBeTruthy();
+    expect(screen.getByText("Hidden from feeds")).toBeTruthy();
+
+    fireEvent.click(screen.getByText("Undo"));
+    await waitFor(() => expect(calls.some((c) => c.init?.method === "DELETE")).toBe(true));
+    expect(screen.getByText("Just before")).toBeTruthy();
+    expect(screen.queryByText("Hidden from feeds")).toBeNull();
+  });
+});
+
 describe("collapsing the sidebar", () => {
   it("hides the list, and remembers it for the next video", () => {
     mockFetch({});

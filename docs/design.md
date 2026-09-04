@@ -249,9 +249,11 @@ which is why they are admin-gated like series indexing.
   **Previous** — what came before the video in that context, closest first,
   watched entries dimmed: two rows tall, with the history further back a
   scroll (web) or a *Show earlier* (phone) away — so a playlist opened in the
-  middle can be walked backwards too. It offers *Not interested* like
-  any other list — the video leaves the list, since up next never contains a
-  dismissed one, and the slot it leaves behind is the way back. On the web the
+  middle can be walked backwards too. Both halves offer *Not interested*
+  like any other list — a video the viewer went past is as fair a thing to
+  be done with as one still to come — and the video leaves the list, since
+  up next never contains a dismissed one, with the slot it leaves behind as
+  the way back. On the web the
   whole sidebar collapses, remembered per browser: a layout choice the phone
   and TV have no equivalent for.
 
