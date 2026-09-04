@@ -50,11 +50,17 @@ UPDATE watch_events SET position = 0 WHERE user_id = $1 AND video_id = $2;
 
 -- name: ListHistory :many
 SELECT * FROM watch_events
-WHERE user_id = sqlc.arg(user_id)
+WHERE watch_events.user_id = sqlc.arg(user_id)
   AND NOT hidden
   AND (sqlc.arg(filter)::text = 'all'
        OR (sqlc.arg(filter)::text = 'seen' AND completed_at IS NOT NULL)
        OR (sqlc.arg(filter)::text = 'in_progress' AND completed_at IS NULL))
+  -- "In progress" is the queue of what to resume, and "not interested" takes
+  -- a video out of every queue; the full history still lists it, marked,
+  -- which is where a viewer finds one again.
+  AND (sqlc.arg(filter)::text <> 'in_progress'
+       OR NOT EXISTS (SELECT 1 FROM dismissed_videos d
+                      WHERE d.user_id = watch_events.user_id AND d.video_id = watch_events.video_id))
   AND (completed_at IS NOT NULL OR position >= sqlc.arg(min_position)::float8)
   AND (sqlc.arg(q)::text = ''
        OR title ILIKE '%' || sqlc.arg(q)::text || '%'
@@ -64,11 +70,17 @@ LIMIT sqlc.arg(page_limit) OFFSET sqlc.arg(page_offset);
 
 -- name: CountHistory :one
 SELECT count(*) FROM watch_events
-WHERE user_id = sqlc.arg(user_id)
+WHERE watch_events.user_id = sqlc.arg(user_id)
   AND NOT hidden
   AND (sqlc.arg(filter)::text = 'all'
        OR (sqlc.arg(filter)::text = 'seen' AND completed_at IS NOT NULL)
        OR (sqlc.arg(filter)::text = 'in_progress' AND completed_at IS NULL))
+  -- "In progress" is the queue of what to resume, and "not interested" takes
+  -- a video out of every queue; the full history still lists it, marked,
+  -- which is where a viewer finds one again.
+  AND (sqlc.arg(filter)::text <> 'in_progress'
+       OR NOT EXISTS (SELECT 1 FROM dismissed_videos d
+                      WHERE d.user_id = watch_events.user_id AND d.video_id = watch_events.video_id))
   AND (completed_at IS NOT NULL OR position >= sqlc.arg(min_position)::float8)
   AND (sqlc.arg(q)::text = ''
        OR title ILIKE '%' || sqlc.arg(q)::text || '%'

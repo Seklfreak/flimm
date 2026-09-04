@@ -77,9 +77,11 @@ which is why they are admin-gated like series indexing.
   writes that back to TubeArchivist, so it would follow the viewer into TA's
   own UI and every other client. Dismissing is Flimm's own per-user state and
   says nothing about playback. It applies to *every* feed (including
-  Everything, in every view) and to *up next*, so autoplay never plays
-  something that was dismissed. Channel pages, playlists, search and history
-  still show it, marked, which is where a viewer puts one back — and so does
+  Everything, in every view), to *up next*, so autoplay never plays
+  something that was dismissed, and to *continue watching* — a video the
+  viewer is done with is not one to resume. Channel pages, playlists, search
+  and the full history still show it, marked, which is where a viewer puts
+  one back — and so does
   the watch page, where the video being played carries the same control and
   it flips in place; playback carries on either way. Every client
   offers an undo without navigating away, because the action is one tap from a

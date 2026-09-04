@@ -14,11 +14,17 @@ import (
 
 const countHistory = `-- name: CountHistory :one
 SELECT count(*) FROM watch_events
-WHERE user_id = $1
+WHERE watch_events.user_id = $1
   AND NOT hidden
   AND ($2::text = 'all'
        OR ($2::text = 'seen' AND completed_at IS NOT NULL)
        OR ($2::text = 'in_progress' AND completed_at IS NULL))
+  -- "In progress" is the queue of what to resume, and "not interested" takes
+  -- a video out of every queue; the full history still lists it, marked,
+  -- which is where a viewer finds one again.
+  AND ($2::text <> 'in_progress'
+       OR NOT EXISTS (SELECT 1 FROM dismissed_videos d
+                      WHERE d.user_id = watch_events.user_id AND d.video_id = watch_events.video_id))
   AND (completed_at IS NOT NULL OR position >= $3::float8)
   AND ($4::text = ''
        OR title ILIKE '%' || $4::text || '%'
@@ -132,11 +138,17 @@ func (q *Queries) ListFinishedVideos(ctx context.Context, videoIds []string) ([]
 
 const listHistory = `-- name: ListHistory :many
 SELECT id, user_id, video_id, channel_id, channel_name, title, first_played_at, last_played_at, position, duration, completed_at, hidden FROM watch_events
-WHERE user_id = $1
+WHERE watch_events.user_id = $1
   AND NOT hidden
   AND ($2::text = 'all'
        OR ($2::text = 'seen' AND completed_at IS NOT NULL)
        OR ($2::text = 'in_progress' AND completed_at IS NULL))
+  -- "In progress" is the queue of what to resume, and "not interested" takes
+  -- a video out of every queue; the full history still lists it, marked,
+  -- which is where a viewer finds one again.
+  AND ($2::text <> 'in_progress'
+       OR NOT EXISTS (SELECT 1 FROM dismissed_videos d
+                      WHERE d.user_id = watch_events.user_id AND d.video_id = watch_events.video_id))
   AND (completed_at IS NOT NULL OR position >= $3::float8)
   AND ($4::text = ''
        OR title ILIKE '%' || $4::text || '%'

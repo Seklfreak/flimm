@@ -658,7 +658,7 @@ Clients treat an empty list as "no chapter UI", never as an error.
 ### History
 | Method | Path | Notes |
 |---|---|---|
-| GET | `/history` | query `filter=all\|in_progress\|seen`, `q` (title/channel substring), paged HistoryEntry, newest first. Entries below `MIN_PLAY_SECONDS` that never completed are excluded |
+| GET | `/history` | query `filter=all\|in_progress\|seen`, `q` (title/channel substring), paged HistoryEntry, newest first. Entries below `MIN_PLAY_SECONDS` that never completed are excluded. **`in_progress` drops dismissed videos**: it is the queue of what to resume — the web sidebar's *Continue watching*, the apps' *In progress* tab — and "not interested" takes a video out of every queue; `all` and `seen` still list it, marked, which is where a viewer finds one again |
 | GET | `/stats` | what that history adds up to: `{ "started", "finished", "seconds", "since", "range", "zone", "top_channels": [{ "id", "name", "videos", "seconds" }], "by_hour": [24], "by_weekday": [7], "by_month": [{ "month": "2026-08", "videos", "seconds" }] }`. `?range=all\|year\|month` (calendar windows, default all; anything else **400**), `?tz=` an IANA zone the breakdowns are computed in (default UTC). See [Watch stats](#watch-stats) for what these numbers can honestly say |
 | DELETE | `/history/{entry_id}` | hides the entry (soft delete), 204; does not change watched state |
 
