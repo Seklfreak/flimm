@@ -250,8 +250,9 @@ which is why they are admin-gated like series indexing.
   channel), falling back to similar videos. The same panel always carries
   **Previous** — what came before the video in that context, closest first,
   watched entries dimmed: two rows tall, with the history further back a
-  scroll (web) or a *Show earlier* (phone) away — so a playlist opened in the
-  middle can be walked backwards too. Both halves offer *Not interested*
+  *Show earlier* away — the panel grows into the page rather than scrolling
+  inside it, so the page never scrolls in two places — so a playlist opened
+  in the middle can be walked backwards too. Both halves offer *Not interested*
   like any other list — a video the viewer went past is as fair a thing to
   be done with as one still to come — and the video leaves the list, since
   up next never contains a dismissed one, with the slot it leaves behind as

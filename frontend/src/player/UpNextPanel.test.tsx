@@ -113,6 +113,58 @@ describe("dismissing from previous", () => {
   });
 });
 
+describe("walking back through previous", () => {
+  const many = Array.from({ length: 5 }, (_, i) => video({ id: `p${i}`, title: `Back ${i}` }));
+
+  it("shows two rows and reveals more on Show earlier, without a scroll box", () => {
+    mockFetch({});
+    renderWithProviders(
+      <UpNextPanel
+        items={items}
+        title="Up next"
+        isLoading={false}
+        hasNextPage={false}
+        isFetchingNextPage={false}
+        fetchNextPage={() => {}}
+        previous={{ items: many, isLoading: false, hasNextPage: false, isFetchingNextPage: false, fetchNextPage: () => {} }}
+        current={video({ id: "now", title: "Playing now" })}
+        autoplay={false}
+        onAutoplay={() => {}}
+      />,
+    );
+    expect(screen.getByText("Back 0")).toBeTruthy();
+    expect(screen.getByText("Back 1")).toBeTruthy();
+    expect(screen.queryByText("Back 2")).toBeNull();
+
+    fireEvent.click(screen.getByText("Show earlier"));
+    expect(screen.getByText("Back 4")).toBeTruthy();
+    expect(screen.queryByText("Show earlier")).toBeNull();
+  });
+
+  it("asks for the next page once everything loaded is showing", () => {
+    mockFetch({});
+    let fetched = 0;
+    renderWithProviders(
+      <UpNextPanel
+        items={items}
+        title="Up next"
+        isLoading={false}
+        hasNextPage={false}
+        isFetchingNextPage={false}
+        fetchNextPage={() => {}}
+        previous={{ items: many, isLoading: false, hasNextPage: true, isFetchingNextPage: false, fetchNextPage: () => void fetched++ }}
+        current={video({ id: "now", title: "Playing now" })}
+        autoplay={false}
+        onAutoplay={() => {}}
+      />,
+    );
+    fireEvent.click(screen.getByText("Show earlier"));
+    expect(fetched).toBe(1);
+    // Still more on the server: the link stays.
+    expect(screen.getByText("Show earlier")).toBeTruthy();
+  });
+});
+
 describe("collapsing the sidebar", () => {
   it("hides the list, and remembers it for the next video", () => {
     mockFetch({});

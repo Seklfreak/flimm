@@ -30,6 +30,10 @@ function saveCollapsed(collapsed: boolean): void {
   }
 }
 
+/** How many previous videos show at first, and how many each "Show earlier" adds. */
+const PREVIOUS_ROWS = 2;
+const PREVIOUS_STEP = 10;
+
 /** A video taken out of the list, held at its old position so Undo can put it back. */
 type Removed = { video: VideoSummary; index: number };
 
@@ -137,7 +141,21 @@ export function UpNextPanel({
     [undismiss],
   );
   const removedPrevIds = new Set(removedPrev.map((r) => r.video.id));
-  const visiblePrev = previous ? previous.items.filter((v) => !removedPrevIds.has(v.id)) : [];
+  const allPrev = previous ? previous.items.filter((v) => !removedPrevIds.has(v.id)) : [];
+  // Two rows tall, and "Show earlier" walks further back — the phone's
+  // shape. A scroll box inside the sidebar put a scrollbar next to the list
+  // and made the page scroll in two places; growing into the page does not.
+  const [shownPrev, setShownPrev] = useState(PREVIOUS_ROWS);
+  useEffect(() => setShownPrev(PREVIOUS_ROWS), [firstId]);
+  const visiblePrev = allPrev.slice(0, shownPrev);
+  const moreBefore = allPrev.length > shownPrev || (previous?.hasNextPage ?? false);
+  const showEarlier = useCallback(() => {
+    setShownPrev((n) => n + PREVIOUS_STEP);
+    // Already showing everything loaded: the next page is what "earlier" is.
+    if (previous && previous.hasNextPage && !previous.isFetchingNextPage && allPrev.length <= shownPrev + PREVIOUS_STEP) {
+      previous.fetchNextPage();
+    }
+  }, [previous, allPrev.length, shownPrev]);
 
   if (collapsed) {
     return (
@@ -182,10 +200,9 @@ export function UpNextPanel({
         /* No heading and no frame: the dimmed rows above the raised anchor
            *are* the previous videos, and the panel reads as one continuous
            list in watch order — the closest predecessor touches the anchor,
-           scrolling up goes further back. column-reverse keeps the box
-           anchored at the bottom and puts the sentinel at the visual top,
-           where it fetches more as older history scrolls into view. */
-        <div className="flex max-h-[172px] flex-col-reverse gap-3.5 overflow-y-auto">
+           earlier is upward. column-reverse keeps that order and puts "Show
+           earlier" at the visual top, where earlier is. */
+        <div className="flex flex-col-reverse gap-3.5">
           {slots(visiblePrev, removedPrev).map((slot) =>
             "removed" in slot ? (
               <div key={slot.removed.video.id} className="flex flex-none items-center justify-between gap-3 rounded-[10px] bg-raised-2 px-3 py-2.5">
@@ -222,8 +239,15 @@ export function UpNextPanel({
               </div>
             ),
           )}
-          <InfiniteSentinel enabled={previous.hasNextPage && !previous.isFetchingNextPage} onVisible={previous.fetchNextPage} />
-          {previous.isFetchingNextPage && <Spinner />}
+          {previous.isFetchingNextPage ? (
+            <Spinner />
+          ) : (
+            moreBefore && (
+              <button type="button" className="self-start text-[13px] font-bold text-accent" onClick={showEarlier}>
+                Show earlier
+              </button>
+            )
+          )}
         </div>
       )}
       {previous && current && (
