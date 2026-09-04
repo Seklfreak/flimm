@@ -484,10 +484,14 @@ every device the user has registered.
   arrival, not the backlog. Seeding happens in the next pass (within five
   minutes), not in the `PUT`, because it is hundreds of requests for a big
   feed.
-- **What counts.** An unseen id that the feed would show: not a Short in a
-  feed without them, not without subtitles in a subtitles-only feed, not
-  watched, not dismissed. Everything indexed in the window is marked seen
-  afterwards, announced or not, so a filtered-out video never comes back.
+- **What counts.** An unseen id that was **uploaded within the last two
+  weeks** and that the feed would show: not a Short in a feed without them,
+  not without subtitles in a subtitles-only feed, not watched, not dismissed.
+  The age rule is what keeps a backfill quiet: TubeArchivist fetches a
+  channel's older uploads in date order, and a video from March landing in
+  September is new to the archive but not to anyone — it stays in the feed
+  to be found. Everything indexed in the window is marked seen afterwards,
+  announced or not, so a filtered-out video never comes back.
   After a pass the mark moves to the start of that pass. It also moves when
   the user has **no device registered** — a phone that registers next week
   must not get last week's downloads in one burst — but *not* when Apple

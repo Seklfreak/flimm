@@ -54,6 +54,14 @@ const (
 	// date_downloaded has whole-second precision and the mark does not. The
 	// seen set makes an overlap free.
 	notifyOverlap = time.Minute
+	// notifyRecent is how old an upload may be and still count as news when
+	// it arrives. TubeArchivist backfills a channel's older uploads in date
+	// order — two videos from March landed one afternoon in September — and
+	// those are new to the archive but not to anyone: a subscription's real
+	// new upload is downloaded within a day or two of being published, and
+	// a fortnight covers a slow queue. Older arrivals are marked seen and
+	// left in the feed to be found.
+	notifyRecent = 14 * 24 * time.Hour
 	// notifyTitles is how many titles a digest names before "and N more".
 	notifyTitles = 3
 	// notifySeenBatch is how many ids one MarkNotifySeen insert carries.
@@ -292,9 +300,10 @@ func (s *Server) indexedSince(ctx context.Context, chans, pls []string, since ti
 	return merged, nil
 }
 
-// unseenOf is the candidates the user has never seen that the feed would
-// show: not a refreshed old video, not a Short in a feed without them, not
-// watched, not dismissed. Newest index first.
+// unseenOf is the candidates the user has never seen that count as news:
+// uploaded recently (see notifyRecent), and something the feed would show —
+// not a Short in a feed without them, not without subtitles in a
+// subtitles-only feed, not watched, not dismissed. Newest index first.
 func (s *Server) unseenOf(ctx context.Context, f sqlc.Feed, candidates []ta.Video) ([]VideoSummary, error) {
 	if len(candidates) == 0 {
 		return nil, nil
@@ -307,9 +316,13 @@ func (s *Server) unseenOf(ctx context.Context, f sqlc.Feed, candidates []ta.Vide
 	for _, id := range known {
 		isKnown[id] = true
 	}
+	cutoff := time.Now().Add(-notifyRecent)
 	var unseen []ta.Video
 	for _, v := range candidates {
 		if isKnown[v.YoutubeID] {
+			continue
+		}
+		if v.PublishedTime().Before(cutoff) {
 			continue
 		}
 		if !f.IncludeShorts && v.Kind() == "short" {

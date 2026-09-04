@@ -36,9 +36,10 @@ browsing and are separate from the channel directory:
   away, so only genuinely new series announce.
 - A feed can **notify**: "tell me when this feed has something new." The
   server polls the archive for what *arrived* for the feed's sources — a
-  video id the feed has never seen, whatever YouTube's upload date says; a
-  backfill of old uploads is news to the archive, a metadata refresh of an
-  old video is not — and pushes one notification per feed to the viewer's
+  video id the feed has never seen, uploaded in the last two weeks; a
+  backfill of old uploads is news to the archive but not to anyone, and a
+  metadata refresh of an old video is neither — and pushes one notification
+  per feed to the viewer's
   iPhones and iPads: a single video by name, opened in its feed when tapped,
   or a digest that opens the feed. Like a series watch it starts from *now*:
   switching it on seeds the feed with everything its sources hold, so a big

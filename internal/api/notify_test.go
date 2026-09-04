@@ -176,9 +176,10 @@ func newNotifyFixture(t *testing.T, mark time.Time) *notifyFixture {
 	return fx
 }
 
-// indexed adds a video to channel A that TubeArchivist indexed at `at`.
+// indexed adds a video to channel A that TubeArchivist indexed at `at`,
+// uploaded the day before — a subscription's ordinary new video.
 func (fx *notifyFixture) indexed(id string, at time.Time, watched bool) ta.Video {
-	v := video(id, "A", "2026-08-01", 600, watched)
+	v := video(id, "A", time.Now().Add(-24*time.Hour).Format("2006-01-02"), 600, watched)
 	v.DateDownloaded = at.Unix()
 	fx.client.AddVideo(v)
 	return v
@@ -206,6 +207,11 @@ func TestNotifyAnnouncesOneNewVideoByName(t *testing.T) {
 	// Dismissed in Flimm: taken out of the feed, so not news either.
 	fx.indexed("nope", mark.Add(40*time.Minute), false)
 	fx.dismissed["nope"] = true
+	// A backfill: the archive fetched an upload from months ago. New to the
+	// archive, not to anyone.
+	backfill := fx.indexed("backfill", mark.Add(50*time.Minute), false)
+	backfill.Published = time.Now().Add(-90 * 24 * time.Hour).Format("2006-01-02")
+	fx.client.AddVideo(backfill)
 
 	before := time.Now()
 	fx.srv.notifyOnce(t.Context())
@@ -230,7 +236,7 @@ func TestNotifyAnnouncesOneNewVideoByName(t *testing.T) {
 	if len(fx.marks) != 1 || fx.marks[0].Before(before) {
 		t.Errorf("marks = %v", fx.marks)
 	}
-	for _, id := range []string{"fresh", "seen", "clip", "nope", "refreshed"} {
+	for _, id := range []string{"fresh", "seen", "clip", "nope", "refreshed", "backfill"} {
 		if !fx.seen[id] {
 			t.Errorf("%s not marked seen", id)
 		}

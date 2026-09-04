@@ -21,8 +21,9 @@ One container image: a Go backend with the React frontend embedded.
   Play follows you around without the channel's other thousands of videos
   (TubeArchivist must have the playlist indexed; an admin can trigger that
   from the channel page). A feed can **notify**: when TubeArchivist downloads
-  something for it, your iPhone or iPad gets one notification per feed —
-  a single video by name, or a digest — and a tap opens it. Needs an APNs
+  a recent upload for it, your iPhone or iPad gets one notification per
+  feed — a single video by name, or a digest — and a tap opens it. Older
+  uploads the archive backfills arrive quietly. Needs an APNs
   key on the server (`APNS_KEY`); off otherwise.
 - **Channels** directory — search, sort, see which feeds each channel is in,
   find channels in no feed; add/remove from feeds right on the channel page.
