@@ -75,6 +75,8 @@ type Querier interface {
 	// Every feed of every user that asked to be notified — what the notifier
 	// walks each pass.
 	ListNotifyFeeds(ctx context.Context) ([]Feed, error)
+	// The subset of the given ids the user has already seen.
+	ListNotifySeen(ctx context.Context, arg ListNotifySeenParams) ([]string, error)
 	ListPinnedChannels(ctx context.Context, userID uuid.UUID) ([]PinnedChannel, error)
 	ListPinnedPlaylists(ctx context.Context, userID uuid.UUID) ([]PlaylistSetting, error)
 	ListPlaylistSettings(ctx context.Context, userID uuid.UUID) ([]PlaylistSetting, error)
@@ -87,6 +89,7 @@ type Querier interface {
 	// than inside one person's request.
 	ListUserIDs(ctx context.Context) ([]uuid.UUID, error)
 	ListWatchEventsForVideos(ctx context.Context, arg ListWatchEventsForVideosParams) ([]WatchEvent, error)
+	MarkNotifySeen(ctx context.Context, arg MarkNotifySeenParams) error
 	MarkSeriesSeen(ctx context.Context, arg MarkSeriesSeenParams) error
 	NextFeedChannelPosition(ctx context.Context, feedID uuid.UUID) (int32, error)
 	NextFeedPlaylistPosition(ctx context.Context, feedID uuid.UUID) (int32, error)
@@ -98,6 +101,7 @@ type Querier interface {
 	// "Start over": position back to 0, completion untouched.
 	ResetPosition(ctx context.Context, arg ResetPositionParams) error
 	SetFeedNotifiedAt(ctx context.Context, arg SetFeedNotifiedAtParams) error
+	SetFeedNotifySeeded(ctx context.Context, arg SetFeedNotifySeededParams) error
 	SetFeedPosition(ctx context.Context, arg SetFeedPositionParams) error
 	SetPlaylistMusic(ctx context.Context, arg SetPlaylistMusicParams) error
 	// Appends to the end of the user's pins on first insert; re-pinning an

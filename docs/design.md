@@ -35,13 +35,15 @@ browsing and are separate from the channel directory:
   Watching starts from *now*: the channel's existing playlists are baselined
   away, so only genuinely new series announce.
 - A feed can **notify**: "tell me when this feed has something new." The
-  server polls the archive for what it *downloaded* for the feed's sources —
-  not what YouTube published; a backfill of old uploads is news to the
-  archive — and pushes one notification per feed to the viewer's iPhones and
-  iPads: a single video by name, opened in its feed when tapped, or a digest
-  that opens the feed. Like a series watch it starts from *now*, so switching
-  it on over a big channel announces the next download, not the backlog.
-  Watched and dismissed videos are not news. The web editor can set the flag
+  server polls the archive for what *arrived* for the feed's sources — a
+  video id the feed has never seen, whatever YouTube's upload date says; a
+  backfill of old uploads is news to the archive, a metadata refresh of an
+  old video is not — and pushes one notification per feed to the viewer's
+  iPhones and iPads: a single video by name, opened in its feed when tapped,
+  or a digest that opens the feed. Like a series watch it starts from *now*:
+  switching it on seeds the feed with everything its sources hold, so a big
+  channel announces the next arrival, not the backlog. Watched and dismissed
+  videos are not news. The web editor can set the flag
   and says how many devices it reaches; Apple TV has no part in it — tvOS
   shows no banners, and the top shelf already carries the pinned feed.
 - Playlist pages carry the same *In feeds: …* control a channel page does, so

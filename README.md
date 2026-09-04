@@ -288,11 +288,14 @@ editor's picker most of all — can be checked against a subscription list of a
 realistic size rather than one that fits in a single response.
 
 Nothing in a fixed catalogue is ever *new*, and "new" is the one thing a feed
-set to notify reacts to, so the fake has a side door TubeArchivist does not:
-`curl -X POST localhost:8001/fake/redownload/<video id>` makes that video read
-as downloaded just now (and unwatched). With the server pointed at a stand-in
-APNs (`APNS_URL`) and a P-256 key from `openssl` in `APNS_KEY`, the whole path
-from download to alert can be watched without an Apple account.
+set to notify reacts to, so the fake has two side doors TubeArchivist does
+not: `curl -X POST localhost:8001/fake/arrive/<video id>` adds a video
+modelled on that one, with its own id, indexed just now — an arrival — and
+`curl -X POST localhost:8001/fake/reindex/<video id>` refreshes one the way
+the real archive does, rewriting its `date_downloaded`, which must **not**
+count as an arrival. With the server pointed at a stand-in APNs (`APNS_URL`)
+and a P-256 key from `openssl` in `APNS_KEY`, the whole path from arrival to
+alert can be watched without an Apple account.
 
 Set `SPONSORBLOCK_URL=` (empty) alongside it: the real SponsorBlock service has
 never heard of these video ids, and its answer of "no segments" is

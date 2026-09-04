@@ -52,7 +52,7 @@ func (q *Queries) ForgetPushDevice(ctx context.Context, token string) error {
 }
 
 const listNotifyFeeds = `-- name: ListNotifyFeeds :many
-SELECT id, user_id, name, sort, hide_seen, include_shorts, subtitles_only, pinned, position, created_at, updated_at, notify, notified_at FROM feeds WHERE notify ORDER BY user_id, position
+SELECT id, user_id, name, sort, hide_seen, include_shorts, subtitles_only, pinned, position, created_at, updated_at, notify, notified_at, notify_seeded FROM feeds WHERE notify ORDER BY user_id, position
 `
 
 // Every feed of every user that asked to be notified — what the notifier
@@ -80,10 +80,41 @@ func (q *Queries) ListNotifyFeeds(ctx context.Context) ([]Feed, error) {
 			&i.UpdatedAt,
 			&i.Notify,
 			&i.NotifiedAt,
+			&i.NotifySeeded,
 		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listNotifySeen = `-- name: ListNotifySeen :many
+SELECT video_id FROM notify_seen WHERE user_id = $1 AND video_id = ANY($2::text[])
+`
+
+type ListNotifySeenParams struct {
+	UserID   uuid.UUID `json:"user_id"`
+	VideoIds []string  `json:"video_ids"`
+}
+
+// The subset of the given ids the user has already seen.
+func (q *Queries) ListNotifySeen(ctx context.Context, arg ListNotifySeenParams) ([]string, error) {
+	rows, err := q.db.Query(ctx, listNotifySeen, arg.UserID, arg.VideoIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var video_id string
+		if err := rows.Scan(&video_id); err != nil {
+			return nil, err
+		}
+		items = append(items, video_id)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -122,6 +153,22 @@ func (q *Queries) ListPushDevices(ctx context.Context, userID uuid.UUID) ([]Push
 	return items, nil
 }
 
+const markNotifySeen = `-- name: MarkNotifySeen :exec
+INSERT INTO notify_seen (user_id, video_id)
+SELECT $1, unnest($2::text[])
+ON CONFLICT DO NOTHING
+`
+
+type MarkNotifySeenParams struct {
+	UserID   uuid.UUID `json:"user_id"`
+	VideoIds []string  `json:"video_ids"`
+}
+
+func (q *Queries) MarkNotifySeen(ctx context.Context, arg MarkNotifySeenParams) error {
+	_, err := q.db.Exec(ctx, markNotifySeen, arg.UserID, arg.VideoIds)
+	return err
+}
+
 const setFeedNotifiedAt = `-- name: SetFeedNotifiedAt :exec
 UPDATE feeds SET notified_at = $2 WHERE id = $1
 `
@@ -133,6 +180,20 @@ type SetFeedNotifiedAtParams struct {
 
 func (q *Queries) SetFeedNotifiedAt(ctx context.Context, arg SetFeedNotifiedAtParams) error {
 	_, err := q.db.Exec(ctx, setFeedNotifiedAt, arg.ID, arg.NotifiedAt)
+	return err
+}
+
+const setFeedNotifySeeded = `-- name: SetFeedNotifySeeded :exec
+UPDATE feeds SET notify_seeded = $2 WHERE id = $1
+`
+
+type SetFeedNotifySeededParams struct {
+	ID           uuid.UUID `json:"id"`
+	NotifySeeded bool      `json:"notify_seeded"`
+}
+
+func (q *Queries) SetFeedNotifySeeded(ctx context.Context, arg SetFeedNotifySeededParams) error {
+	_, err := q.db.Exec(ctx, setFeedNotifySeeded, arg.ID, arg.NotifySeeded)
 	return err
 }
 

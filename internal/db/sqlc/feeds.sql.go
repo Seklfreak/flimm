@@ -48,7 +48,7 @@ func (q *Queries) AddFeedPlaylist(ctx context.Context, arg AddFeedPlaylistParams
 const createFeed = `-- name: CreateFeed :one
 INSERT INTO feeds (user_id, name, sort, hide_seen, include_shorts, subtitles_only, pinned, position, notify, notified_at)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, CASE WHEN $9::boolean THEN now() END)
-RETURNING id, user_id, name, sort, hide_seen, include_shorts, subtitles_only, pinned, position, created_at, updated_at, notify, notified_at
+RETURNING id, user_id, name, sort, hide_seen, include_shorts, subtitles_only, pinned, position, created_at, updated_at, notify, notified_at, notify_seeded
 `
 
 type CreateFeedParams struct {
@@ -92,6 +92,7 @@ func (q *Queries) CreateFeed(ctx context.Context, arg CreateFeedParams) (Feed, e
 		&i.UpdatedAt,
 		&i.Notify,
 		&i.NotifiedAt,
+		&i.NotifySeeded,
 	)
 	return i, err
 }
@@ -168,7 +169,7 @@ func (q *Queries) DeletePlaylistFromUserFeeds(ctx context.Context, arg DeletePla
 }
 
 const getFeed = `-- name: GetFeed :one
-SELECT id, user_id, name, sort, hide_seen, include_shorts, subtitles_only, pinned, position, created_at, updated_at, notify, notified_at FROM feeds WHERE id = $1 AND user_id = $2
+SELECT id, user_id, name, sort, hide_seen, include_shorts, subtitles_only, pinned, position, created_at, updated_at, notify, notified_at, notify_seeded FROM feeds WHERE id = $1 AND user_id = $2
 `
 
 type GetFeedParams struct {
@@ -193,6 +194,7 @@ func (q *Queries) GetFeed(ctx context.Context, arg GetFeedParams) (Feed, error) 
 		&i.UpdatedAt,
 		&i.Notify,
 		&i.NotifiedAt,
+		&i.NotifySeeded,
 	)
 	return i, err
 }
@@ -330,7 +332,7 @@ func (q *Queries) ListFeedPlaylistsForUser(ctx context.Context, userID uuid.UUID
 }
 
 const listFeeds = `-- name: ListFeeds :many
-SELECT id, user_id, name, sort, hide_seen, include_shorts, subtitles_only, pinned, position, created_at, updated_at, notify, notified_at FROM feeds WHERE user_id = $1 ORDER BY position, created_at
+SELECT id, user_id, name, sort, hide_seen, include_shorts, subtitles_only, pinned, position, created_at, updated_at, notify, notified_at, notify_seeded FROM feeds WHERE user_id = $1 ORDER BY position, created_at
 `
 
 func (q *Queries) ListFeeds(ctx context.Context, userID uuid.UUID) ([]Feed, error) {
@@ -356,6 +358,7 @@ func (q *Queries) ListFeeds(ctx context.Context, userID uuid.UUID) ([]Feed, erro
 			&i.UpdatedAt,
 			&i.Notify,
 			&i.NotifiedAt,
+			&i.NotifySeeded,
 		); err != nil {
 			return nil, err
 		}
@@ -440,10 +443,13 @@ SET name = $3,
         WHEN NOT $9::boolean THEN NULL
         ELSE notified_at
     END,
+    -- ...and a switch-on is re-seeded: what the sources hold at that moment
+    -- is not news (see notify_seen).
+    notify_seeded = CASE WHEN $9::boolean AND NOT notify THEN false ELSE notify_seeded END,
     notify = $9,
     updated_at = now()
 WHERE id = $1 AND user_id = $2
-RETURNING id, user_id, name, sort, hide_seen, include_shorts, subtitles_only, pinned, position, created_at, updated_at, notify, notified_at
+RETURNING id, user_id, name, sort, hide_seen, include_shorts, subtitles_only, pinned, position, created_at, updated_at, notify, notified_at, notify_seeded
 `
 
 type UpdateFeedParams struct {
@@ -485,6 +491,7 @@ func (q *Queries) UpdateFeed(ctx context.Context, arg UpdateFeedParams) (Feed, e
 		&i.UpdatedAt,
 		&i.Notify,
 		&i.NotifiedAt,
+		&i.NotifySeeded,
 	)
 	return i, err
 }

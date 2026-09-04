@@ -521,6 +521,13 @@ func (s *Server) updateFeed(w http.ResponseWriter, r *http.Request) {
 				return err
 			}
 		}
+		if feed.Notify && (req.ChannelIDs != nil || req.PlaylistIDs != nil) {
+			// New sources bring their whole back catalogue, and none of it
+			// is news: the notifier seeds the feed again before it speaks.
+			if err := q.SetFeedNotifySeeded(r.Context(), sqlc.SetFeedNotifySeededParams{ID: fid, NotifySeeded: false}); err != nil {
+				return err
+			}
+		}
 		if req.SeriesWatchChannelIDs != nil {
 			return setSeriesWatches(r.Context(), q, uid, fid, updWatchIDs, updBaseline)
 		}

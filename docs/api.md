@@ -464,26 +464,34 @@ its default — send the whole map back, which is what the settings screens do.
 #### Notifications
 
 "Tell me when this feed has something new." A feed with `notify: true` is
-polled by the server: every **five minutes** it asks TubeArchivist what it
-**downloaded** for the feed's sources since the last look, and sends **one
-notification per feed per pass** to every device the user has registered.
+polled by the server: every **five minutes** it looks at what TubeArchivist
+indexed for the feed's sources since the last pass, announces the ids the
+feed has **never seen**, and sends **one notification per feed per pass** to
+every device the user has registered.
 
-- **Downloaded, not published.** A channel backfill fetches old uploads today,
-  and those are news to the archive. The poll reads each source's newest
-  downloads (one page, `sort=downloaded`) and keeps what arrived after the
-  feed's high-water mark, minus what the viewer has already watched or
-  dismissed and minus what the feed's own filters (Shorts, subtitles-only)
-  would hide.
-- **The mark starts at *now*.** Switching `notify` on sets it to the moment of
-  the switch (`CreateFeed` / `UpdateFeed`), so a feed over a channel with a
-  thousand videos announces nothing until the next one lands — the same
-  baseline rule series watches follow. Switching it off clears the mark, so a
-  later switch-on cannot announce everything that arrived in between. After a
-  pass the mark moves to the newest download announced. It also moves when
-  the user has **no device registered**: a phone that registers next week
-  must not get last week's downloads in one burst. It does *not* move when
-  Apple could not be reached, so an outage delays the news rather than losing
-  it.
+- **Never seen, not "downloaded after".** TubeArchivist's `date_downloaded`
+  is written by its indexer from the same clock as `vid_last_refresh`, so
+  every metadata refresh of an old video makes it read as downloaded just
+  now — keyed on that timestamp, the notifier announced February's uploads
+  for a whole morning. The timestamp only bounds the scan: each source is
+  read from the top of its `sort=downloaded` order down to the feed's mark.
+  The decision is the id against `notify_seen`, a per-user set — a video in
+  two feeds is announced once.
+- **Seeding.** A feed switched on (or whose sources change) is *seeded*
+  before it speaks: the notifier walks every page of every source and marks
+  the lot seen, announcing nothing — the same baseline rule series watches
+  follow, so a feed over a channel with a thousand videos announces the next
+  arrival, not the backlog. Seeding happens in the next pass (within five
+  minutes), not in the `PUT`, because it is hundreds of requests for a big
+  feed.
+- **What counts.** An unseen id that the feed would show: not a Short in a
+  feed without them, not without subtitles in a subtitles-only feed, not
+  watched, not dismissed. Everything indexed in the window is marked seen
+  afterwards, announced or not, so a filtered-out video never comes back.
+  After a pass the mark moves to the start of that pass. It also moves when
+  the user has **no device registered** — a phone that registers next week
+  must not get last week's downloads in one burst — but *not* when Apple
+  could not be reached, so an outage delays the news rather than losing it.
 - **The alert.** One new video is announced by name: title = channel name,
   subtitle = feed name, body = video title, and the payload carries `feed`
   and `video` ids, so a tap opens the video *in that feed* (up next is the
@@ -510,7 +518,7 @@ notification per feed per pass** to every device the user has registered.
   [Configuration](#configuration-env)) the flag is stored and nothing is sent;
   `push_enabled` on `/config` says which.
 
-### Channels
+## Channels
 | Method | Path | Notes |
 |---|---|---|
 | GET | `/channels` | query `q`, `sort=name\|videos\|unseen\|last_upload`, `unfeeded=true`; paged ChannelSummary |

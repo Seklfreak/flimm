@@ -8,6 +8,7 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"encoding/pem"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -88,8 +89,8 @@ func testPushClient(t *testing.T, url string) *apns.Client {
 	return c
 }
 
-// notifyFixture is one notifying feed over channel A, with its mark at
-// `mark`, and a fake archive holding whatever the test adds.
+// notifyFixture is one notifying feed over channel A, seeded, with its mark
+// at `mark`, and a fake archive holding whatever the test adds.
 type notifyFixture struct {
 	srv     *Server
 	client  *ta.Fake
@@ -99,7 +100,9 @@ type notifyFixture struct {
 	devices []sqlc.PushDevice
 	marks   []time.Time
 	forgot  []string
-	// dismissed is the user's "not interested" set.
+	// seen is the user's notify_seen set; seeded records SetFeedNotifySeeded.
+	seen      map[string]bool
+	seeded    []bool
 	dismissed map[string]bool
 }
 
@@ -109,9 +112,10 @@ func newNotifyFixture(t *testing.T, mark time.Time) *notifyFixture {
 		client:    ta.NewFake(),
 		es:        newEventStore(),
 		apns:      &fakeAPNs{status: map[string]int{}},
+		seen:      map[string]bool{},
 		dismissed: map[string]bool{},
 		feed: sqlc.Feed{
-			ID: uuid.New(), UserID: DevUserID, Name: "DevOps", Sort: "newest", Notify: true,
+			ID: uuid.New(), UserID: DevUserID, Name: "DevOps", Sort: "newest", Notify: true, NotifySeeded: true,
 			NotifiedAt: pgtype.Timestamptz{Time: mark, Valid: true},
 		},
 	}
@@ -131,6 +135,26 @@ func newNotifyFixture(t *testing.T, mark time.Time) *notifyFixture {
 		fx.marks = append(fx.marks, arg.NotifiedAt.Time)
 		fx.feed.NotifiedAt = arg.NotifiedAt
 		return nil
+	}
+	q.SetFeedNotifySeededFn = func(_ context.Context, arg sqlc.SetFeedNotifySeededParams) error {
+		fx.seeded = append(fx.seeded, arg.NotifySeeded)
+		fx.feed.NotifySeeded = arg.NotifySeeded
+		return nil
+	}
+	q.MarkNotifySeenFn = func(_ context.Context, arg sqlc.MarkNotifySeenParams) error {
+		for _, id := range arg.VideoIds {
+			fx.seen[id] = true
+		}
+		return nil
+	}
+	q.ListNotifySeenFn = func(_ context.Context, arg sqlc.ListNotifySeenParams) ([]string, error) {
+		var out []string
+		for _, id := range arg.VideoIds {
+			if fx.seen[id] {
+				out = append(out, id)
+			}
+		}
+		return out, nil
 	}
 	q.ForgetPushDeviceFn = func(_ context.Context, token string) error {
 		fx.forgot = append(fx.forgot, token)
@@ -152,27 +176,38 @@ func newNotifyFixture(t *testing.T, mark time.Time) *notifyFixture {
 	return fx
 }
 
-// downloaded adds a video to channel A that TubeArchivist fetched at `at`.
-func (fx *notifyFixture) downloaded(id string, at time.Time, watched bool) ta.Video {
+// indexed adds a video to channel A that TubeArchivist indexed at `at`.
+func (fx *notifyFixture) indexed(id string, at time.Time, watched bool) ta.Video {
 	v := video(id, "A", "2026-08-01", 600, watched)
 	v.DateDownloaded = at.Unix()
 	fx.client.AddVideo(v)
 	return v
 }
 
+// known adds a video the feed has seen before — indexed at `at`, which for
+// a refreshed one is *after* the mark.
+func (fx *notifyFixture) known(id string, at time.Time) {
+	fx.indexed(id, at, false)
+	fx.seen[id] = true
+}
+
 func TestNotifyAnnouncesOneNewVideoByName(t *testing.T) {
 	mark := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
 	fx := newNotifyFixture(t, mark)
-	fx.downloaded("old", mark.Add(-time.Hour), false)
-	fx.downloaded("fresh", mark.Add(10*time.Minute), false)
-	fx.downloaded("seen", mark.Add(20*time.Minute), true)
-	short := fx.downloaded("clip", mark.Add(30*time.Minute), false)
+	fx.known("old", mark.Add(-time.Hour))
+	// The archive refreshed an old video's metadata: it now reads as
+	// downloaded after the mark, and it is not news.
+	fx.known("refreshed", mark.Add(15*time.Minute))
+	fx.indexed("fresh", mark.Add(10*time.Minute), false)
+	fx.indexed("seen", mark.Add(20*time.Minute), true)
+	short := fx.indexed("clip", mark.Add(30*time.Minute), false)
 	short.VidType = "shorts"
 	fx.client.AddVideo(short)
 	// Dismissed in Flimm: taken out of the feed, so not news either.
-	fx.downloaded("nope", mark.Add(40*time.Minute), false)
+	fx.indexed("nope", mark.Add(40*time.Minute), false)
 	fx.dismissed["nope"] = true
 
+	before := time.Now()
 	fx.srv.notifyOnce(t.Context())
 
 	sent := fx.apns.sent()
@@ -190,13 +225,19 @@ func TestNotifyAnnouncesOneNewVideoByName(t *testing.T) {
 	if got.payload["feed"] != fx.feed.ID.String() || got.payload["video"] != "fresh" {
 		t.Errorf("payload = %v", got.payload)
 	}
-	// The mark moves to the newest thing announced, not to "now": a video
-	// that lands between the archive's answer and this write is still news.
-	if len(fx.marks) != 1 || !fx.marks[0].Equal(mark.Add(10*time.Minute)) {
+	// The mark moves to the start of the pass, and everything indexed in
+	// the window is now known — announced or not.
+	if len(fx.marks) != 1 || fx.marks[0].Before(before) {
 		t.Errorf("marks = %v", fx.marks)
 	}
+	for _, id := range []string{"fresh", "seen", "clip", "nope", "refreshed"} {
+		if !fx.seen[id] {
+			t.Errorf("%s not marked seen", id)
+		}
+	}
 
-	// The next pass has nothing to say.
+	// The next pass has nothing to say, whatever the archive refreshes.
+	fx.client.Videos["fresh"].DateDownloaded = time.Now().Unix()
 	fx.srv.notifyOnce(t.Context())
 	if len(fx.apns.sent()) != 2 {
 		t.Errorf("a second pass announced the same video again")
@@ -207,7 +248,7 @@ func TestNotifyDigestsSeveralAndOpensTheFeed(t *testing.T) {
 	mark := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
 	fx := newNotifyFixture(t, mark)
 	for i, id := range []string{"v1", "v2", "v3", "v4", "v5"} {
-		fx.downloaded(id, mark.Add(time.Duration(i+1)*time.Minute), false)
+		fx.indexed(id, mark.Add(time.Duration(i+1)*time.Minute), false)
 	}
 	fx.srv.notifyOnce(t.Context())
 	sent := fx.apns.sent()
@@ -218,16 +259,110 @@ func TestNotifyDigestsSeveralAndOpensTheFeed(t *testing.T) {
 	if got.alert["title"] != "DevOps" || got.alert["subtitle"] != nil {
 		t.Errorf("alert = %v", got.alert)
 	}
-	// Newest download first, three named, the rest counted.
+	// Newest index first, three named, the rest counted.
 	if got.alert["body"] != "5 new videos: Video v5, Video v4, Video v3 and 2 more" {
 		t.Errorf("body = %q", got.alert["body"])
 	}
 	if _, has := got.payload["video"]; has {
 		t.Error("a digest names one video to open")
 	}
-	if len(fx.marks) != 1 || !fx.marks[0].Equal(mark.Add(5*time.Minute)) {
-		t.Errorf("marks = %v", fx.marks)
+}
+
+// A feed switched on is seeded before it speaks: everything its sources
+// hold becomes known, nothing is announced, and only what arrives after
+// that is news.
+func TestNotifySeedsASwitchedOnFeed(t *testing.T) {
+	fx := newNotifyFixture(t, time.Time{})
+	fx.feed.NotifySeeded = false
+	fx.feed.NotifiedAt = pgtype.Timestamptz{}
+	for i := range 30 {
+		fx.indexed(fmt.Sprintf("v%02d", i), time.Now().Add(-time.Duration(i)*time.Hour), false)
 	}
+	fx.srv.notifyOnce(t.Context())
+	if len(fx.apns.sent()) != 0 {
+		t.Error("seeding announced the archive")
+	}
+	if len(fx.seen) != 30 {
+		t.Errorf("seeded %d videos, want every one", len(fx.seen))
+	}
+	if len(fx.seeded) != 1 || !fx.seeded[0] || len(fx.marks) != 1 {
+		t.Errorf("seeded = %v, marks = %v", fx.seeded, fx.marks)
+	}
+
+	fx.indexed("new", time.Now(), false)
+	fx.srv.notifyOnce(t.Context())
+	sent := fx.apns.sent()
+	if len(sent) != 2 || sent[0].alert["body"] != "Video new" {
+		t.Errorf("the arrival after seeding was not announced: %+v", sent)
+	}
+}
+
+// A token Apple has given up on is forgotten, and the pass still counts as
+// delivered — the other device got it.
+func TestNotifyForgetsDeadTokens(t *testing.T) {
+	mark := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
+	fx := newNotifyFixture(t, mark)
+	fx.apns.status["ipad"] = http.StatusGone
+	fx.indexed("fresh", mark.Add(time.Minute), false)
+	fx.srv.notifyOnce(t.Context())
+	if len(fx.forgot) != 1 || fx.forgot[0] != "ipad" {
+		t.Errorf("forgot = %v", fx.forgot)
+	}
+	if len(fx.marks) != 1 {
+		t.Errorf("mark not advanced: %v", fx.marks)
+	}
+}
+
+// Apple being down is not a reason to lose the news: nothing is marked
+// seen, the mark stays, and the next pass tries again.
+func TestNotifyRetriesAfterAnOutage(t *testing.T) {
+	mark := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
+	fx := newNotifyFixture(t, mark)
+	fx.apns.status["phone"] = http.StatusServiceUnavailable
+	fx.apns.status["ipad"] = http.StatusServiceUnavailable
+	fx.indexed("fresh", mark.Add(time.Minute), false)
+	fx.srv.notifyOnce(t.Context())
+	if len(fx.marks) != 0 || fx.seen["fresh"] {
+		t.Errorf("a video nobody received was written off: marks=%v seen=%v", fx.marks, fx.seen)
+	}
+	if len(fx.forgot) != 0 {
+		t.Errorf("an outage cost a registration: %v", fx.forgot)
+	}
+	delete(fx.apns.status, "phone")
+	delete(fx.apns.status, "ipad")
+	fx.srv.notifyOnce(t.Context())
+	if len(fx.marks) != 1 || !fx.seen["fresh"] {
+		t.Errorf("the retry did not deliver: marks = %v", fx.marks)
+	}
+}
+
+// Nobody to tell still marks the news seen: a phone registered next week
+// must not get this week's downloads as one burst.
+func TestNotifyWithoutDevicesStillMarksSeen(t *testing.T) {
+	mark := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
+	fx := newNotifyFixture(t, mark)
+	fx.devices = nil
+	fx.indexed("fresh", mark.Add(time.Minute), false)
+	fx.srv.notifyOnce(t.Context())
+	if len(fx.apns.sent()) != 0 {
+		t.Error("sent to nobody")
+	}
+	if len(fx.marks) != 1 || !fx.seen["fresh"] {
+		t.Errorf("marks = %v, seen = %v", fx.marks, fx.seen)
+	}
+}
+
+// Without a push client the job never starts: nothing to send with.
+func TestNotifierNeedsAClient(t *testing.T) {
+	q := newEventStore().querier()
+	q.ListNotifyFeedsFn = func(context.Context) ([]sqlc.Feed, error) {
+		t.Error("the notifier ran on a server with no APNs client")
+		return nil, nil
+	}
+	srv := newTestServer(ta.NewFake(), q)
+	ctx, cancel := context.WithCancel(t.Context())
+	srv.StartFeedNotifier(ctx)
+	cancel()
 }
 
 func TestDigestWording(t *testing.T) {
@@ -250,89 +385,6 @@ func TestDigestWording(t *testing.T) {
 			t.Errorf("got %q, want %q", got, want)
 		}
 	}
-}
-
-// A token Apple has given up on is forgotten, and the pass still counts as
-// delivered — the other device got it.
-func TestNotifyForgetsDeadTokens(t *testing.T) {
-	mark := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
-	fx := newNotifyFixture(t, mark)
-	fx.apns.status["ipad"] = http.StatusGone
-	fx.downloaded("fresh", mark.Add(time.Minute), false)
-	fx.srv.notifyOnce(t.Context())
-	if len(fx.forgot) != 1 || fx.forgot[0] != "ipad" {
-		t.Errorf("forgot = %v", fx.forgot)
-	}
-	if len(fx.marks) != 1 {
-		t.Errorf("mark not advanced: %v", fx.marks)
-	}
-}
-
-// Apple being down is not a reason to lose the news: the mark stays and the
-// next pass tries again.
-func TestNotifyRetriesAfterAnOutage(t *testing.T) {
-	mark := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
-	fx := newNotifyFixture(t, mark)
-	fx.apns.status["phone"] = http.StatusServiceUnavailable
-	fx.apns.status["ipad"] = http.StatusServiceUnavailable
-	fx.downloaded("fresh", mark.Add(time.Minute), false)
-	fx.srv.notifyOnce(t.Context())
-	if len(fx.marks) != 0 {
-		t.Errorf("mark advanced past a video nobody received: %v", fx.marks)
-	}
-	if len(fx.forgot) != 0 {
-		t.Errorf("an outage cost a registration: %v", fx.forgot)
-	}
-	delete(fx.apns.status, "phone")
-	delete(fx.apns.status, "ipad")
-	fx.srv.notifyOnce(t.Context())
-	if len(fx.marks) != 1 {
-		t.Errorf("the retry did not deliver: marks = %v", fx.marks)
-	}
-}
-
-// Nobody to tell still moves the mark: a phone registered next week must
-// not get this week's downloads as one burst.
-func TestNotifyWithoutDevicesStillMovesTheMark(t *testing.T) {
-	mark := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
-	fx := newNotifyFixture(t, mark)
-	fx.devices = nil
-	fx.downloaded("fresh", mark.Add(time.Minute), false)
-	fx.srv.notifyOnce(t.Context())
-	if len(fx.apns.sent()) != 0 {
-		t.Error("sent to nobody")
-	}
-	if len(fx.marks) != 1 {
-		t.Errorf("marks = %v", fx.marks)
-	}
-}
-
-// A feed switched on before the mark existed starts now rather than
-// announcing everything the archive holds.
-func TestNotifyBaselinesAMarklessFeed(t *testing.T) {
-	fx := newNotifyFixture(t, time.Time{})
-	fx.feed.NotifiedAt = pgtype.Timestamptz{}
-	fx.downloaded("fresh", time.Now(), false)
-	fx.srv.notifyOnce(t.Context())
-	if len(fx.apns.sent()) != 0 {
-		t.Error("a markless feed announced its whole archive")
-	}
-	if len(fx.marks) != 1 || time.Since(fx.marks[0]) > time.Minute {
-		t.Errorf("marks = %v", fx.marks)
-	}
-}
-
-// Without a push client the job never starts: nothing to send with.
-func TestNotifierNeedsAClient(t *testing.T) {
-	q := newEventStore().querier()
-	q.ListNotifyFeedsFn = func(context.Context) ([]sqlc.Feed, error) {
-		t.Error("the notifier ran on a server with no APNs client")
-		return nil, nil
-	}
-	srv := newTestServer(ta.NewFake(), q)
-	ctx, cancel := context.WithCancel(t.Context())
-	srv.StartFeedNotifier(ctx)
-	cancel()
 }
 
 // The flag on a feed round-trips through create and update, and a PUT that
@@ -382,5 +434,28 @@ func TestFeedNotifyFlag(t *testing.T) {
 	rec = do(t, h, http.MethodPut, "/api/v1/feeds/"+cur.ID.String(), `{"name":"Home","notify":false}`)
 	if rec.Code != http.StatusOK || updated.Notify || decode[FeedDTO](t, rec).Notify {
 		t.Errorf("explicit false did not stick: %d %s", rec.Code, rec.Body.String())
+	}
+
+	// Changing a notifying feed's sources re-seeds it: the new channel's
+	// back catalogue is not news.
+	cur.Notify = true
+	var reseeds []bool
+	q.SetFeedNotifySeededFn = func(_ context.Context, arg sqlc.SetFeedNotifySeededParams) error {
+		reseeds = append(reseeds, arg.NotifySeeded)
+		return nil
+	}
+	q.DeleteFeedChannelsFn = func(context.Context, uuid.UUID) error { return nil }
+	q.AddFeedChannelFn = func(context.Context, sqlc.AddFeedChannelParams) error { return nil }
+	if rec := do(t, h, http.MethodPut, "/api/v1/feeds/"+cur.ID.String(), `{"name":"Home","sort":"oldest"}`); rec.Code != http.StatusOK {
+		t.Fatalf("update: %d", rec.Code)
+	}
+	if len(reseeds) != 0 {
+		t.Error("an edit that left the sources alone re-seeded the feed")
+	}
+	if rec := do(t, h, http.MethodPut, "/api/v1/feeds/"+cur.ID.String(), `{"name":"Home","channel_ids":["A","B"]}`); rec.Code != http.StatusOK {
+		t.Fatalf("update: %d", rec.Code)
+	}
+	if len(reseeds) != 1 || reseeds[0] {
+		t.Errorf("reseeds = %v", reseeds)
 	}
 }

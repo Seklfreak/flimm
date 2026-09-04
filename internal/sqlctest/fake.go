@@ -53,13 +53,16 @@ type FakeQuerier struct {
 	PinChannelFn                  func(context.Context, sqlc.PinChannelParams) error
 	UnpinChannelFn                func(context.Context, sqlc.UnpinChannelParams) error
 
-	UpsertPushDeviceFn  func(context.Context, sqlc.UpsertPushDeviceParams) error
-	DeletePushDeviceFn  func(context.Context, sqlc.DeletePushDeviceParams) (int64, error)
-	ForgetPushDeviceFn  func(context.Context, string) error
-	ListPushDevicesFn   func(context.Context, uuid.UUID) ([]sqlc.PushDevice, error)
-	CountPushDevicesFn  func(context.Context, uuid.UUID) (int64, error)
-	ListNotifyFeedsFn   func(context.Context) ([]sqlc.Feed, error)
-	SetFeedNotifiedAtFn func(context.Context, sqlc.SetFeedNotifiedAtParams) error
+	UpsertPushDeviceFn    func(context.Context, sqlc.UpsertPushDeviceParams) error
+	DeletePushDeviceFn    func(context.Context, sqlc.DeletePushDeviceParams) (int64, error)
+	ForgetPushDeviceFn    func(context.Context, string) error
+	ListPushDevicesFn     func(context.Context, uuid.UUID) ([]sqlc.PushDevice, error)
+	CountPushDevicesFn    func(context.Context, uuid.UUID) (int64, error)
+	ListNotifyFeedsFn     func(context.Context) ([]sqlc.Feed, error)
+	SetFeedNotifiedAtFn   func(context.Context, sqlc.SetFeedNotifiedAtParams) error
+	MarkNotifySeenFn      func(context.Context, sqlc.MarkNotifySeenParams) error
+	ListNotifySeenFn      func(context.Context, sqlc.ListNotifySeenParams) ([]string, error)
+	SetFeedNotifySeededFn func(context.Context, sqlc.SetFeedNotifySeededParams) error
 
 	AddSeriesWatchFn             func(context.Context, sqlc.AddSeriesWatchParams) error
 	DeleteSeriesWatchesFn        func(context.Context, uuid.UUID) error
@@ -376,4 +379,16 @@ func (f *FakeQuerier) ListNotifyFeeds(ctx context.Context) ([]sqlc.Feed, error) 
 
 func (f *FakeQuerier) SetFeedNotifiedAt(ctx context.Context, arg sqlc.SetFeedNotifiedAtParams) error {
 	return f.SetFeedNotifiedAtFn(ctx, arg)
+}
+
+func (f *FakeQuerier) MarkNotifySeen(ctx context.Context, arg sqlc.MarkNotifySeenParams) error {
+	return f.MarkNotifySeenFn(ctx, arg)
+}
+
+func (f *FakeQuerier) ListNotifySeen(ctx context.Context, arg sqlc.ListNotifySeenParams) ([]string, error) {
+	return f.ListNotifySeenFn(ctx, arg)
+}
+
+func (f *FakeQuerier) SetFeedNotifySeeded(ctx context.Context, arg sqlc.SetFeedNotifySeededParams) error {
+	return f.SetFeedNotifySeededFn(ctx, arg)
 }

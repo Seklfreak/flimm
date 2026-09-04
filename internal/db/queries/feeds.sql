@@ -27,6 +27,9 @@ SET name = $3,
         WHEN NOT $9::boolean THEN NULL
         ELSE notified_at
     END,
+    -- ...and a switch-on is re-seeded: what the sources hold at that moment
+    -- is not news (see notify_seen).
+    notify_seeded = CASE WHEN $9::boolean AND NOT notify THEN false ELSE notify_seeded END,
     notify = $9,
     updated_at = now()
 WHERE id = $1 AND user_id = $2

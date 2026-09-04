@@ -37,20 +37,24 @@ type Server struct {
 	position map[string]float64
 	// custom holds playlists created through the API, in creation order.
 	custom []*ta.Playlist
-	// redownloaded overrides a video's date_downloaded — the side door that
-	// makes something in the fixed catalogue count as *just arrived*, which
-	// is the only state the feed notifier reacts to.
-	redownloaded map[string]int64
+	// reindexed overrides a video's date_downloaded. The real archive's
+	// indexer writes date_downloaded and vid_last_refresh from one clock, so
+	// a metadata refresh makes an old video read as downloaded just now —
+	// the drift that fooled the feed notifier once. This door reproduces it.
+	reindexed map[string]int64
+	// arrived are videos added after start-up, modelled on a catalogue
+	// video but with their own id: what a feed set to notify is waiting for.
+	arrived []ta.Video
 }
 
 func NewServer(catalogue *Catalogue, media *Media, log *slog.Logger) *Server {
 	return &Server{
-		catalogue:    catalogue,
-		media:        media,
-		log:          log,
-		watched:      map[string]bool{},
-		position:     map[string]float64{},
-		redownloaded: map[string]int64{},
+		catalogue: catalogue,
+		media:     media,
+		log:       log,
+		watched:   map[string]bool{},
+		position:  map[string]float64{},
+		reindexed: map[string]int64{},
 	}
 }
 
@@ -77,10 +81,13 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/playlist/{id}/", s.getPlaylist)
 	mux.HandleFunc("DELETE /api/playlist/{id}/", s.deletePlaylist)
 	mux.HandleFunc("GET /api/search/", s.search)
-	// Not a TubeArchivist route. The catalogue is fixed, so nothing in it
-	// is ever *new*; this makes one video count as downloaded just now,
-	// which is what a feed set to notify is waiting for.
-	mux.HandleFunc("POST /fake/redownload/{id}", s.redownload)
+	// Not TubeArchivist routes. The catalogue is fixed, so nothing in it is
+	// ever *new*: `arrive` adds a video modelled on one, with its own id,
+	// indexed just now — what a feed set to notify is waiting for — and
+	// `reindex` refreshes one the way the real archive does, which must
+	// *not* count as new.
+	mux.HandleFunc("POST /fake/arrive/{id}", s.arrive)
+	mux.HandleFunc("POST /fake/reindex/{id}", s.reindex)
 	mux.HandleFunc("GET /media/", s.serveMedia)
 	// TA's thumbnail cache, which Flimm proxies /media/thumb/* to.
 	mux.HandleFunc("GET /cache/", s.serveThumb)
@@ -174,19 +181,42 @@ func (s *Server) getVideo(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"data": v})
 }
 
-// redownload answers POST /fake/redownload/{id}: from now on the video reads
-// as downloaded at this moment, and as unwatched — a fresh arrival.
-func (s *Server) redownload(w http.ResponseWriter, r *http.Request) {
+// reindex answers POST /fake/reindex/{id}: the video's date_downloaded
+// becomes now, exactly as a metadata refresh does in the real archive.
+// Nothing else about it changes.
+func (s *Server) reindex(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if _, ok := s.video(id); !ok {
 		notFound(w)
 		return
 	}
 	s.mu.Lock()
-	s.redownloaded[id] = time.Now().Unix()
-	delete(s.watched, id)
+	s.reindexed[id] = time.Now().Unix()
 	s.mu.Unlock()
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// arrive answers POST /fake/arrive/{id}: a new video on the same channel as
+// {id}, with the same media, indexed just now. Its id is {id} with the last
+// character replaced by a counter, so it stays eleven characters and unique
+// for the run. Answers with the new document.
+func (s *Server) arrive(w http.ResponseWriter, r *http.Request) {
+	src, ok := s.video(r.PathValue("id"))
+	if !ok {
+		notFound(w)
+		return
+	}
+	s.mu.Lock()
+	n := len(s.arrived)
+	v := src
+	v.YoutubeID = src.YoutubeID[:len(src.YoutubeID)-1] + string(rune('A'+n%26))
+	v.Title = src.Title + " (again)"
+	v.DateDownloaded = time.Now().Unix()
+	v.Player.Watched = false
+	v.Player.Progress = 0
+	s.arrived = append(s.arrived, v)
+	s.mu.Unlock()
+	writeJSON(w, http.StatusCreated, map[string]any{"data": v})
 }
 
 func (s *Server) similar(w http.ResponseWriter, r *http.Request) {
@@ -676,8 +706,11 @@ func pathBase(name string) string {
 func (s *Server) videos() []ta.Video {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	out := make([]ta.Video, 0, len(s.catalogue.Videos))
+	out := make([]ta.Video, 0, len(s.catalogue.Videos)+len(s.arrived))
 	for _, v := range s.catalogue.Videos {
+		out = append(out, s.applyStateLocked(v))
+	}
+	for _, v := range s.arrived {
 		out = append(out, s.applyStateLocked(v))
 	}
 	return out
@@ -695,12 +728,17 @@ func (s *Server) videoLocked(id string) (ta.Video, bool) {
 			return s.applyStateLocked(v), true
 		}
 	}
+	for _, v := range s.arrived {
+		if v.YoutubeID == id {
+			return s.applyStateLocked(v), true
+		}
+	}
 	return ta.Video{}, false
 }
 
 func (s *Server) applyStateLocked(v ta.Video) ta.Video {
 	v.Player.Watched = s.watched[v.YoutubeID]
-	if at, ok := s.redownloaded[v.YoutubeID]; ok {
+	if at, ok := s.reindexed[v.YoutubeID]; ok {
 		v.DateDownloaded = at
 	}
 	if position, ok := s.position[v.YoutubeID]; ok && v.Player.Duration > 0 {

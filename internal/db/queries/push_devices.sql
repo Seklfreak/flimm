@@ -30,3 +30,15 @@ SELECT * FROM feeds WHERE notify ORDER BY user_id, position;
 
 -- name: SetFeedNotifiedAt :exec
 UPDATE feeds SET notified_at = $2 WHERE id = $1;
+
+-- name: MarkNotifySeen :exec
+INSERT INTO notify_seen (user_id, video_id)
+SELECT $1, unnest(sqlc.arg(video_ids)::text[])
+ON CONFLICT DO NOTHING;
+
+-- name: ListNotifySeen :many
+-- The subset of the given ids the user has already seen.
+SELECT video_id FROM notify_seen WHERE user_id = $1 AND video_id = ANY(sqlc.arg(video_ids)::text[]);
+
+-- name: SetFeedNotifySeeded :exec
+UPDATE feeds SET notify_seeded = $2 WHERE id = $1;

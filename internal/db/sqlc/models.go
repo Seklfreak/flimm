@@ -37,6 +37,7 @@ type Feed struct {
 	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
 	Notify        bool               `json:"notify"`
 	NotifiedAt    pgtype.Timestamptz `json:"notified_at"`
+	NotifySeeded  bool               `json:"notify_seeded"`
 }
 
 type FeedChannel struct {
@@ -54,6 +55,12 @@ type FeedPlaylist struct {
 type FeedSeriesWatch struct {
 	FeedID    uuid.UUID          `json:"feed_id"`
 	ChannelID string             `json:"channel_id"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
+type NotifySeen struct {
+	UserID    uuid.UUID          `json:"user_id"`
+	VideoID   string             `json:"video_id"`
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 }
 
