@@ -297,6 +297,59 @@ func TestNotifySeedsASwitchedOnFeed(t *testing.T) {
 	}
 }
 
+// shiftingArchive is an archive whose pages move under a walk: on the first
+// walk one video falls between two pages, the way a reindex sweep reorders
+// a list sorted by download time. Every later walk is whole.
+type shiftingArchive struct {
+	ta.Client
+	mu      sync.Mutex
+	queries []ta.VideoQuery
+}
+
+func (a *shiftingArchive) ListVideos(ctx context.Context, q ta.VideoQuery) (*ta.VideoPage, error) {
+	page, err := a.Client.ListVideos(ctx, q)
+	if err != nil {
+		return nil, err
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.queries = append(a.queries, q)
+	if len(a.queries) == 1 && len(page.Data) > 1 {
+		page.Data = page.Data[1:]
+	}
+	return page, nil
+}
+
+// A seed that missed a video announces it at its next refresh, so a walk is
+// checked against the archive's own count and done again when it is short.
+func TestNotifySeedWalksAgainWhenAPageShifted(t *testing.T) {
+	fx := newNotifyFixture(t, time.Time{})
+	fx.feed.NotifySeeded = false
+	fx.feed.NotifiedAt = pgtype.Timestamptz{}
+	for i := range 30 {
+		fx.indexed(fmt.Sprintf("v%02d", i), time.Now().Add(-time.Duration(i)*time.Hour), false)
+	}
+	archive := &shiftingArchive{Client: fx.client}
+	fx.srv.ta = archive
+	fx.srv.notifyOnce(t.Context())
+	if len(fx.seen) != 30 {
+		t.Errorf("seeded %d videos, want every one", len(fx.seen))
+	}
+	if !fx.feed.NotifySeeded {
+		t.Error("the feed was not marked seeded")
+	}
+	if len(archive.queries) < 2 {
+		t.Errorf("a short walk was accepted: %d queries", len(archive.queries))
+	}
+	// The walk is in publish order, oldest first: a refresh does not move a
+	// video there, and an arrival lands at the end.
+	for _, q := range archive.queries {
+		if q.Sort != "published" || q.Order != "asc" {
+			t.Errorf("seed walk not in publish order: %+v", q)
+		}
+	}
+}
+
 // A token Apple has given up on is forgotten, and the pass still counts as
 // delivered — the other device got it.
 func TestNotifyForgetsDeadTokens(t *testing.T) {

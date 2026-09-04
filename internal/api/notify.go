@@ -195,29 +195,60 @@ func sourceQueries(chans, pls []string, base ta.VideoQuery) []ta.VideoQuery {
 	return out
 }
 
+// seedWalks is how many times a source is walked when a walk comes up short
+// of the archive's own count before the seed gives up on it for this pass.
+const seedWalks = 3
+
 // fetchEvery is fetchAll without its cap: a seed has to know every video, or
 // the ones past the cap announce on their next refresh.
+//
+// Walked oldest-published first, and checked against the archive's count.
+// The archive's default order is whatever the operator sorts their own
+// pages by — date_downloaded for some — and that order is rewritten under
+// the walk while a reindex sweep runs, so pages shift and a video slips
+// between two of them. The seed that missed one that way announced it at
+// its next refresh. Publish dates do not move on a refresh, ascending puts
+// new arrivals at the end where nothing shifts, and the count says whether
+// the walk was whole.
 func (s *Server) fetchEvery(ctx context.Context, q ta.VideoQuery) ([]ta.Video, error) {
 	q.PageSize = maxPageSize
+	q.Sort, q.Order = "published", "asc"
 	var out []ta.Video
-	for page := 1; ; page++ {
-		q.Page = page
-		res, err := s.ta.ListVideos(ctx, q)
-		if err != nil {
-			return nil, err
+	for attempt := 1; attempt <= seedWalks; attempt++ {
+		out = out[:0]
+		seen := map[string]bool{}
+		total := 0
+		for page := 1; ; page++ {
+			q.Page = page
+			res, err := s.ta.ListVideos(ctx, q)
+			if err != nil {
+				return nil, err
+			}
+			if page == 1 {
+				total = res.Paginate.TotalHits
+			}
+			if len(res.Data) == 0 {
+				break
+			}
+			for _, v := range res.Data {
+				if !seen[v.YoutubeID] {
+					seen[v.YoutubeID] = true
+					out = append(out, v)
+				}
+			}
+			if res.Paginate.LastPage > 0 && page >= res.Paginate.LastPage {
+				break
+			}
+			if total > 0 && len(out) >= total {
+				break
+			}
 		}
-		if len(res.Data) == 0 {
-			break
+		if len(out) >= total {
+			return out, nil
 		}
-		out = append(out, res.Data...)
-		if res.Paginate.LastPage > 0 && page >= res.Paginate.LastPage {
-			break
-		}
-		if res.Paginate.TotalHits > 0 && len(out) >= res.Paginate.TotalHits {
-			break
-		}
+		s.log.Warn("notify: seed walk came up short", "channel", q.Channel, "playlist", q.Playlist, "got", len(out), "total", total, "attempt", attempt)
 	}
-	return out, nil
+	return nil, fmt.Errorf("seed: %s%s: %d of its videos could not all be read", q.Channel, q.Playlist, len(out))
 }
 
 // indexedSince is everything the sources indexed after `since`, newest
