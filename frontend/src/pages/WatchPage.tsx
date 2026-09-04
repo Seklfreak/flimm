@@ -2,9 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, EVERYTHING_ID } from "@/lib/api";
-import { invalidateWatchState, keys, useChapters, useComments, useFeeds, usePrefs, usePreviousInContext, useSetWatched, useUpdatePrefs, useUpNext, useVideo } from "@/lib/queries";
+import { invalidateWatchState, keys, useChapters, useComments, useDismissVideo, useFeeds, usePrefs, usePreviousInContext, useSetWatched, useUndismissVideo, useUpdatePrefs, useUpNext, useVideo } from "@/lib/queries";
 import { compactCount, fmtDuration, plural, relativeDay } from "@/lib/format";
-import { Avatar, CheckIcon, ErrorState, LoadingState, ThumbIcon } from "@/components/ui";
+import { Avatar, CheckIcon, CloseIcon, ErrorState, LoadingState, ThumbIcon } from "@/components/ui";
 import { watchHref } from "@/components/VideoCard";
 import { Player, SUBTITLE_OFF, langName, pickTrack, type PlayerHandle } from "@/player/Player";
 import { playbackEnd } from "@/player/playbackEnd";
@@ -53,6 +53,8 @@ export default function WatchPage() {
   const prefs = usePrefs();
   const updatePrefs = useUpdatePrefs();
   const setWatched = useSetWatched();
+  const dismiss = useDismissVideo();
+  const undismiss = useUndismissVideo();
   const qc = useQueryClient();
   const navigate = useNavigate();
   const feeds = useFeeds();
@@ -216,6 +218,18 @@ export default function WatchPage() {
                   {v.watched ? "Seen" : "Mark seen"}
                 </button>
               )}
+              {/* The video being watched is as fair a thing to be done with
+                  as any in a list. Not a feed, so the button flips in place
+                  rather than removing anything (docs/design.md). */}
+              <button
+                className="btn"
+                onClick={() => (v.dismissed ? undismiss : dismiss).mutate(v.id)}
+                disabled={dismiss.isPending || undismiss.isPending}
+                title={v.dismissed ? "Show in feeds again" : "Not interested — hide from feeds"}
+              >
+                <CloseIcon size={14} />
+                {v.dismissed ? "Add back to feeds" : "Not interested"}
+              </button>
               <AddToPlaylist videoId={v.id} memberOf={v.playlists} />
               <button className="btn" onClick={() => onPrefs({ subtitle_lang: track ? SUBTITLE_OFF : (v.subtitles[0]?.lang ?? SUBTITLE_OFF) })} disabled={v.subtitles.length === 0}>
                 CC · {track ? langName(track.lang) : v.subtitles.length === 0 ? "none" : "Off"}

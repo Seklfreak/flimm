@@ -94,6 +94,18 @@ struct VideoHeader: View {
                         .buttonStyle(.borderedProminent)
                 }
             }
+            // The video being watched is as fair a thing to be done with as
+            // any in a list. Not a feed, so the button flips in place.
+            Button {
+                Task { await model.setDismissed(!model.isDismissed) }
+            } label: {
+                Label(
+                    model.isDismissed ? "Add back" : "Not interested",
+                    systemImage: model.isDismissed ? "arrow.uturn.backward" : "hand.thumbsdown"
+                )
+                .font(.footnote.weight(.semibold))
+            }
+            .buttonStyle(.bordered)
             if let url = URL(string: video.youtubeUrl), !video.youtubeUrl.isEmpty {
                 Link(destination: url) {
                     Label("YouTube", systemImage: "arrow.up.right.square")

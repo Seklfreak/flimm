@@ -175,6 +175,15 @@ struct TVPlayerInfoPanel: View {
                 )
             }
 
+            Button {
+                Task { await model.setDismissed(!model.isDismissed) }
+            } label: {
+                Label(
+                    model.isDismissed ? "Add back to feeds" : "Not interested",
+                    systemImage: model.isDismissed ? "arrow.uturn.backward" : "hand.thumbsdown"
+                )
+            }
+
             if model.hasContext {
                 Button {
                     Task { await model.reshuffle() }

@@ -72,6 +72,8 @@ final class TVWatchModel {
     /// Non-nil right after a resume, so the info panel can offer "Start over".
     private(set) var resumedFrom: Double?
     private(set) var isWatched = false
+    /// "Not interested" on the video being watched; see the phone's model.
+    private(set) var isDismissed = false
     private(set) var isLoading = true
     private(set) var audioOnly: Bool
     private(set) var artwork: UIImage?
@@ -191,6 +193,7 @@ final class TVWatchModel {
             let detail = try await client.video(videoId)
             video = detail
             isWatched = detail.watched
+            isDismissed = detail.dismissed
             await startPlayback(detail)
             isLoading = false
             await loadSidecars(detail)
@@ -371,6 +374,23 @@ final class TVWatchModel {
     func setWatched(_ watched: Bool) async {
         isWatched = watched
         try? await client.setWatched(videoId, watched: watched)
+        await app.videoListStateChanged()
+    }
+
+    /// Dismiss or restore the video being watched. Playback carries on
+    /// either way (docs/design.md).
+    func setDismissed(_ dismissed: Bool) async {
+        isDismissed = dismissed
+        do {
+            if dismissed {
+                _ = try await client.dismiss(videoId)
+            } else {
+                _ = try await client.undismiss(videoId)
+            }
+        } catch {
+            isDismissed = !dismissed
+            return
+        }
         await app.videoListStateChanged()
     }
 

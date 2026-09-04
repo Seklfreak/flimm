@@ -72,7 +72,11 @@ final class WatchModel {
     private(set) var audioUnavailable = false
     /// Non-nil right after a resume; the toast offers "Start over".
     private(set) var resumedFrom: Double?
-    private(set) var isWatched = false
+    /// Set by `WatchModel+Seen`, which owns the round trips.
+    var isWatched = false
+    /// "Not interested" on the video being watched. Flimm's own state, so it
+    /// flips here without waiting; the round trip only ever undoes it.
+    var isDismissed = false
     private(set) var isLoading = true
     private(set) var audioOnly: Bool
     private(set) var lastSkippedSponsor: String?
@@ -84,8 +88,8 @@ final class WatchModel {
     private(set) var deliveryKind: DeliveryKind = .none
     private(set) var mediaPath = ""
 
-    @ObservationIgnored private let app: AppModel
-    @ObservationIgnored private let client: APIClient
+    @ObservationIgnored let app: AppModel
+    @ObservationIgnored let client: APIClient
     /// Per-device, unlike ``prefs``: quality belongs to this screen and this
     /// network, so it never goes to `PATCH /me/prefs`.
     @ObservationIgnored private let playback: PlaybackSettings
@@ -173,6 +177,7 @@ final class WatchModel {
             let detail = try await client.video(videoId)
             video = detail
             isWatched = detail.watched
+            isDismissed = detail.dismissed
             await startPlayback(detail)
             isLoading = false
             await loadSidecars(detail)
@@ -447,12 +452,6 @@ final class WatchModel {
         guard let video else { return }
         startAtOverride = engine.currentTime
         await startPlayback(video)
-    }
-
-    func setWatched(_ watched: Bool) async {
-        isWatched = watched
-        try? await client.setWatched(videoId, watched: watched)
-        await app.videoListStateChanged()
     }
 
     // MARK: - Moving between videos

@@ -79,7 +79,9 @@ which is why they are admin-gated like series indexing.
   says nothing about playback. It applies to *every* feed (including
   Everything, in every view) and to *up next*, so autoplay never plays
   something that was dismissed. Channel pages, playlists, search and history
-  still show it, marked, which is where a viewer puts one back. Every client
+  still show it, marked, which is where a viewer puts one back — and so does
+  the watch page, where the video being played carries the same control and
+  it flips in place; playback carries on either way. Every client
   offers an undo without navigating away, because the action is one tap from a
   card and easy to hit by accident.
 - **A context that has run out says so, and its suggestions say what they
