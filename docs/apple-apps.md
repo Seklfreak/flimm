@@ -187,6 +187,16 @@ What is there:
     and `FLIMM_FOCUS_FEED` (Debug only) put the app on a given feed and the
     remote on a given chip, because focus is the half of that row a simulator
     screenshot cannot otherwise reach.
+  - **A title too long for its card reads itself out on focus.** A card gives
+    a title two lines, and a YouTube title is often longer. The web shows the
+    whole of one as the browser's tooltip on hover; the phone and iPad have no
+    hover, and the full title is a tap away on the watch screen. A remote has
+    neither, so a focused card whose title was cut off scrolls it as one slow
+    line (`TVMarqueeText`), holds the end, repeats, and stops the moment focus
+    leaves. The clamped text keeps its place under the moving line, so the
+    card and its row never change size. `FLIMM_FOCUS_VIDEO=<id>` (Debug only)
+    puts the remote on that card at launch, for the reason `FLIMM_FOCUS_FEED`
+    exists; the fake's *Shop tour 2026* is the title that needs it.
   - **A resumed video must never wait on the segments before it.** The
     compatible rendition is encoded from the resume point first, leaving the
     part before it for a later run — and `AVPlayer` asks for segments *around*

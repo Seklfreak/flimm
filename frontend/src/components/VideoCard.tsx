@@ -117,7 +117,7 @@ export function VideoCard({
         )}
       </div>
       <div className="flex flex-col gap-0.5">
-        <Link to={watchHref(video, ctx)} className="text-[16px] font-extrabold leading-[1.25] tracking-[-0.01em] text-ink no-underline hover:text-ink line-clamp-2">
+        <Link to={watchHref(video, ctx)} className="text-[16px] font-extrabold leading-[1.25] tracking-[-0.01em] text-ink no-underline hover:text-ink line-clamp-2" title={video.title}>
           {video.title}
         </Link>
         <span className="meta">

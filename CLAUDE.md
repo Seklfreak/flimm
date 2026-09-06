@@ -157,10 +157,10 @@ TA_URL=http://localhost:8001 TA_TOKEN=dev SPONSORBLOCK_URL= \
   into suggestions and autoplay has to stop, is otherwise untestable without
   tapping. The same door
   opens a tab (`FLIMM_OPEN_TAB`), a feed (`FLIMM_OPEN_FEED=<name>`) and puts
-  the remote's focus on a feed chip (`FLIMM_FOCUS_FEED=<name>`) — **focus is
-  invisible to a screenshot otherwise**, and a state nobody can see is a state
-  nobody checks: the feed row shipped for weeks with no focus indication at
-  all.
+  the remote's focus on a feed chip (`FLIMM_FOCUS_FEED=<name>`) or a video
+  card (`FLIMM_FOCUS_VIDEO=<id>`) — **focus is invisible to a screenshot
+  otherwise**, and a state nobody can see is a state nobody checks: the feed
+  row shipped for weeks with no focus indication at all.
 - **A screen that only appears while something is slow** — the
   compatible-rendition wait, most of all — can be held open by taking the
   single transcode slot first: run the server with `MEDIA_TRANSCODE_JOBS=1`,
@@ -173,7 +173,8 @@ TA_URL=http://localhost:8001 TA_TOKEN=dev SPONSORBLOCK_URL= \
   and the compatible-rendition wait, and one **2.40:1** video — the only
   non-16:9 shape in it, and the only way to catch anything that quietly
   assumes every source is 16:9. A scrub-preview sheet did, and was black past
-  the first row for every wider video. **When a fixture cannot reach a bug,
+  the first row for every wider video. It also holds one title longer than any
+  card can show, which is what a clamped title's overflow handling needs. **When a fixture cannot reach a bug,
   adding the fixture is part of the fix.**
 
 Screenshot what changed. If a change genuinely cannot be reached this way, say

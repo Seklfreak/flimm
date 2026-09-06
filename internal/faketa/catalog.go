@@ -73,7 +73,11 @@ var channelSpecs = []struct {
 		videos: []spec{
 			{title: "Building a dovetail jig", seconds: 90, kind: "videos", codec: "avc1", height: 1080, chapters: true, sponsors: true, levelDB: 8},
 			{title: "Sharpening, properly", seconds: 60, kind: "videos", codec: "avc1", height: 720, chapters: true, levelDB: 0},
-			{title: "Shop tour 2026", seconds: 45, kind: "videos", codec: "avc1", height: 1080, sponsors: true, levelDB: 14},
+			// The one title no card can hold. YouTube titles run to this
+			// length all the time, and a card that clamps at two lines has
+			// to do something about the rest — on a TV, read it out on
+			// focus — which nothing shorter can reach.
+			{title: "Shop tour 2026: every machine, every jig, and the three mistakes I would not make again", seconds: 45, kind: "videos", codec: "avc1", height: 1080, sponsors: true, levelDB: 14},
 			{title: "One-minute finish test", seconds: 30, kind: "shorts", codec: "avc1", height: 720, levelDB: 5},
 		},
 	},

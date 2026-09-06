@@ -107,6 +107,7 @@ struct TVVideoCard: View {
 
     @Environment(TVPlayerCoordinator.self) private var player
     @Environment(\.tvPush) private var push
+    @FocusState private var isFocused: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -118,6 +119,21 @@ struct TVVideoCard: View {
             .buttonStyle(.card)
             .opacity(video.watched ? 0.65 : 1)
             .accessibilityLabel(video.title)
+            .focused($isFocused)
+            // Debug builds can start with the remote already on this card:
+            //
+            //     SIMCTL_CHILD_FLIMM_FOCUS_VIDEO=<video id> xcrun simctl launch …
+            //
+            // What a focused card does — the lift, and a long title reading
+            // itself out — is invisible to a screenshot otherwise. A shipped
+            // app has no such door.
+            .task {
+                #if DEBUG
+                if ProcessInfo.processInfo.environment["FLIMM_FOCUS_VIDEO"] == video.id {
+                    isFocused = true
+                }
+                #endif
+            }
             // tvOS activates a `.contextMenu` on a focused card with the
             // remote's long-press — the same gesture the phone and iPad use.
             .contextMenu {
@@ -136,10 +152,10 @@ struct TVVideoCard: View {
             }
 
             VStack(alignment: .leading, spacing: 4) {
-                Text(video.title)
+                // Two lines is the card's budget; a title over it reads
+                // itself out, one slow line, while the card is focused.
+                TVMarqueeText(text: video.title, lineLimit: 2, active: isFocused)
                     .font(.headline)
-                    .lineLimit(2)
-                    .multilineTextAlignment(.leading)
                 Text(meta)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)

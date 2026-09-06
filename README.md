@@ -280,8 +280,9 @@ segments, WebVTT subtitles whose lines name their own timestamp, a custom
 playlist, one VP9 video that Apple hardware cannot decode — so the codec gate
 and the compatible HLS rendition get exercised too — and one 2.40:1 video, the
 only shape in the archive that is not 16:9, which is what anything deriving a
-fixed-size still has to survive. The picture is a running timer, so a seek, a
-resume or a chapter jump can be checked by eye.
+fixed-size still has to survive — and one title too long for any card, which
+is what anything that clamps a title has to do something about. The picture is
+a running timer, so a seek, a resume or a chapter jump can be checked by eye.
 
 `-pad-channels 214` appends that many empty channels to the four real ones, so
 the archive is longer than a page and anything that lists channels — the feed

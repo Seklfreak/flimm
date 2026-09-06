@@ -35,7 +35,7 @@ export function VideoRow({
         <Thumb video={video} compact className="!rounded-[10px]" />
       </Link>
       <div className="flex min-w-0 flex-1 flex-col gap-[3px]">
-        <Link to={watchHref(video, ctx)} className="text-[15px] font-extrabold leading-[1.25] text-ink no-underline hover:text-ink line-clamp-2">
+        <Link to={watchHref(video, ctx)} className="text-[15px] font-extrabold leading-[1.25] text-ink no-underline hover:text-ink line-clamp-2" title={video.title}>
           {video.title}
         </Link>
         <span className="meta text-[12px]">{meta}</span>
