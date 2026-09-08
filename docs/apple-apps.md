@@ -187,6 +187,15 @@ What is there:
     and `FLIMM_FOCUS_FEED` (Debug only) put the app on a given feed and the
     remote on a given chip, because focus is the half of that row a simulator
     screenshot cannot otherwise reach.
+  - **Adding a channel waits for the archive.** The admin's "Add channel…"
+    on the phone and iPad holds on `POST /channels` while TubeArchivist
+    resolves and creates the channel — a progress overlay says so — and then
+    opens it; "Still resolving" is the fallback when TA is slower than the
+    server waits, and a failure (a handle that does not resolve) shows TA's
+    reason instead of a cheerful "asked the archive". `FLIMM_SUBSCRIBE_CHANNEL`
+    (Debug only, with `FLIMM_OPEN_TAB=channels`) starts the flow at launch,
+    since a simulator cannot get through the menu and the text field. The TV
+    has no add-channel control; feeds and the archive are edited on the phone.
   - **A title too long for its card reads itself out on focus.** A card gives
     a title two lines, and a YouTube title is often longer. The web shows the
     whole of one as the browser's tooltip on hover; the phone and iPad have no

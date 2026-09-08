@@ -55,6 +55,32 @@ final class APIClientTests: XCTestCase {
         XCTAssertTrue(empty.isEmpty)
     }
 
+    // MARK: - Subscribing a channel
+
+    /// The server holds the request and answers with the channel; a client
+    /// that treated the call as fire-and-forget would have nothing to open.
+    func testSubscribeNewChannelReturnsTheChannelItLanded() async throws {
+        let session = StubURLProtocol.session(json: """
+        {"status":"added","channel":\(Fixtures.channelSummary)}
+        """)
+        let client = APIClient(baseURL: baseURL, tokens: StaticTokenProvider("tok"), session: session)
+        let result = try await client.subscribeNewChannel("@handle")
+        XCTAssertEqual(result.status, .added)
+        XCTAssertEqual(result.channel?.id, "UC-chan")
+        let request = try XCTUnwrap(StubURLProtocol.recorded.last)
+        XCTAssertEqual(request.method, "POST")
+        XCTAssertEqual(request.path, "/api/v1/channels")
+    }
+
+    /// Past the server's patience there is no channel yet, only the promise.
+    func testSubscribeNewChannelPending() async throws {
+        let session = StubURLProtocol.session { _, _ in (202, Data(#"{"status":"pending"}"#.utf8)) }
+        let client = APIClient(baseURL: baseURL, tokens: StaticTokenProvider("tok"), session: session)
+        let result = try await client.subscribeNewChannel("@slow")
+        XCTAssertEqual(result.status, .pending)
+        XCTAssertNil(result.channel)
+    }
+
     // MARK: - Path and query building
 
     func testNavCarriesTheWholeContext() async throws {

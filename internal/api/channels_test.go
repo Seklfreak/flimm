@@ -2,12 +2,14 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -152,18 +154,48 @@ func TestSetChannelSubscribedIsAdminOnly(t *testing.T) {
 	}
 }
 
-// Subscribing a brand-new channel hands TA the raw URL/handle/id; TA's own
-// task resolves and creates it. Admin-only, like every archive-side write.
+// Subscribing a brand-new channel hands TA the raw URL/handle/id and holds
+// the request until TA's own task has created it, answering with the channel
+// — read by id when the input carried one, found as the one new channel when
+// it was a handle TA had to resolve. Admin-only, like every archive-side
+// write.
 func TestSubscribeNewChannel(t *testing.T) {
 	client := ta.NewFake()
 	s := newTestServer(client, newEventStore().querier())
+	s.subscribeWait, s.subscribePoll = 50*time.Millisecond, time.Millisecond
 
-	if rec := do(t, s.Router(), http.MethodPost, "/api/v1/channels", `{"channel":"https://www.youtube.com/@Gronkh"}`); rec.Code != http.StatusNoContent {
+	rec := do(t, s.Router(), http.MethodPost, "/api/v1/channels", `{"channel":"https://www.youtube.com/@Gronkh"}`)
+	if rec.Code != http.StatusOK {
 		t.Fatalf("subscribe = %d: %s", rec.Code, rec.Body.String())
 	}
 	if !slices.Contains(client.Calls, "subscribe:https://www.youtube.com/@Gronkh:true") {
 		t.Errorf("TA never received the subscribe: %v", client.Calls)
 	}
+	var added struct {
+		Status  string         `json:"status"`
+		Channel ChannelSummary `json:"channel"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &added); err != nil {
+		t.Fatal(err)
+	}
+	if want := ta.ResolveChannelID("https://www.youtube.com/@Gronkh"); added.Status != "added" || added.Channel.ID != want {
+		t.Errorf("handle resolved to %+v, want added %s", added, want)
+	}
+
+	// An id in the input is read directly, even with channels the snapshot
+	// could not tell apart.
+	client.Channels["UCother00000000000000000"] = &ta.Channel{ChannelID: "UCother00000000000000000", ChannelName: "Other"}
+	rec = do(t, s.Router(), http.MethodPost, "/api/v1/channels", `{"channel":"https://www.youtube.com/channel/UCabcdefghijklmnopqrstuv"}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("subscribe by id = %d: %s", rec.Code, rec.Body.String())
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &added); err != nil {
+		t.Fatal(err)
+	}
+	if added.Channel.ID != "UCabcdefghijklmnopqrstuv" {
+		t.Errorf("id input gave %q", added.Channel.ID)
+	}
+
 	if rec := do(t, s.Router(), http.MethodPost, "/api/v1/channels", `{"channel":"  "}`); rec.Code != http.StatusBadRequest {
 		t.Errorf("blank = %d, want 400", rec.Code)
 	}
@@ -177,6 +209,38 @@ func TestSubscribeNewChannel(t *testing.T) {
 	s.subscribeNewChannel(w, req)
 	if w.Code != http.StatusForbidden {
 		t.Errorf("non-admin = %d, want 403", w.Code)
+	}
+}
+
+// TA's task can fail — a handle that does not resolve, a URL off
+// youtube.com — and used to fail silently into the archive's logs while the
+// client said "asked the archive". The reason now comes back as a 502.
+func TestSubscribeNewChannelReportsTAFailure(t *testing.T) {
+	client := ta.NewFake()
+	client.SubscribeOutcome, client.SubscribeError = "FAILURE", "invalid domain: example.com"
+	s := newTestServer(client, newEventStore().querier())
+	s.subscribeWait, s.subscribePoll = 50*time.Millisecond, time.Millisecond
+
+	rec := do(t, s.Router(), http.MethodPost, "/api/v1/channels", `{"channel":"https://example.com/@nope"}`)
+	if rec.Code != http.StatusBadGateway {
+		t.Fatalf("failed subscribe = %d: %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "ValueError: invalid domain: example.com") {
+		t.Errorf("reason missing: %s", rec.Body.String())
+	}
+}
+
+// A task still running when the wait runs out — a busy TA queue — answers
+// 202: the old contract, the channel appears when the task lands.
+func TestSubscribeNewChannelPendingPastTheWait(t *testing.T) {
+	client := ta.NewFake()
+	client.SubscribeOutcome = "PENDING"
+	s := newTestServer(client, newEventStore().querier())
+	s.subscribeWait, s.subscribePoll = 20*time.Millisecond, time.Millisecond
+
+	rec := do(t, s.Router(), http.MethodPost, "/api/v1/channels", `{"channel":"@slow"}`)
+	if rec.Code != http.StatusAccepted || !strings.Contains(rec.Body.String(), `"pending"`) {
+		t.Fatalf("pending subscribe = %d: %s", rec.Code, rec.Body.String())
 	}
 }
 

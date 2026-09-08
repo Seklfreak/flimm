@@ -122,3 +122,21 @@ public struct ChannelMatch: Codable, Sendable, Hashable, Identifiable {
         try c.encode(matchCount, forKey: .matchCount)
     }
 }
+
+/// What `POST /channels` answers: the channel once TubeArchivist has
+/// resolved and created it, or `pending` when the archive was still at it
+/// when the server stopped waiting — the channel then appears in the
+/// directory whenever the task lands.
+public struct ChannelSubscription: Decodable, Sendable {
+    public enum Status: String, Decodable, Sendable {
+        case added, pending
+    }
+
+    public let status: Status
+    public let channel: ChannelSummary?
+
+    public init(status: Status, channel: ChannelSummary?) {
+        self.status = status
+        self.channel = channel
+    }
+}

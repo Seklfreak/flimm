@@ -4,9 +4,12 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -37,6 +40,8 @@ type Server struct {
 	position map[string]float64
 	// custom holds playlists created through the API, in creation order.
 	custom []*ta.Playlist
+	// tasks is the task result store, in the order tasks were queued.
+	tasks []*fakeTask
 	// reindexed overrides a video's date_downloaded. The real archive's
 	// indexer writes date_downloaded and vid_last_refresh from one clock, so
 	// a metadata refresh makes an old video read as downloaded just now —
@@ -75,6 +80,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/stats/channel/", s.channelStats)
 	mux.HandleFunc("POST /api/channel/{id}/", s.updateChannel)
 	mux.HandleFunc("POST /api/channel/", s.subscribeChannels)
+	// TA's task result store, by name: how Flimm learns a subscribe landed.
+	mux.HandleFunc("GET /api/task/by-name/{name}/", s.tasksByName)
 	mux.HandleFunc("GET /api/playlist/", s.listPlaylists)
 	mux.HandleFunc("POST /api/playlist/custom/", s.createPlaylist)
 	mux.HandleFunc("POST /api/playlist/custom/{id}/", s.playlistAction)
@@ -364,13 +371,18 @@ func (s *Server) setWatched(w http.ResponseWriter, r *http.Request) {
 // ---- channels and playlists ----
 
 func (s *Server) listChannels(w http.ResponseWriter, _ *http.Request) {
+	s.mu.RLock()
+	channels := slices.Clone(s.catalogue.Channels)
+	s.mu.RUnlock()
 	writeJSON(w, http.StatusOK, map[string]any{
-		"data":     s.catalogue.Channels,
-		"paginate": ta.Paginate{PageSize: len(s.catalogue.Channels), CurrentPage: 1, LastPage: 1, TotalHits: len(s.catalogue.Channels)},
+		"data":     channels,
+		"paginate": ta.Paginate{PageSize: len(channels), CurrentPage: 1, LastPage: 1, TotalHits: len(channels)},
 	})
 }
 
 func (s *Server) getChannel(w http.ResponseWriter, r *http.Request) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	for _, ch := range s.catalogue.Channels {
 		if ch.ChannelID == r.PathValue("id") {
 			writeJSON(w, http.StatusOK, map[string]any{"data": ch})
@@ -381,11 +393,21 @@ func (s *Server) getChannel(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) channelStats(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{"doc_count": len(s.catalogue.Channels)})
+	s.mu.RLock()
+	n := len(s.catalogue.Channels)
+	s.mu.RUnlock()
+	writeJSON(w, http.StatusOK, map[string]any{"doc_count": n})
 }
 
 // subscribeChannels is TA's subscribe toggle: {"data":[{"channel_id",
-// "channel_subscribed"}]}. The fake flips the flag on channels it knows.
+// "channel_subscribed"}]}. Unsubscribing lands at once. Subscribing is a
+// task in the real archive — it parses what it was handed, resolves a
+// handle with yt-dlp and builds the channel — and the fake keeps that
+// shape: the request answers immediately, a task appears in the result
+// store as PENDING, and subscribeDelay later it lands. A YouTube URL, a
+// handle or a UC… id resolves to a channel; anything else fails the way
+// TA's parser does, with the reason in the task, which is the only way a
+// client can learn a subscribe went wrong.
 func (s *Server) subscribeChannels(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Data []struct {
@@ -398,22 +420,111 @@ func (s *Server) subscribeChannels(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	for _, d := range body.Data {
-		found := false
-		for i := range s.catalogue.Channels {
-			if s.catalogue.Channels[i].ChannelID == d.ChannelID {
-				s.catalogue.Channels[i].ChannelSubscribed = d.Subscribed
-				found = true
+		if !d.Subscribed {
+			s.mu.Lock()
+			for i := range s.catalogue.Channels {
+				if s.catalogue.Channels[i].ChannelID == d.ChannelID {
+					s.catalogue.Channels[i].ChannelSubscribed = false
+				}
 			}
+			s.mu.Unlock()
+			continue
 		}
-		if !found && d.Subscribed {
-			// TA's subscribe task creates channels it does not know.
-			s.catalogue.Channels = append(s.catalogue.Channels, ta.Channel{
-				ChannelID: d.ChannelID, ChannelName: d.ChannelID,
-				ChannelSubscribed: true, ChannelActive: true,
-			})
+		task := &fakeTask{id: fmt.Sprintf("sub-%d", time.Now().UnixNano()), name: "subscribe_to", status: "PENDING"}
+		s.mu.Lock()
+		s.tasks = append(s.tasks, task)
+		s.mu.Unlock()
+		go s.landSubscribe(task, d.ChannelID)
+	}
+	writeJSON(w, http.StatusOK, body)
+}
+
+// subscribeDelay is how long the fake's subscribe task takes: long enough
+// to see a client wait, short enough not to.
+const subscribeDelay = 3 * time.Second
+
+func (s *Server) landSubscribe(task *fakeTask, input string) {
+	time.Sleep(subscribeDelay)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	task.done = time.Now().UTC().Format(time.RFC3339)
+	if reason := unparseable(input); reason != "" {
+		task.status = "FAILURE"
+		task.result = map[string]any{"exc_type": "ValueError", "exc_message": []string{reason}, "exc_module": "builtins"}
+		s.log.Info("subscribe task failed", "input", input, "reason", reason)
+		return
+	}
+	id := ta.ResolveChannelID(input)
+	task.status = "SUCCESS"
+	for i := range s.catalogue.Channels {
+		if s.catalogue.Channels[i].ChannelID == id {
+			s.catalogue.Channels[i].ChannelSubscribed = true
+			return
 		}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"message": "subscription processed"})
+	name := strings.TrimPrefix(strings.TrimPrefix(strings.TrimSuffix(input, "/"), "https://www.youtube.com/"), "@")
+	if i := strings.LastIndex(name, "/"); i >= 0 {
+		name = name[i+1:]
+	}
+	s.catalogue.Channels = append(s.catalogue.Channels, ta.Channel{
+		ChannelID: id, ChannelName: name, ChannelSubscribed: true, ChannelActive: true,
+		ChannelLastRefresh: task.done,
+	})
+	s.log.Info("subscribe task landed", "input", input, "channel", id)
+}
+
+// unparseable is TA's url parser's verdict: a URL must be on youtube.com
+// (or youtu.be), and a bare string must be a handle or an id of a length
+// it knows. It returns the reason, or "" when the input resolves.
+func unparseable(input string) string {
+	if u, err := url.Parse(input); err == nil && u.Host != "" {
+		if u.Host == "youtu.be" || strings.HasSuffix(u.Host, "youtube.com") {
+			return ""
+		}
+		return "invalid domain: " + u.Host
+	}
+	if strings.HasPrefix(input, "@") || len(input) == 24 || len(input) == 11 {
+		return ""
+	}
+	return "not a valid id_str: " + input
+}
+
+// fakeTask is one entry of the task result store, in Celery's shape.
+type fakeTask struct {
+	id, name, status string
+	result           any
+	done             string
+}
+
+// tasksByName answers TA's /api/task/by-name/{name}/: the stored results
+// for that task, as Celery's result backend keeps them. `date_done` is
+// `false` until the task has finished and a timestamp after, and `result`
+// is null, a string or an exception object — the mixed types are the
+// point; a client that assumes the serializer's declared ones breaks on
+// the real archive.
+func (s *Server) tasksByName(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	if name != "subscribe_to" {
+		notFound(w)
+		return
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := []map[string]any{}
+	for _, t := range s.tasks {
+		if t.name != name {
+			continue
+		}
+		var done any = false
+		if t.done != "" {
+			done = t.done
+		}
+		out = append(out, map[string]any{
+			"task_id": t.id, "name": t.name, "status": t.status,
+			"result": t.result, "traceback": nil, "date_done": done,
+		})
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 // updateChannel accepts the channel_overwrites write behind Flimm's admin
@@ -595,7 +706,10 @@ func (s *Server) search(w http.ResponseWriter, r *http.Request) {
 			})
 		}
 		if only == "" || only == "channel" {
-			out["channel_results"] = filter(s.catalogue.Channels, func(c ta.Channel) bool {
+			s.mu.RLock()
+			channels := slices.Clone(s.catalogue.Channels)
+			s.mu.RUnlock()
+			out["channel_results"] = filter(channels, func(c ta.Channel) bool {
 				return strings.Contains(strings.ToLower(c.ChannelName), query)
 			})
 		}

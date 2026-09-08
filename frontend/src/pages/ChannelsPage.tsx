@@ -1,7 +1,7 @@
 import { useState } from "react";
-import { Link } from "react-router";
+import { Link, useNavigate } from "react-router";
 import { useQueryClient } from "@tanstack/react-query";
-import { api, EVERYTHING_ID, type ChannelSort, type ChannelSummary } from "@/lib/api";
+import { api, ApiError, EVERYTHING_ID, type ChannelSort, type ChannelSummary } from "@/lib/api";
 import { useChannels, useMe } from "@/lib/queries";
 import { plural, relativeDay } from "@/lib/format";
 import { PageHeader } from "@/components/Layout";
@@ -96,32 +96,51 @@ function ChannelCard({ channel }: { channel: ChannelSummary }) {
 
 /**
  * Admin only: hand TubeArchivist a channel it may not know yet — a URL,
- * @handle or UC… id. TA resolves and creates it in a background task, so the
- * channel appears in the directory once that lands, not on submit.
+ * @handle or UC… id. The request holds while TA resolves and creates it, so
+ * the form waits on it and opens the channel when it lands; only when TA is
+ * still at it past the server's patience does it fall back to "appears
+ * later". A failure — a handle that does not resolve, a URL off youtube.com —
+ * comes back with TA's reason instead of vanishing into the archive's logs.
  */
 function AddChannelForm({ onDone }: { onDone: () => void }) {
   const [value, setValue] = useState("");
   const [busy, setBusy] = useState(false);
-  const [requested, setRequested] = useState(false);
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const qc = useQueryClient();
+  const navigate = useNavigate();
   const submit = async () => {
     if (!value.trim() || busy) return;
     setBusy(true);
+    setError(null);
     try {
-      await api.subscribeNewChannel(value.trim());
-      setRequested(true);
+      const result = await api.subscribeNewChannel(value.trim());
       void qc.invalidateQueries({ queryKey: ["channels"] });
+      if (result.status === "added") {
+        void navigate(`/channels/${result.channel.id}`);
+        return;
+      }
+      setPending(true);
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "Could not reach the server.");
     } finally {
       setBusy(false);
     }
   };
-  if (requested) {
+  if (pending) {
     return (
       <div className="mb-4 flex flex-wrap items-center gap-3 rounded-[14px] border border-hair bg-raised/60 px-4 py-3">
         <span className="meta">
-          Asked the archive to subscribe. TubeArchivist resolves and downloads in the background — the channel appears in the directory once that lands.
+          TubeArchivist is still resolving the channel. It appears in the directory once that lands.
         </span>
         <button className="btn" onClick={onDone}>OK</button>
+      </div>
+    );
+  }
+  if (busy) {
+    return (
+      <div className="mb-4 flex flex-wrap items-center gap-3 rounded-[14px] border border-hair bg-raised/60 px-4 py-3">
+        <Spinner label="Waiting for TubeArchivist to resolve and index the channel…" />
       </div>
     );
   }
@@ -140,12 +159,13 @@ function AddChannelForm({ onDone }: { onDone: () => void }) {
         onChange={(e) => setValue(e.target.value)}
         placeholder="Channel URL, @handle or UC… id"
       />
-      <button className="btn pri" type="submit" disabled={busy || !value.trim()}>
-        {busy ? "Subscribing…" : "Subscribe"}
+      <button className="btn pri" type="submit" disabled={!value.trim()}>
+        Subscribe
       </button>
       <button className="btn" type="button" onClick={onDone}>
         Cancel
       </button>
+      {error && <span className="meta w-full text-danger">{error}</span>}
     </form>
   );
 }

@@ -284,6 +284,12 @@ fixed-size still has to survive — and one title too long for any card, which
 is what anything that clamps a title has to do something about. The picture is
 a running timer, so a seek, a resume or a chapter jump can be checked by eye.
 
+Subscribing a channel through the fake behaves like the archive's task: the
+request answers at once, the task shows as pending in `/api/task/by-name/`,
+and three seconds later it lands — a YouTube URL, `@handle` or `UC…` id
+becomes a channel, anything else fails with the reason TA's parser would give.
+That is what lets the add-channel wait, and its failure message, be seen.
+
 `-pad-channels 214` appends that many empty channels to the four real ones, so
 the archive is longer than a page and anything that lists channels — the feed
 editor's picker most of all — can be checked against a subscription list of a

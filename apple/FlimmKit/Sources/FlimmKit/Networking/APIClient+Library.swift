@@ -137,11 +137,13 @@ extension APIClient {
     }
 
     /// Admin only: subscribe a channel the archive may not know yet — a URL,
-    /// @handle or UC… id. TubeArchivist resolves and creates it in a
-    /// background task; the channel appears in the directory once it lands.
-    public func subscribeNewChannel(_ channel: String) async throws {
+    /// @handle or UC… id. The request holds while TubeArchivist resolves and
+    /// creates it, and answers with the channel; `.pending` means the archive
+    /// was still at it when the server stopped waiting. A failure on TA's
+    /// side — a handle that does not resolve — throws with its reason.
+    public func subscribeNewChannel(_ channel: String) async throws -> ChannelSubscription {
         struct Body: Encodable { let channel: String }
-        try await discard(.post, "/channels", body: Body(channel: channel))
+        return try await send(.post, "/channels", body: Body(channel: channel))
     }
 
     // MARK: - Playlists

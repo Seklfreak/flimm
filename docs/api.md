@@ -526,7 +526,7 @@ every device the user has registered.
 | Method | Path | Notes |
 |---|---|---|
 | GET | `/channels` | query `q`, `sort=name\|videos\|unseen\|last_upload`, `unfeeded=true`; paged ChannelSummary |
-| POST | `/channels` | **admin only** (403 otherwise): `{ "channel": "<URL, @handle or UC… id>" }` — subscribe a channel the archive may not know yet. TubeArchivist resolves and creates it in a background task; 204, and the channel appears in the directory once the task lands |
+| POST | `/channels` | **admin only** (403 otherwise): `{ "channel": "<URL, @handle or UC… id>" }` — subscribe a channel the archive may not know yet. The request **holds** while TubeArchivist's task resolves and creates it (up to ~40 s) and answers **200** `{ "status": "added", "channel": ChannelSummary }`; **202** `{ "status": "pending" }` when TA is still at it past the wait — the channel appears in the directory once the task lands; **502** with TA's reason in `error` when the task failed (a handle that does not resolve, a URL off youtube.com). The channel is read by id when the input carries one, otherwise found as the one channel new to the archive since the call, so two admins subscribing handles at the same moment both get `pending`. Web, iPhone and iPad wait on it and open the channel; the TV has no add-channel control |
 | GET | `/channels/pinned` | ChannelSummary[] the user pinned to the sidebar, in pin order; unpaged |
 | PUT | `/channels/{id}/pinned` | `{ "pinned": true\|false }` → 204. Pinning appends to the end; 404 for a channel TA does not know |
 | GET | `/channels/{id}` | ChannelSummary + `description` |
@@ -1648,7 +1648,7 @@ height of every video up front.
 | progress | `POST/DELETE /api/video/{id}/progress/` |
 | watched | `POST /api/watched/ { id, is_watched }` (also accepts channel/playlist ids) |
 | index channel playlists (admin) | `POST /api/channel/{id}/` with `channel_overwrites: { index_playlists: true }` — TA stores the overwrite and queues its discovery task |
-| channel subscribe toggle (admin) | `POST /api/channel/` with `{ data: [{ channel_id, channel_subscribed }] }` |
+| channel subscribe toggle (admin) | `POST /api/channel/` with `{ data: [{ channel_id, channel_subscribed }] }`. Subscribing queues TA's `subscribe_to` task and answers nothing to wait on, so `POST /channels` polls `GET /api/task/by-name/subscribe_to/` for a result it had not seen before the call — Celery's result meta, `result` an exception object on failure, `date_done` `false` until done — and then reads the channel |
 | channels | `GET /api/channel/`, `/api/channel/{id}/`, `/aggs/`, `/nav/`, `/api/channel/search/?q=` |
 | playlists | `GET /api/playlist/?type=custom\|regular&channel=`, `POST /api/playlist/custom/`, `POST /api/playlist/custom/{id}/`, `DELETE /api/playlist/{id}/`. A playlist doc's `playlist_subscribed` is TA's "the user follows this one": subscribing in TA sets it, and the channel playlist-discovery task leaves it false, which is the only thing separating a followed playlist from an indexed one (both are `playlist_type: regular`) |
 | search | `GET /api/search/?query=` (prefixes `video:`, `channel:`, `playlist:`, `full:` + `lang:`) |

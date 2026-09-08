@@ -87,6 +87,58 @@ type Channel struct {
 	ChannelLastRefresh string `json:"channel_last_refresh"`
 }
 
+// Task is one entry of TubeArchivist's task result store
+// (`/api/task/by-name/{name}/`): Celery's result meta as TA stored it.
+// Only the fields Flimm reads are named; `result` is left raw because a
+// failed task carries Celery's exception object there and a finished one a
+// string or null, and the serializer types are not what the wire carries.
+type Task struct {
+	TaskID    string          `json:"task_id"`
+	Name      string          `json:"name"`
+	Status    string          `json:"status"`
+	Result    json.RawMessage `json:"result"`
+	Traceback string          `json:"traceback"`
+}
+
+// Done reports whether the task has stopped running, well or badly.
+func (t Task) Done() bool {
+	switch t.Status {
+	case "", "PENDING", "STARTED", "RETRY":
+		return false
+	}
+	return true
+}
+
+// Failed reports whether the task ended without doing its work. "FAILED"
+// is what TA's own startup recovery writes over a task it found pending.
+func (t Task) Failed() bool {
+	switch t.Status {
+	case "FAILURE", "FAILED", "REVOKED":
+		return true
+	}
+	return false
+}
+
+// Error renders a failed task's reason: Celery's exception object when the
+// result is one, the string when it is a string, the status otherwise.
+func (t Task) Error() string {
+	var exc struct {
+		Type    string   `json:"exc_type"`
+		Message []string `json:"exc_message"`
+	}
+	if err := json.Unmarshal(t.Result, &exc); err == nil && exc.Type != "" {
+		if msg := strings.Join(exc.Message, " "); msg != "" {
+			return exc.Type + ": " + msg
+		}
+		return exc.Type
+	}
+	var str string
+	if err := json.Unmarshal(t.Result, &str); err == nil && str != "" {
+		return str
+	}
+	return t.Status
+}
+
 // Playlist is a TA playlist document; Entries carry the ordered video ids.
 type Playlist struct {
 	PlaylistID          string          `json:"playlist_id"`

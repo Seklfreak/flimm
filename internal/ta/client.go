@@ -54,6 +54,13 @@ type Client interface {
 	// whether the archive keeps downloading its new videos. Instance-wide TA
 	// state, so the caller is expected to gate it behind admin.
 	SetChannelSubscribed(ctx context.Context, channelID string, subscribed bool) error
+	// ListTasks lists TA's stored results for one task name, newest or
+	// oldest first as TA happens to return them — the subscribe task most
+	// of all, which is how a subscribe is known to have landed or failed.
+	ListTasks(ctx context.Context, name string) ([]Task, error)
+	// ForgetChannels drops the cached channel list, so the next ListChannels
+	// asks the archive — what a wait for a channel to appear needs.
+	ForgetChannels()
 
 	// IndexChannelPlaylists asks TA to index all of the channel's own
 	// playlists (sets the channel's index_playlists overwrite, which also
@@ -529,6 +536,29 @@ func (c *HTTP) SetChannelSubscribed(ctx context.Context, channelID string, subsc
 	c.channels = nil
 	c.mu.Unlock()
 	return nil
+}
+
+// ListTasks reads TA's task results by name. TA answers a bare list, or
+// `false` when it has none stored, and 404 for a name it does not know.
+func (c *HTTP) ListTasks(ctx context.Context, name string) ([]Task, error) {
+	var raw json.RawMessage
+	if err := c.do(ctx, http.MethodGet, "/api/task/by-name/"+url.PathEscape(name)+"/", nil, nil, &raw); err != nil {
+		return nil, err
+	}
+	if !bytes.HasPrefix(bytes.TrimSpace(raw), []byte("[")) {
+		return nil, nil
+	}
+	var tasks []Task
+	if err := json.Unmarshal(raw, &tasks); err != nil {
+		return nil, fmt.Errorf("decode task list: %w", err)
+	}
+	return tasks, nil
+}
+
+func (c *HTTP) ForgetChannels() {
+	c.mu.Lock()
+	c.channels = nil
+	c.mu.Unlock()
 }
 
 // IndexChannelPlaylists flips the channel's index_playlists overwrite; TA

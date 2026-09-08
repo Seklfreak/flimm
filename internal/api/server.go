@@ -125,7 +125,12 @@ type Server struct {
 	taHealth taHealth
 	// sponsorblock is the segment source; nil uses TA's snapshot.
 	sponsorblock *sponsorblock.Client
-	dearrow      *dearrow.Client
+	// subscribeWait bounds how long POST /channels holds a request for
+	// TA's subscribe task, and subscribePoll how often it looks. Under the
+	// 60 s most reverse proxies give a request; tests shorten both.
+	subscribeWait time.Duration
+	subscribePoll time.Duration
+	dearrow       *dearrow.Client
 	// cacheJobs carries third-party lookups to be done in the background, so a
 	// viewer waits for one at most once per video. See extcache.go.
 	cacheJobs chan cacheJob
@@ -193,6 +198,8 @@ func NewServer(o Options) *Server {
 		chapters:       newChaptersCache(),
 		stalls:         &stallLog{},
 		sponsorblock:   o.Sponsorblock,
+		subscribeWait:  40 * time.Second,
+		subscribePoll:  time.Second,
 		dearrow:        o.DeArrow,
 		cacheJobs:      make(chan cacheJob, cacheJobsQueue),
 		ryd:            o.RYD,

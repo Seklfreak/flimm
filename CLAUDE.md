@@ -160,7 +160,10 @@ TA_URL=http://localhost:8001 TA_TOKEN=dev SPONSORBLOCK_URL= \
   the remote's focus on a feed chip (`FLIMM_FOCUS_FEED=<name>`) or a video
   card (`FLIMM_FOCUS_VIDEO=<id>`) — **focus is invisible to a screenshot
   otherwise**, and a state nobody can see is a state nobody checks: the feed
-  row shipped for weeks with no focus indication at all.
+  row shipped for weeks with no focus indication at all. On the phone,
+  `FLIMM_SUBSCRIBE_CHANNEL=<input>` with `FLIMM_OPEN_TAB=channels` starts the
+  admin's add-channel flow at launch, which is otherwise behind a menu and a
+  text field: the wait, the channel it opens, and the failure alert.
 - **A screen that only appears while something is slow** — the
   compatible-rendition wait, most of all — can be held open by taking the
   single transcode slot first: run the server with `MEDIA_TRANSCODE_JOBS=1`,

@@ -12,7 +12,12 @@ struct ChannelsView: View {
     @State private var unfeededOnly = false
     @State private var showAddChannel = false
     @State private var newChannel = ""
-    @State private var addRequested = false
+    /// The subscribe in flight: the request holds while TubeArchivist
+    /// resolves and creates the channel, and the screen says so.
+    @State private var adding = false
+    /// TubeArchivist was still resolving when the server stopped waiting.
+    @State private var addPending = false
+    @State private var addError: String?
 
     /// The pinned section leads the directory, but never a search or filter:
     /// those are questions about the whole archive, not the pins.
@@ -61,6 +66,18 @@ struct ChannelsView: View {
         .refreshable { await pager?.reload() }
         .navigationTitle("Channels")
         .onAppear { Analytics.screen(.channels) }
+        // Debug builds can start the subscribe at launch
+        // (`FLIMM_SUBSCRIBE_CHANNEL=@handle`, with `FLIMM_OPEN_TAB=channels`):
+        // the wait, the channel it opens and the failure alert are all
+        // behind a menu and a text field a simulator cannot tap. A shipped
+        // app has no such door.
+        .task {
+            #if DEBUG
+            if let value = ProcessInfo.processInfo.environment["FLIMM_SUBSCRIBE_CHANNEL"], !value.isEmpty {
+                await subscribe(value)
+            }
+            #endif
+        }
         .searchable(text: $searchText, isPresented: nav.searchPresented(for: .channels), prompt: "Search channels")
         .alert("Add channel", isPresented: $showAddChannel) {
             TextField("URL, @handle or UC… id", text: $newChannel)
@@ -70,19 +87,30 @@ struct ChannelsView: View {
                 let value = newChannel.trimmingCharacters(in: .whitespaces)
                 newChannel = ""
                 guard !value.isEmpty else { return }
-                Task {
-                    try? await app.client.subscribeNewChannel(value)
-                    addRequested = true
-                }
+                Task { await subscribe(value) }
             }
             Button("Cancel", role: .cancel) { newChannel = "" }
         } message: {
-            Text("The archive resolves and downloads in the background; the channel appears in the directory once that lands.")
+            Text("The archive resolves the channel and starts downloading it; this opens the channel once it is indexed.")
         }
-        .alert("Asked the archive to subscribe", isPresented: $addRequested) {
+        .alert("Still resolving", isPresented: $addPending) {
             Button("OK") {}
         } message: {
-            Text("TubeArchivist is resolving the channel; it appears in the directory once processed.")
+            Text("TubeArchivist is still at it. The channel appears in the directory once that lands.")
+        }
+        .alert("Could not subscribe", isPresented: Binding(get: { addError != nil }, set: { if !$0 { addError = nil } })) {
+            Button("OK") {}
+        } message: {
+            Text(addError ?? "")
+        }
+        .overlay {
+            if adding {
+                ProgressView("Waiting for TubeArchivist to resolve and index the channel…")
+                    .multilineTextAlignment(.center)
+                    .padding(24)
+                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .padding(40)
+            }
         }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
@@ -134,6 +162,26 @@ struct ChannelsView: View {
         pager = next
         await next.reload()
     }
+
+    /// Holds on the request until TubeArchivist has the channel, then opens
+    /// it; a failure on the archive's side is shown with its reason rather
+    /// than swallowed.
+    private func subscribe(_ value: String) async {
+        adding = true
+        defer { adding = false }
+        do {
+            let result = try await app.client.subscribeNewChannel(value)
+            await pager?.reload()
+            if let channel = result.channel {
+                nav.push(.channel(channel.id))
+            } else {
+                addPending = true
+            }
+        } catch {
+            addError = error.localizedDescription
+        }
+    }
+
 }
 
 struct ChannelRow: View {

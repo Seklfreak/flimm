@@ -3,9 +3,13 @@ package ta
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -25,6 +29,13 @@ type Fake struct {
 	// Progress mirrors what SetProgress wrote per video.
 	Progress map[string]float64
 	Calls    []string
+	// Tasks is TA's task result store; SetChannelSubscribed appends to it.
+	Tasks []Task
+	// SubscribeOutcome shapes the subscribe task: "" or "SUCCESS" creates
+	// the channel, "PENDING" leaves it queued, "FAILURE" fails it with
+	// SubscribeError as the reason.
+	SubscribeOutcome string
+	SubscribeError   string
 	// Err, when set, is returned by every method (simulates TA down).
 	Err error
 	// PingErr fails only Ping.
@@ -329,25 +340,83 @@ func (f *Fake) ChannelStats(ctx context.Context, channelID string) (*ChannelStat
 	return s, nil
 }
 
+// SetChannelSubscribed mirrors TA's toggle: unsubscribing lands at once,
+// subscribing queues a task. The fake's task lands immediately, the way
+// SubscribeOutcome says: it resolves whatever it was handed to a channel id
+// (a UC… id as is, anything else — a handle, a URL — to a made-up one, as
+// TA's parser does with yt-dlp) and creates the channel; or it stays
+// pending; or it fails and creates nothing.
 func (f *Fake) SetChannelSubscribed(_ context.Context, channelID string, subscribed bool) error {
 	if f.Err != nil {
 		return f.Err
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	c, ok := f.Channels[channelID]
-	switch {
-	case ok:
-		c.ChannelSubscribed = subscribed
-	case subscribed:
-		// TA's subscribe task creates channels it does not know yet.
-		f.Channels[channelID] = &Channel{ChannelID: channelID, ChannelName: channelID, ChannelSubscribed: true, ChannelActive: true}
-	default:
-		return ErrNotFound
-	}
 	f.Calls = append(f.Calls, fmt.Sprintf("subscribe:%s:%t", channelID, subscribed))
+	if !subscribed {
+		c, ok := f.Channels[channelID]
+		if !ok {
+			return ErrNotFound
+		}
+		c.ChannelSubscribed = false
+		return nil
+	}
+	task := Task{TaskID: fmt.Sprintf("task-%d", len(f.Tasks)+1), Name: "subscribe_to", Status: "SUCCESS"}
+	switch f.SubscribeOutcome {
+	case "PENDING":
+		task.Status = "PENDING"
+	case "FAILURE":
+		task.Status = "FAILURE"
+		task.Result = json.RawMessage(fmt.Sprintf(`{"exc_type":"ValueError","exc_message":[%q],"exc_module":"builtins"}`, f.SubscribeError))
+	default:
+		id := ResolveChannelID(channelID)
+		if c, ok := f.Channels[id]; ok {
+			c.ChannelSubscribed = true
+		} else {
+			f.Channels[id] = &Channel{ChannelID: id, ChannelName: strings.TrimPrefix(channelID, "@"), ChannelSubscribed: true, ChannelActive: true}
+		}
+	}
+	f.Tasks = append(f.Tasks, task)
 	return nil
 }
+
+func (f *Fake) ListTasks(_ context.Context, name string) ([]Task, error) {
+	if f.Err != nil {
+		return nil, f.Err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var out []Task
+	for _, t := range f.Tasks {
+		if t.Name == name {
+			out = append(out, t)
+		}
+	}
+	return out, nil
+}
+
+func (f *Fake) ForgetChannels() {}
+
+// ResolveChannelID is what the fakes use in place of yt-dlp: a string that
+// carries a UC… id resolves to it, and any other handle or URL to a stable
+// made-up id, so a test or the dev stack can subscribe "@handle" and find
+// the channel afterwards.
+func ResolveChannelID(input string) string {
+	if id := ChannelIDIn(input); id != "" {
+		return id
+	}
+	sum := sha256.Sum256([]byte(strings.ToLower(strings.TrimSpace(input))))
+	return "UC" + base64.RawURLEncoding.EncodeToString(sum[:])[:22]
+}
+
+// ChannelIDIn finds a YouTube channel id in an input — the id itself, or a
+// /channel/UC… URL — and returns "" for anything TA has to resolve first
+// (a handle, a /c/ or /user/ URL, a video URL).
+func ChannelIDIn(input string) string {
+	return channelIDPattern.FindString(input)
+}
+
+var channelIDPattern = regexp.MustCompile(`UC[A-Za-z0-9_-]{22}`)
 
 func (f *Fake) IndexChannelPlaylists(_ context.Context, channelID string) error {
 	if f.Err != nil {

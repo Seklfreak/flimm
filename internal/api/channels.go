@@ -2,9 +2,11 @@ package api
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -342,12 +344,20 @@ func (s *Server) setChannelSubscribed(w http.ResponseWriter, r *http.Request) {
 }
 
 // subscribeNewChannel asks TubeArchivist to subscribe a channel it may not
-// know yet — a URL, @handle or UC… id; TA's own task resolves it, creates
-// the channel and downloads from the next rescan on. Admin-only for the same
-// reason as the toggle, and 202 because the resolution is TA's background
-// work: the channel appears in the directory once the task lands. 204 like
-// every other side-effect endpoint here (a 202 with an empty body trips
-// JSON-parsing clients).
+// know yet — a URL, @handle or UC… id — and holds the request until TA's
+// own task has resolved and created it, so the caller gets the channel
+// back rather than a promise. Admin-only for the same reason as the toggle.
+//
+// TA answers the subscribe with nothing to wait on, so the task is found
+// by difference: the subscribe_to results stored before the call against
+// those after it. A failed task (a handle that does not resolve, a URL off
+// youtube.com) becomes a 502 carrying TA's reason, which used to vanish
+// into the archive's logs. The channel is then read by id when the input
+// carried one, or found as the one channel the archive did not have before,
+// which is what a handle needs. Past subscribeWait the request answers 202
+// and the channel appears in the directory whenever the task lands — the
+// old contract, kept for the slow case (a busy TA queue) rather than a
+// proxy timeout.
 func (s *Server) subscribeNewChannel(w http.ResponseWriter, r *http.Request) {
 	if !isAdmin(r.Context()) {
 		writeError(w, http.StatusForbidden, "admin only")
@@ -360,12 +370,138 @@ func (s *Server) subscribeNewChannel(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "channel is required")
 		return
 	}
-	if err := s.ta.SetChannelSubscribed(r.Context(), strings.TrimSpace(req.Channel), true); err != nil {
+	ctx := r.Context()
+	input := strings.TrimSpace(req.Channel)
+
+	before, err := s.subscribeSnapshot(ctx)
+	if err != nil {
 		s.writeTAError(w, "subscribe channel", err)
 		return
 	}
-	w.WriteHeader(http.StatusNoContent)
+	if err := s.ta.SetChannelSubscribed(ctx, input, true); err != nil {
+		s.writeTAError(w, "subscribe channel", err)
+		return
+	}
+
+	deadline := time.Now().Add(s.subscribeWait)
+	for {
+		outcome, err := s.subscribeOutcome(ctx, input, before)
+		if err != nil {
+			s.writeTAError(w, "subscribe channel", err)
+			return
+		}
+		if outcome.failed != "" {
+			s.log.Warn("subscribe channel: task failed", "channel", input, "reason", outcome.failed)
+			writeError(w, http.StatusBadGateway, "TubeArchivist could not subscribe: "+outcome.failed)
+			return
+		}
+		if outcome.channel != nil {
+			summary, err := s.channelSummary(ctx, currentUserID(ctx), *outcome.channel)
+			if err != nil {
+				s.writeTAError(w, "subscribe channel", err)
+				return
+			}
+			writeJSON(w, http.StatusOK, map[string]any{"status": "added", "channel": summary})
+			return
+		}
+		if time.Now().After(deadline) {
+			writeJSON(w, http.StatusAccepted, map[string]string{"status": "pending"})
+			return
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(s.subscribePoll):
+		}
+	}
 }
+
+// subscribeSnapshot is what the archive held before a subscribe: the task
+// ids and channel ids the outcome is measured against.
+type subscribeSnapshot struct {
+	tasks    map[string]bool
+	channels map[string]bool
+}
+
+func (s *Server) subscribeSnapshot(ctx context.Context) (subscribeSnapshot, error) {
+	snap := subscribeSnapshot{tasks: map[string]bool{}, channels: map[string]bool{}}
+	tasks, err := s.ta.ListTasks(ctx, taskSubscribe)
+	if err != nil {
+		return snap, err
+	}
+	for _, t := range tasks {
+		snap.tasks[t.TaskID] = true
+	}
+	s.ta.ForgetChannels()
+	channels, err := s.ta.ListChannels(ctx)
+	if err != nil {
+		return snap, err
+	}
+	for _, c := range channels {
+		snap.channels[c.ChannelID] = true
+	}
+	return snap, nil
+}
+
+// subscribeResult is one poll's reading: the channel once it is there, the
+// reason if TA gave up, neither while the task is still running.
+type subscribeResult struct {
+	channel *ta.Channel
+	failed  string
+}
+
+func (s *Server) subscribeOutcome(ctx context.Context, input string, before subscribeSnapshot) (subscribeResult, error) {
+	tasks, err := s.ta.ListTasks(ctx, taskSubscribe)
+	if err != nil {
+		return subscribeResult{}, err
+	}
+	landed := false
+	for _, t := range tasks {
+		if before.tasks[t.TaskID] {
+			continue
+		}
+		if t.Failed() {
+			return subscribeResult{failed: t.Error()}, nil
+		}
+		if !t.Done() {
+			return subscribeResult{}, nil
+		}
+		landed = true
+	}
+	if !landed {
+		return subscribeResult{}, nil
+	}
+	// The task is done; the channel may still be a moment behind it in the
+	// index, in which case the next poll finds it.
+	if id := ta.ChannelIDIn(input); id != "" {
+		c, err := s.ta.GetChannel(ctx, id)
+		if errors.Is(err, ta.ErrNotFound) {
+			return subscribeResult{}, nil
+		}
+		return subscribeResult{channel: c}, err
+	}
+	s.ta.ForgetChannels()
+	channels, err := s.ta.ListChannels(ctx)
+	if err != nil {
+		return subscribeResult{}, err
+	}
+	var added []ta.Channel
+	for _, c := range channels {
+		if !before.channels[c.ChannelID] {
+			added = append(added, c)
+		}
+	}
+	if len(added) == 1 {
+		return subscribeResult{channel: &added[0]}, nil
+	}
+	// None: not indexed yet. Several: another admin was adding channels at
+	// the same time and none of them can be told apart; the caller waits
+	// out the window and gets "pending", and the directory has them all.
+	return subscribeResult{}, nil
+}
+
+// taskSubscribe is TA's name for the task behind POST /api/channel/.
+const taskSubscribe = "subscribe_to"
 
 // indexChannelPlaylists asks TubeArchivist to index the channel's own
 // playlists — the archive-side prerequisite for series feeds. Admin-only:
