@@ -229,20 +229,9 @@ func (s *Server) listChannelVideos(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) listChannelPlaylists(w http.ResponseWriter, r *http.Request) {
-	uid := currentUserID(r.Context())
-	id := chi.URLParam(r, "id")
-	lists, err := s.ta.ListPlaylists(r.Context(), "regular", id)
+	out, err := s.channelPlaylistSummaries(r.Context(), currentUserID(r.Context()), chi.URLParam(r, "id"))
 	if err != nil {
 		s.writeTAError(w, "list channel playlists", err)
-		return
-	}
-	out, err := s.playlistSummaries(r.Context(), uid, lists)
-	if err != nil {
-		s.writeTAError(w, "playlist summaries", err)
-		return
-	}
-	if err := s.attachPlaylistFeeds(r.Context(), uid, out); err != nil {
-		s.writeDBError(w, "list feed playlists", err)
 		return
 	}
 	writeJSON(w, http.StatusOK, out)
@@ -424,13 +413,10 @@ type subscribeSnapshot struct {
 }
 
 func (s *Server) subscribeSnapshot(ctx context.Context) (subscribeSnapshot, error) {
-	snap := subscribeSnapshot{tasks: map[string]bool{}, channels: map[string]bool{}}
-	tasks, err := s.ta.ListTasks(ctx, taskSubscribe)
-	if err != nil {
+	snap := subscribeSnapshot{channels: map[string]bool{}}
+	var err error
+	if snap.tasks, err = s.taskSnapshot(ctx, taskSubscribe); err != nil {
 		return snap, err
-	}
-	for _, t := range tasks {
-		snap.tasks[t.TaskID] = true
 	}
 	s.ta.ForgetChannels()
 	channels, err := s.ta.ListChannels(ctx)
@@ -451,25 +437,9 @@ type subscribeResult struct {
 }
 
 func (s *Server) subscribeOutcome(ctx context.Context, input string, before subscribeSnapshot) (subscribeResult, error) {
-	tasks, err := s.ta.ListTasks(ctx, taskSubscribe)
-	if err != nil {
-		return subscribeResult{}, err
-	}
-	landed := false
-	for _, t := range tasks {
-		if before.tasks[t.TaskID] {
-			continue
-		}
-		if t.Failed() {
-			return subscribeResult{failed: t.Error()}, nil
-		}
-		if !t.Done() {
-			return subscribeResult{}, nil
-		}
-		landed = true
-	}
-	if !landed {
-		return subscribeResult{}, nil
+	state, err := s.taskState(ctx, taskSubscribe, before.tasks)
+	if err != nil || !state.landed {
+		return subscribeResult{failed: state.failed}, err
 	}
 	// The task is done; the channel may still be a moment behind it in the
 	// index, in which case the next poll finds it.
@@ -500,25 +470,161 @@ func (s *Server) subscribeOutcome(ctx context.Context, input string, before subs
 	return subscribeResult{}, nil
 }
 
-// taskSubscribe is TA's name for the task behind POST /api/channel/.
-const taskSubscribe = "subscribe_to"
+// TubeArchivist's names for the tasks behind its channel writes: the
+// subscribe (POST /api/channel/) and the playlist discovery (the
+// index_playlists overwrite).
+const (
+	taskSubscribe      = "subscribe_to"
+	taskIndexPlaylists = "index_playlists"
+)
+
+// taskSnapshot is the set of TA's stored results for a task name — taken
+// before queueing one, so the task that follows can be told apart from
+// every earlier one by difference, which is all TA offers: the queue answers
+// nothing to wait on, and a stored result names no channel.
+func (s *Server) taskSnapshot(ctx context.Context, name string) (map[string]bool, error) {
+	tasks, err := s.ta.ListTasks(ctx, name)
+	if err != nil {
+		return nil, err
+	}
+	seen := make(map[string]bool, len(tasks))
+	for _, t := range tasks {
+		seen[t.TaskID] = true
+	}
+	return seen, nil
+}
+
+// taskState is one reading of the tasks queued since a snapshot: landed
+// once every new one has finished well, failed with TA's reason when one
+// gave up, neither while one is still running or none has started.
+type taskState struct {
+	landed bool
+	failed string
+}
+
+func (s *Server) taskState(ctx context.Context, name string, before map[string]bool) (taskState, error) {
+	tasks, err := s.ta.ListTasks(ctx, name)
+	if err != nil {
+		return taskState{}, err
+	}
+	var state taskState
+	for _, t := range tasks {
+		if before[t.TaskID] {
+			continue
+		}
+		if t.Failed() {
+			return taskState{failed: t.Error()}, nil
+		}
+		if !t.Done() {
+			return taskState{}, nil
+		}
+		state.landed = true
+	}
+	return state, nil
+}
 
 // indexChannelPlaylists asks TubeArchivist to index the channel's own
-// playlists — the archive-side prerequisite for series feeds. Admin-only:
-// the overwrite it flips is instance-wide TA state, shared by every user of
-// the archive, and TA warns it slows the indexing of new videos. 204 like
-// every other side-effect endpoint here — the discovery runs as a TA task
-// and lands whenever it lands.
+// playlists — the archive-side prerequisite for series feeds — and holds
+// the request until TA's discovery task has run, answering with what it
+// found, so a client shows the playlists rather than "check back later".
+// Admin-only: the overwrite it flips is instance-wide TA state, shared by
+// every user of the archive, and TA warns it slows the indexing of new
+// videos.
+//
+// The task is found by difference, like the subscribe (see taskSnapshot).
+// Discovery walks the channel's playlists with yt-dlp, which for a large
+// channel takes longer than a request may hold: past subscribeWait the
+// answer is 202 pending, and the client follows the status endpoint below
+// until the task is gone. A failed task becomes a 502 with TA's reason.
 func (s *Server) indexChannelPlaylists(w http.ResponseWriter, r *http.Request) {
 	if !isAdmin(r.Context()) {
 		writeError(w, http.StatusForbidden, "admin only")
 		return
 	}
-	if err := s.ta.IndexChannelPlaylists(r.Context(), chi.URLParam(r, "id")); err != nil {
+	ctx := r.Context()
+	id := chi.URLParam(r, "id")
+	before, err := s.taskSnapshot(ctx, taskIndexPlaylists)
+	if err != nil {
 		s.writeTAError(w, "index channel playlists", err)
 		return
 	}
-	w.WriteHeader(http.StatusNoContent)
+	if err := s.ta.IndexChannelPlaylists(ctx, id); err != nil {
+		s.writeTAError(w, "index channel playlists", err)
+		return
+	}
+	deadline := time.Now().Add(s.subscribeWait)
+	for {
+		state, err := s.taskState(ctx, taskIndexPlaylists, before)
+		if err != nil {
+			s.writeTAError(w, "index channel playlists", err)
+			return
+		}
+		if state.failed != "" {
+			s.log.Warn("index channel playlists: task failed", "channel", id, "reason", state.failed)
+			writeError(w, http.StatusBadGateway, "TubeArchivist could not index the playlists: "+state.failed)
+			return
+		}
+		if state.landed {
+			out, err := s.channelPlaylistSummaries(ctx, currentUserID(ctx), id)
+			if err != nil {
+				s.writeTAError(w, "index channel playlists", err)
+				return
+			}
+			writeJSON(w, http.StatusOK, map[string]any{"status": "indexed", "playlists": out})
+			return
+		}
+		if time.Now().After(deadline) {
+			writeJSON(w, http.StatusAccepted, map[string]string{"status": "pending"})
+			return
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(s.subscribePoll):
+		}
+	}
+}
+
+// indexChannelPlaylistsStatus is what a client follows after a 202 from
+// the POST: whether TubeArchivist is still running a playlist discovery.
+// TA's stored results name no channel, so this is "any discovery", which
+// is what a client waiting on one needs to know — when none is running,
+// the channel's playlists are whatever they are going to be.
+func (s *Server) indexChannelPlaylistsStatus(w http.ResponseWriter, r *http.Request) {
+	if !isAdmin(r.Context()) {
+		writeError(w, http.StatusForbidden, "admin only")
+		return
+	}
+	tasks, err := s.ta.ListTasks(r.Context(), taskIndexPlaylists)
+	if err != nil {
+		s.writeTAError(w, "index channel playlists status", err)
+		return
+	}
+	status := "idle"
+	for _, t := range tasks {
+		if !t.Done() {
+			status = "running"
+			break
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": status})
+}
+
+// channelPlaylistSummaries is a channel's indexed playlists as the client
+// sees them, with the viewer's feed memberships attached.
+func (s *Server) channelPlaylistSummaries(ctx context.Context, uid uuid.UUID, id string) ([]PlaylistSummary, error) {
+	lists, err := s.ta.ListPlaylists(ctx, "regular", id)
+	if err != nil {
+		return nil, err
+	}
+	out, err := s.playlistSummaries(ctx, uid, lists)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.attachPlaylistFeeds(ctx, uid, out); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 // setChannelFeeds is the "In feeds:" control: replaces the channel's feed

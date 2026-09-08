@@ -36,6 +36,9 @@ type Fake struct {
 	// SubscribeError as the reason.
 	SubscribeOutcome string
 	SubscribeError   string
+	// IndexOutcome and IndexError do the same for the playlist discovery.
+	IndexOutcome string
+	IndexError   string
 	// Err, when set, is returned by every method (simulates TA down).
 	Err error
 	// PingErr fails only Ping.
@@ -418,6 +421,10 @@ func ChannelIDIn(input string) string {
 
 var channelIDPattern = regexp.MustCompile(`UC[A-Za-z0-9_-]{22}`)
 
+// IndexChannelPlaylists mirrors TA's overwrite: it queues the discovery
+// task, which the fake records as landed at once (IndexOutcome "" or
+// "SUCCESS"), queued ("PENDING") or failed ("FAILURE", with IndexError as
+// the reason). Seed Playlists for what the discovery is meant to find.
 func (f *Fake) IndexChannelPlaylists(_ context.Context, channelID string) error {
 	if f.Err != nil {
 		return f.Err
@@ -428,6 +435,15 @@ func (f *Fake) IndexChannelPlaylists(_ context.Context, channelID string) error 
 		return ErrNotFound
 	}
 	f.Calls = append(f.Calls, "index-playlists:"+channelID)
+	task := Task{TaskID: fmt.Sprintf("task-%d", len(f.Tasks)+1), Name: "index_playlists", Status: "SUCCESS"}
+	switch f.IndexOutcome {
+	case "PENDING":
+		task.Status = "PENDING"
+	case "FAILURE":
+		task.Status = "FAILURE"
+		task.Result = json.RawMessage(fmt.Sprintf(`{"exc_type":"ValueError","exc_message":[%q],"exc_module":"builtins"}`, f.IndexError))
+	}
+	f.Tasks = append(f.Tasks, task)
 	return nil
 }
 

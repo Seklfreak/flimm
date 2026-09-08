@@ -123,10 +123,16 @@ extension APIClient {
     }
 
     /// Admin only: asks TubeArchivist to index the channel's playlists — the
-    /// archive-side prerequisite for series feed sources. The discovery runs
-    /// as a TA task; the playlists appear whenever it lands.
-    public func indexChannelPlaylists(_ id: String) async throws {
-        try await discard(.post, "/channels/\(esc(id))/index-playlists")
+    /// prerequisite for series feed sources — and holds until its discovery
+    /// has run, answering with what it found. `.pending` is the slow case.
+    public func indexChannelPlaylists(_ id: String) async throws -> PlaylistIndexing {
+        try await send(.post, "/channels/\(esc(id))/index-playlists")
+    }
+
+    /// Admin only: whether TubeArchivist is still running a playlist
+    /// discovery — what to follow after a `.pending` answer above.
+    public func playlistIndexingStatus(_ id: String) async throws -> PlaylistIndexingStatus {
+        try await get("/channels/\(esc(id))/index-playlists")
     }
 
     /// Admin only: flips TubeArchivist's own subscription — whether the

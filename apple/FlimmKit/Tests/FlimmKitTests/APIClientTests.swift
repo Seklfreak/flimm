@@ -81,6 +81,27 @@ final class APIClientTests: XCTestCase {
         XCTAssertNil(result.channel)
     }
 
+    /// The discovery answers with what it found, so the strip can fill in
+    /// without a reload; `pending` carries nothing and is followed on the
+    /// status endpoint.
+    func testIndexChannelPlaylistsReturnsWhatTheDiscoveryFound() async throws {
+        let session = StubURLProtocol.session(json: """
+        {"status":"indexed","playlists":[\(Fixtures.playlistSummary)]}
+        """)
+        let client = APIClient(baseURL: baseURL, tokens: StaticTokenProvider("tok"), session: session)
+        let result = try await client.indexChannelPlaylists("UC-chan")
+        XCTAssertEqual(result.status, .indexed)
+        XCTAssertEqual(result.playlists?.map(\.id), ["PL-1"])
+        let request = try XCTUnwrap(StubURLProtocol.recorded.last)
+        XCTAssertEqual(request.method, "POST")
+        XCTAssertEqual(request.path, "/api/v1/channels/UC-chan/index-playlists")
+
+        let still = StubURLProtocol.session { _, _ in (200, Data(#"{"status":"running"}"#.utf8)) }
+        let status = try await APIClient(baseURL: baseURL, tokens: StaticTokenProvider("tok"), session: still)
+            .playlistIndexingStatus("UC-chan")
+        XCTAssertEqual(status.status, .running)
+    }
+
     // MARK: - Path and query building
 
     func testNavCarriesTheWholeContext() async throws {

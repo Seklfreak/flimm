@@ -504,7 +504,7 @@ type fakeTask struct {
 // the real archive.
 func (s *Server) tasksByName(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
-	if name != "subscribe_to" {
+	if name != "subscribe_to" && name != "index_playlists" {
 		notFound(w)
 		return
 	}
@@ -547,7 +547,35 @@ func (s *Server) updateChannel(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad body", http.StatusBadRequest)
 		return
 	}
+	if on, _ := body.ChannelOverwrites["index_playlists"].(bool); on {
+		// TA queues its discovery task here. The fake's lands subscribeDelay
+		// later and, for a channel with no indexed playlist yet, finds one:
+		// the channel's videos in order — what a client waiting on the
+		// discovery needs to see appear.
+		task := &fakeTask{id: fmt.Sprintf("idx-%d", time.Now().UnixNano()), name: "index_playlists", status: "PENDING"}
+		s.mu.Lock()
+		s.tasks = append(s.tasks, task)
+		s.mu.Unlock()
+		go s.landIndexPlaylists(task, r.PathValue("id"))
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"channel_overwrites": body.ChannelOverwrites})
+}
+
+func (s *Server) landIndexPlaylists(task *fakeTask, channelID string) {
+	time.Sleep(subscribeDelay)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	task.done = time.Now().UTC().Format(time.RFC3339)
+	task.status = "SUCCESS"
+	for _, p := range s.catalogue.Playlists {
+		if p.PlaylistChannelID == channelID && p.PlaylistType == "regular" {
+			s.log.Info("index playlists task landed, nothing new", "channel", channelID)
+			return
+		}
+	}
+	found := s.catalogue.channelPlaylist("PL-found-"+channelID, s.catalogue.channelName(channelID)+", in order", channelID)
+	s.catalogue.Playlists = append(s.catalogue.Playlists, found)
+	s.log.Info("index playlists task landed", "channel", channelID, "playlist", found.PlaylistID)
 }
 
 func (s *Server) listPlaylists(w http.ResponseWriter, r *http.Request) {

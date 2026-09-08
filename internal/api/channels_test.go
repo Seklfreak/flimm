@@ -23,15 +23,32 @@ import (
 func TestIndexChannelPlaylistsIsAdminOnly(t *testing.T) {
 	client := ta.NewFake()
 	client.Channels["UC1"] = &ta.Channel{ChannelID: "UC1", ChannelName: "One"}
+	client.Playlists["PL1"] = &ta.Playlist{PlaylistID: "PL1", PlaylistName: "Series", PlaylistChannelID: "UC1", PlaylistType: "regular"}
 	s := newTestServer(client, newEventStore().querier())
+	s.subscribeWait, s.subscribePoll = 50*time.Millisecond, time.Millisecond
 
-	// The dev user (auth disabled) is an admin: the call reaches TA.
+	// The dev user (auth disabled) is an admin: the call reaches TA, and the
+	// request holds until the discovery has run, answering with what it
+	// found rather than "check back later".
 	rec := do(t, s.Router(), http.MethodPost, "/api/v1/channels/UC1/index-playlists", "")
-	if rec.Code != http.StatusNoContent {
+	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d: %s", rec.Code, rec.Body.String())
 	}
 	if !slices.Contains(client.Calls, "index-playlists:UC1") {
 		t.Error("TubeArchivist was never asked to index")
+	}
+	var indexed struct {
+		Status    string            `json:"status"`
+		Playlists []PlaylistSummary `json:"playlists"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &indexed); err != nil {
+		t.Fatal(err)
+	}
+	if indexed.Status != "indexed" || len(indexed.Playlists) != 1 || indexed.Playlists[0].ID != "PL1" {
+		t.Errorf("indexed = %+v, want the channel's playlist", indexed)
+	}
+	if rec := do(t, s.Router(), http.MethodGet, "/api/v1/channels/UC1/index-playlists", ""); !strings.Contains(rec.Body.String(), `"idle"`) {
+		t.Errorf("status after the task landed = %s, want idle", rec.Body.String())
 	}
 
 	// Without the admin flag the same request is refused.
@@ -209,6 +226,31 @@ func TestSubscribeNewChannel(t *testing.T) {
 	s.subscribeNewChannel(w, req)
 	if w.Code != http.StatusForbidden {
 		t.Errorf("non-admin = %d, want 403", w.Code)
+	}
+}
+
+// A discovery that outlives the wait answers pending, and the status
+// endpoint says running until TA's task is gone; a failed one carries TA's
+// reason. Both used to be invisible: the request answered 204 either way.
+func TestIndexChannelPlaylistsPendingAndFailed(t *testing.T) {
+	client := ta.NewFake()
+	client.Channels["UC1"] = &ta.Channel{ChannelID: "UC1", ChannelName: "One"}
+	client.IndexOutcome = "PENDING"
+	s := newTestServer(client, newEventStore().querier())
+	s.subscribeWait, s.subscribePoll = 20*time.Millisecond, time.Millisecond
+
+	rec := do(t, s.Router(), http.MethodPost, "/api/v1/channels/UC1/index-playlists", "")
+	if rec.Code != http.StatusAccepted || !strings.Contains(rec.Body.String(), `"pending"`) {
+		t.Fatalf("pending index = %d: %s", rec.Code, rec.Body.String())
+	}
+	if rec := do(t, s.Router(), http.MethodGet, "/api/v1/channels/UC1/index-playlists", ""); !strings.Contains(rec.Body.String(), `"running"`) {
+		t.Errorf("status while the task runs = %s, want running", rec.Body.String())
+	}
+
+	client.IndexOutcome, client.IndexError = "FAILURE", "channel has no playlists tab"
+	rec = do(t, s.Router(), http.MethodPost, "/api/v1/channels/UC1/index-playlists", "")
+	if rec.Code != http.StatusBadGateway || !strings.Contains(rec.Body.String(), "ValueError: channel has no playlists tab") {
+		t.Fatalf("failed index = %d: %s", rec.Code, rec.Body.String())
 	}
 }
 

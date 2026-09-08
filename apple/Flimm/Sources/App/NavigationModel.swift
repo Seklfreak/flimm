@@ -85,6 +85,10 @@ final class NavigationModel {
             case "new-feed":
                 path.append(Route.feedManager)
                 path.append(Route.feedEditor(feedId: nil))
+            // `channel:<id>` opens a channel, for what only its screen
+            // reaches — the admin's "Find series" most of all.
+            case let route where route.hasPrefix("channel:"):
+                path.append(Route.channel(String(route.dropFirst("channel:".count))))
             default: break
             }
             if !path.isEmpty { stacks[tab] = path }

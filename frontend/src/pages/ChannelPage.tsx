@@ -1,8 +1,8 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router";
 import { useQueryClient } from "@tanstack/react-query";
-import { api, type PlaylistSummary } from "@/lib/api";
-import { invalidateFeedish, invalidateWatchState, useChannel, useChannelPlaylists, useChannelVideos, useMe, useSetChannelPinned } from "@/lib/queries";
+import { api, ApiError, type PlaylistSummary } from "@/lib/api";
+import { invalidateFeedish, invalidateWatchState, keys, useChannel, useChannelPlaylists, useChannelVideos, useMe, useSetChannelPinned } from "@/lib/queries";
 import { plural, relativeDay } from "@/lib/format";
 import { Avatar, EmptyState, ErrorState, InfiniteSentinel, PinIcon, Segmented, Spinner } from "@/components/ui";
 import { InFeedsControl } from "@/components/InFeedsControl";
@@ -29,9 +29,45 @@ export default function ChannelPage() {
   const me = useMe();
   const setPinned = useSetChannelPinned();
   const [subscribing, setSubscribing] = useState(false);
-  // "requested" survives until the page is left: TubeArchivist discovers the
-  // playlists in a background task, so there is nothing to await here.
-  const [indexRequested, setIndexRequested] = useState(false);
+  // The admin's "Find series": the request holds while TubeArchivist runs
+  // its discovery; "still" is the slow case (a big channel), followed on the
+  // status endpoint until the task is gone; "none" is a discovery that ran
+  // and found nothing, which is not the same as one that never ran.
+  const [indexing, setIndexing] = useState<"idle" | "waiting" | "still" | "none" | { error: string }>("idle");
+  const settleIndexing = async () => {
+    const found = await qc.fetchQuery({ queryKey: keys.channelPlaylists(id), queryFn: () => api.channelPlaylists(id) });
+    setIndexing(found.length === 0 ? "none" : "idle");
+  };
+  const findSeries = async () => {
+    setIndexing("waiting");
+    try {
+      const result = await api.indexChannelPlaylists(id);
+      if (result.status === "pending") {
+        setIndexing("still");
+        return;
+      }
+      qc.setQueryData(keys.channelPlaylists(id), result.playlists);
+      setIndexing(result.playlists.length === 0 ? "none" : "idle");
+    } catch (e) {
+      setIndexing({ error: e instanceof ApiError ? e.message : "Could not reach the server." });
+    }
+  };
+  useEffect(() => {
+    if (indexing !== "still") return;
+    let cancelled = false;
+    const timer = setInterval(() => {
+      void api.playlistIndexingStatus(id).then(({ status }) => {
+        if (cancelled || status === "running") return;
+        clearInterval(timer);
+        void settleIndexing();
+      }).catch(() => {});
+    }, 5000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [indexing, id]);
 
   if (channel.isError) return <ErrorState message={channel.error.message} retry={() => channel.refetch()} />;
   const c = channel.data;
@@ -131,22 +167,21 @@ export default function ChannelPage() {
           ) : (playlists.data ?? []).length === 0 ? (
             <div className="flex flex-col items-center gap-3">
               <EmptyState
-                title="No playlists archived from this channel"
-                hint={me.data?.is_admin ? "TubeArchivist has not indexed this channel's playlists (series)." : undefined}
+                title={indexing === "none" ? "TubeArchivist found no playlists on this channel" : "No playlists archived from this channel"}
+                hint={me.data?.is_admin && indexing !== "none" ? "TubeArchivist has not indexed this channel's playlists (series)." : undefined}
               />
               {me.data?.is_admin &&
-                (indexRequested ? (
-                  <p className="meta">Asked TubeArchivist to index them — the discovery runs there and can take a few minutes. Check back later.</p>
-                ) : (
-                  <button
-                    className="btn"
-                    onClick={() => {
-                      setIndexRequested(true);
-                      api.indexChannelPlaylists(id).catch(() => setIndexRequested(false));
-                    }}
-                  >
-                    Find series (index playlists)
-                  </button>
+                (indexing === "waiting" ? (
+                  <Spinner label="TubeArchivist is indexing this channel's playlists…" />
+                ) : indexing === "still" ? (
+                  <Spinner label="Still indexing — a big channel takes a few minutes. This updates when it lands." />
+                ) : indexing === "none" ? null : (
+                  <>
+                    <button className="btn" onClick={() => void findSeries()}>
+                      Find series (index playlists)
+                    </button>
+                    {typeof indexing === "object" && <p className="meta text-danger">{indexing.error}</p>}
+                  </>
                 ))}
             </div>
           ) : (

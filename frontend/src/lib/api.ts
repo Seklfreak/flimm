@@ -369,6 +369,9 @@ export interface ChannelSummary {
   feeds: FeedRef[];
 }
 
+/** What POST /channels/{id}/index-playlists answers: the channel's playlists once TubeArchivist's discovery has run, or `pending`. */
+export type PlaylistIndexing = { status: "indexed"; playlists: PlaylistSummary[] } | { status: "pending"; playlists?: undefined };
+
 /** What POST /channels answers: the channel once TubeArchivist has it, or `pending` when it was still resolving. */
 export type ChannelSubscription = { status: "added"; channel: ChannelSummary } | { status: "pending"; channel?: undefined };
 
@@ -637,8 +640,14 @@ export const api = {
   setChannelFeeds: (id: string, feed_ids: string[]) =>
     req<void>(`/channels/${id}/feeds`, json("PUT", { feed_ids })),
   markChannelSeen: (id: string) => req<void>(`/channels/${id}/mark-seen`, { method: "POST" }),
-  /** Admin only: asks TubeArchivist to index the channel's playlists (the prerequisite for series feed sources). The discovery runs as a TA task. */
-  indexChannelPlaylists: (id: string) => req<void>(`/channels/${id}/index-playlists`, { method: "POST" }),
+  /**
+   * Admin only: asks TubeArchivist to index the channel's playlists (the prerequisite for series feed sources) and holds
+   * until its discovery task has run, answering with what it found. `pending` means TA was still at it when the server
+   * stopped waiting — a big channel — and `playlistIndexingStatus` says when it is done.
+   */
+  indexChannelPlaylists: (id: string) => req<PlaylistIndexing>(`/channels/${id}/index-playlists`, { method: "POST" }),
+  /** Admin only: whether TubeArchivist is still running a playlist discovery. */
+  playlistIndexingStatus: (id: string) => req<{ status: "running" | "idle" }>(`/channels/${id}/index-playlists`),
   /** Admin only: flips TubeArchivist's own subscription — whether the archive keeps downloading the channel's new videos. */
   setChannelSubscribed: (id: string, subscribed: boolean) =>
     req<void>(`/channels/${id}/subscribed`, json("PUT", { subscribed })),

@@ -306,6 +306,7 @@ func (s *Server) Router() http.Handler {
 			r.Get("/channels/{id}/playlists", s.listChannelPlaylists)
 			r.Put("/channels/{id}/feeds", s.setChannelFeeds)
 			r.Post("/channels/{id}/index-playlists", s.indexChannelPlaylists)
+			r.Get("/channels/{id}/index-playlists", s.indexChannelPlaylistsStatus)
 			r.Put("/channels/{id}/subscribed", s.setChannelSubscribed)
 			r.Post("/channels/{id}/mark-seen", s.markChannelSeen)
 

@@ -15,9 +15,21 @@ struct ChannelDetailView: View {
     @State private var channelView: ChannelView = .all
     @State private var error: String?
     @State private var showFeedPicker = false
-    /// Set once the admin asked TA to index this channel's playlists; the
-    /// discovery runs archive-side, so there is nothing to await here.
-    @State private var seriesIndexRequested = false
+    /// The admin's "Find series": the request holds while TubeArchivist runs
+    /// its discovery, and the screen says so under the header.
+    @State private var seriesIndexing: SeriesIndexing?
+
+    enum SeriesIndexing: Equatable {
+        /// The request is holding.
+        case waiting
+        /// TA outlived the server's wait — a big channel — and the status
+        /// endpoint is being followed until the task is gone.
+        case still
+        /// The discovery ran and found nothing, which is not the same as
+        /// never having run.
+        case none
+        case failed(String)
+    }
 
     var body: some View {
         ScrollView {
@@ -25,8 +37,8 @@ struct ChannelDetailView: View {
                 if let channel {
                     header(channel)
                     if !playlists.isEmpty { playlistStrip }
-                    if seriesIndexRequested && playlists.isEmpty {
-                        Text("Asked TubeArchivist to index this channel's playlists — the discovery runs there and can take a few minutes.")
+                    if let seriesIndexing, playlists.isEmpty {
+                        seriesIndexingNote(seriesIndexing)
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                             .padding(.horizontal, 16)
@@ -58,6 +70,17 @@ struct ChannelDetailView: View {
             }
         }
         .task { await load() }
+        // Debug builds can start the discovery at launch
+        // (`FLIMM_INDEX_SERIES=1` with `FLIMM_OPEN_ROUTE=channel:<id>`): the
+        // wait and what follows it sit behind a menu a simulator cannot open.
+        // A shipped app has no such door.
+        .task {
+            #if DEBUG
+            if ProcessInfo.processInfo.environment["FLIMM_INDEX_SERIES"] == "1" {
+                await findSeries()
+            }
+            #endif
+        }
         .task(id: channelView) { await reloadVideos(force: false) }
         // Same reason as the feed screen: a video finished or marked seen in
         // the player drops this list from the cache, and an "Unseen" channel
@@ -101,10 +124,9 @@ struct ChannelDetailView: View {
                         set: { value in Task { await setSubscribed(value) } }
                     ))
                 }
-                if playlists.isEmpty, app.me?.isAdmin == true, !seriesIndexRequested {
+                if playlists.isEmpty, app.me?.isAdmin == true, seriesIndexing == nil {
                     Button {
-                        seriesIndexRequested = true
-                        Task { try? await app.client.indexChannelPlaylists(channelId) }
+                        Task { await findSeries() }
                     } label: {
                         Label("Find series (index playlists)", systemImage: "sparkle.magnifyingglass")
                     }
@@ -199,7 +221,51 @@ struct ChannelDetailView: View {
         }
     }
 
+    @ViewBuilder
+    private func seriesIndexingNote(_ state: SeriesIndexing) -> some View {
+        switch state {
+        case .waiting:
+            HStack(spacing: 8) {
+                ProgressView()
+                Text("TubeArchivist is indexing this channel's playlists…")
+            }
+        case .still:
+            HStack(spacing: 8) {
+                ProgressView()
+                Text("Still indexing — a big channel takes a few minutes. This updates when it lands.")
+            }
+        case .none:
+            Text("TubeArchivist found no playlists on this channel.")
+        case .failed(let reason):
+            Text(reason).foregroundStyle(.red)
+        }
+    }
+
     // MARK: - Actions
+
+    /// Holds on the discovery and fills the strip with what it found; the
+    /// slow case follows the status endpoint until TubeArchivist is done.
+    private func findSeries() async {
+        seriesIndexing = .waiting
+        do {
+            let result = try await app.client.indexChannelPlaylists(channelId)
+            if let found = result.playlists {
+                playlists = found
+                seriesIndexing = found.isEmpty ? SeriesIndexing.none : nil
+                return
+            }
+            seriesIndexing = .still
+            // A big channel: poll every five seconds, for up to ten minutes.
+            for _ in 0..<120 {
+                try await Task.sleep(for: .seconds(5))
+                if try await app.client.playlistIndexingStatus(channelId).status == .idle { break }
+            }
+            playlists = try await app.client.channelPlaylists(channelId)
+            seriesIndexing = playlists.isEmpty ? SeriesIndexing.none : nil
+        } catch {
+            seriesIndexing = .failed(AppModel.message(for: error))
+        }
+    }
 
     private func load() async {
         do {

@@ -194,8 +194,12 @@ What is there:
     server waits, and a failure (a handle that does not resolve) shows TA's
     reason instead of a cheerful "asked the archive". `FLIMM_SUBSCRIBE_CHANNEL`
     (Debug only, with `FLIMM_OPEN_TAB=channels`) starts the flow at launch,
-    since a simulator cannot get through the menu and the text field. The TV
-    has no add-channel control; feeds and the archive are edited on the phone.
+    since a simulator cannot get through the menu and the text field. "Find
+    series" on a channel holds the same way and fills the playlist strip with
+    what the discovery found, following the status endpoint when a big
+    channel outlives the server's wait; `FLIMM_INDEX_SERIES=1` with
+    `FLIMM_OPEN_ROUTE=channel:<id>` reaches it. The TV has no add-channel or
+    find-series control; feeds and the archive are edited on the phone.
   - **A title too long for its card reads itself out on focus.** A card gives
     a title two lines, and a YouTube title is often longer. The web shows the
     whole of one as the browser's tooltip on hover; the phone and iPad have no

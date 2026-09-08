@@ -181,3 +181,34 @@ extension Array where Element == PlaylistSummary {
         return filter { !ids.contains($0.id) }
     }
 }
+
+/// What `POST /channels/{id}/index-playlists` answers: the channel's
+/// playlists once TubeArchivist's discovery has run, or `pending` when the
+/// archive was still at it when the server stopped waiting — a big channel —
+/// in which case ``PlaylistIndexingStatus`` says when it is done.
+public struct PlaylistIndexing: Decodable, Sendable {
+    public enum Status: String, Decodable, Sendable {
+        case indexed, pending
+    }
+
+    public let status: Status
+    public let playlists: [PlaylistSummary]?
+
+    public init(status: Status, playlists: [PlaylistSummary]?) {
+        self.status = status
+        self.playlists = playlists
+    }
+}
+
+/// Whether TubeArchivist is still running a playlist discovery.
+public struct PlaylistIndexingStatus: Decodable, Sendable {
+    public enum Status: String, Decodable, Sendable {
+        case running, idle
+    }
+
+    public let status: Status
+
+    public init(status: Status) {
+        self.status = status
+    }
+}

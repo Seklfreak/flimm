@@ -288,7 +288,10 @@ Subscribing a channel through the fake behaves like the archive's task: the
 request answers at once, the task shows as pending in `/api/task/by-name/`,
 and three seconds later it lands — a YouTube URL, `@handle` or `UC…` id
 becomes a channel, anything else fails with the reason TA's parser would give.
-That is what lets the add-channel wait, and its failure message, be seen.
+Asking it to index a channel's playlists is the same shape, and finds one
+playlist — the channel's videos in order — for a channel that had none. That is
+what lets the add-channel and find-series waits, and their failure messages,
+be seen.
 
 `-pad-channels 214` appends that many empty channels to the four real ones, so
 the archive is longer than a page and anything that lists channels — the feed
