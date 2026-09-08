@@ -81,7 +81,7 @@ struct ChannelDetailView: View {
             }
             #endif
         }
-        .task(id: channelView) { await reloadVideos(force: false) }
+        .task(id: "\(channelView.rawValue)|\(app.listGeneration)") { await reloadVideos(force: false) }
         // Same reason as the feed screen: a video finished or marked seen in
         // the player drops this list from the cache, and an "Unseen" channel
         // that still lists it is the bug.

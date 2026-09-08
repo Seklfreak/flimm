@@ -36,7 +36,7 @@ struct TVPlaylistsView: View {
             .padding(.bottom, TVMetrics.margin)
         }
         .onAppear { Analytics.screen(.playlists) }
-        .task(id: kind) { await reload() }
+        .task(id: "\(kind?.rawValue ?? "all")|\(app.listGeneration)") { await reload() }
     }
 
     /// What the list below the pins shows: the paged list, minus the playlists

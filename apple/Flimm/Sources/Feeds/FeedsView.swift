@@ -126,7 +126,7 @@ struct FeedsView: View {
 
     /// Identity of "what this screen is showing" — a change means a new query.
     private var contextKey: String {
-        "\(feed?.id ?? "")|\(feedView.rawValue)"
+        "\(feed?.id ?? "")|\(feedView.rawValue)|\(app.listGeneration)"
     }
 
     /// The key `PagerStore` files this feed/view combination under — distinct

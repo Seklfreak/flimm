@@ -139,7 +139,7 @@ struct ChannelsView: View {
         .task(id: queryKey) { await reload() }
     }
 
-    private var queryKey: String { "\(searchText)|\(sort.rawValue)|\(unfeededOnly)" }
+    private var queryKey: String { "\(searchText)|\(sort.rawValue)|\(unfeededOnly)|\(app.listGeneration)" }
 
     private func reload() async {
         let client = app.client

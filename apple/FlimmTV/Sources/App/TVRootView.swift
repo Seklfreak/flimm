@@ -9,6 +9,7 @@ import SwiftUI
 /// and a typed code.
 struct TVRootView: View {
     @Environment(AuthSession.self) private var session
+    @Environment(\.scenePhase) private var scenePhase
 
     @State private var app: AppModel?
     @State private var player = TVPlayerCoordinator()
@@ -39,6 +40,15 @@ struct TVRootView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background { TVPageBackground() }
         .task(id: sessionKey) { syncAppModel() }
+        // A TV put to sleep and woken the next day is the same process with
+        // yesterday's grid on it; see AppModel.sceneReturned.
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active {
+                Task { await app?.sceneReturned() }
+            } else {
+                app?.sceneLeft()
+            }
+        }
         // A top-shelf item opened from the Home screen. The shelf's actions
         // are URLs — that is the only channel tvOS gives an extension — and
         // playing straight away is what selecting a video does everywhere

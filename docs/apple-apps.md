@@ -439,6 +439,16 @@ What is there:
     `.reloadsWhenPlayerCloses(request:isStale:reload:)`, which reloads only
     when the cache actually dropped *that* screen's pager. Without it an
     "Unseen" feed or channel keeps listing the video the viewer just watched.
+  - **Coming back after a while reloads everything.** A TV put to sleep and
+    woken the next day is the same process with yesterday's grid on it, and
+    a TV has no pull-to-refresh. `AppModel` notes when the scene left the
+    screen and, on return after five minutes (`AppModel.absence`), drops
+    every cached pager, bumps `listGeneration` and loads the feeds and pins
+    again; every list screen folds `listGeneration` into its `.task(id:)`
+    key, so the one on screen fetches at once and the others when shown. A
+    quick switch elsewhere keeps its list and scroll position. The phone and
+    iPad do the same from `ContentView`'s scene phase. `FLIMM_ABSENCE=<s>`
+    (Debug only) shortens the threshold so the return can be watched.
   - **Layout rules the TV enforces.** A segmented picker is sized to its
     labels (`.fixedSize()`), never to a guessed `maxWidth` — a cap truncates
     them ("Uns…", "Co…") as soon as a label or a locale is longer than the

@@ -60,7 +60,7 @@ struct TVFeedsView: View {
     }
 
     /// Identity of "what this screen is showing" — a change means a new query.
-    private var contextKey: String { "\(feed?.id ?? "")|\(view.rawValue)" }
+    private var contextKey: String { "\(feed?.id ?? "")|\(view.rawValue)|\(app.listGeneration)" }
 
     private var header: some View {
         HStack(alignment: .bottom) {

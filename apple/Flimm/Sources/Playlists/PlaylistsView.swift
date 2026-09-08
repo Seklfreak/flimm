@@ -62,7 +62,7 @@ struct PlaylistsView: View {
         } message: {
             Text("Custom playlists are created in TubeArchivist, so they exist there too.")
         }
-        .task(id: kind) { await reload() }
+        .task(id: "\(kind?.rawValue ?? "all")|\(app.listGeneration)") { await reload() }
     }
 
     // MARK: - Layouts

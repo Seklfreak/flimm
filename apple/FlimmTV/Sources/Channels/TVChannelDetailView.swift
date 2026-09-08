@@ -36,7 +36,7 @@ struct TVChannelDetailView: View {
         }
         .onAppear { Analytics.screen(.channel) }
         .task { await loadChannel() }
-        .task(id: view) { await reload() }
+        .task(id: "\(view.rawValue)|\(app.listGeneration)") { await reload() }
         // Same as the feed screen: the player invalidates these lists, and a
         // stale "Unseen" channel is what a viewer notices.
         .reloadsWhenPlayerCloses(

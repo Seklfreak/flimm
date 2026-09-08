@@ -96,7 +96,7 @@ struct HistoryView: View {
         .task(id: queryKey) { await reload() }
     }
 
-    private var queryKey: String { "\(filter.rawValue)|\(searchText)" }
+    private var queryKey: String { "\(filter.rawValue)|\(searchText)|\(app.listGeneration)" }
 
     private struct DayGroup {
         let heading: String

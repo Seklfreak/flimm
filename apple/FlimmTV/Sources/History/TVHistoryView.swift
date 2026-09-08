@@ -36,7 +36,7 @@ struct TVHistoryView: View {
             .padding(.bottom, TVMetrics.margin)
         }
         .onAppear { Analytics.screen(.history) }
-        .task(id: filter) { await reload() }
+        .task(id: "\(filter.rawValue)|\(app.listGeneration)") { await reload() }
     }
 
     @ViewBuilder

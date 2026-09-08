@@ -24,6 +24,27 @@ final class AppModel {
     /// Set when the first load failed; screens show it with a Retry.
     private(set) var loadError: String?
     private(set) var isLoading = false
+    /// Bumped whenever every cached list is thrown away for a reason no
+    /// screen can see for itself — coming back after a long time away. List
+    /// screens fold it into their `.task(id:)` key, so the one on screen
+    /// fetches again and the others do the moment they are shown.
+    private(set) var listGeneration = 0
+    /// When the scene stopped being the one on screen; nil while it is.
+    @ObservationIgnored private var leftAt: Date?
+
+    /// How long away counts as a long time. Five minutes: a feed gains
+    /// videos by the hour and a TV has no pull-to-refresh, so anything
+    /// longer than a quick switch elsewhere comes back to a fresh list; a
+    /// quick switch keeps its list and its scroll position. Debug builds can
+    /// shorten it (`FLIMM_ABSENCE=<seconds>`) so the return can be watched.
+    static var absence: TimeInterval {
+        #if DEBUG
+        if let raw = ProcessInfo.processInfo.environment["FLIMM_ABSENCE"], let seconds = TimeInterval(raw) {
+            return seconds
+        }
+        #endif
+        return 5 * 60
+    }
 
     var prefs: Prefs { me?.prefs ?? Prefs() }
 
@@ -76,6 +97,33 @@ final class AppModel {
     func refreshPinnedChannels() async {
         guard let loaded = try? await client.pinnedChannels() else { return }
         pinnedChannels = loaded
+    }
+
+    // MARK: - Coming back
+
+    /// The scene stopped being the one on screen: the app was switched away
+    /// from, the phone locked, the TV put to sleep.
+    func sceneLeft() {
+        if leftAt == nil { leftAt = Date() }
+    }
+
+    /// The scene is on screen again. A short absence changes nothing; past
+    /// ``absence`` everything is fetched again — the feeds and pins, which
+    /// may have been edited on another device meanwhile, and every list,
+    /// which has gained videos. The TV is the case that matters: opened the
+    /// next day, it used to show yesterday's grid until something happened
+    /// to navigate.
+    func sceneReturned() async {
+        guard let leftAt else { return }
+        self.leftAt = nil
+        guard Date().timeIntervalSince(leftAt) >= Self.absence else { return }
+        await returnedAfterAbsence()
+    }
+
+    func returnedAfterAbsence() async {
+        pagers.removeAll()
+        listGeneration += 1
+        await load()
     }
 
     /// A single video's watched *or dismissed* state just changed — an

@@ -58,9 +58,16 @@ struct ContentView: View {
         // model, and a tap that launched the app arrives before either.
         .onChange(of: push.pendingLink) { _, _ in openPendingLink() }
         // A backgrounded phone has nobody to show a scrubber to, and the poll
-        // it holds open would be a connection kept alive for nothing.
+        // it holds open would be a connection kept alive for nothing. Coming
+        // back after a while reloads everything; see AppModel.sceneReturned.
         .onChange(of: scenePhase) { _, phase in
-            if phase == .active { remote?.start() } else { remote?.stop() }
+            if phase == .active {
+                remote?.start()
+                Task { await app?.sceneReturned() }
+            } else {
+                remote?.stop()
+                app?.sceneLeft()
+            }
         }
     }
 

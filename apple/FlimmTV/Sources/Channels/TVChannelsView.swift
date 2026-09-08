@@ -35,7 +35,7 @@ struct TVChannelsView: View {
             .padding(.bottom, TVMetrics.margin)
         }
         .onAppear { Analytics.screen(.channels) }
-        .task(id: sort) { await reload() }
+        .task(id: "\(sort.rawValue)|\(app.listGeneration)") { await reload() }
     }
 
     private var pinnedSection: some View {

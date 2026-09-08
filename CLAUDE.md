@@ -165,7 +165,9 @@ TA_URL=http://localhost:8001 TA_TOKEN=dev SPONSORBLOCK_URL= \
   admin's add-channel flow at launch, which is otherwise behind a menu and a
   text field: the wait, the channel it opens, and the failure alert;
   `FLIMM_OPEN_ROUTE=channel:<id>` with `FLIMM_INDEX_SERIES=1` does the same
-  for "Find series" on a channel.
+  for "Find series" on a channel. `FLIMM_ABSENCE=<seconds>` (both apps)
+  shortens the five-minute "away" threshold after which coming back to the
+  foreground reloads every list, so that return can be watched.
 - **A screen that only appears while something is slow** — the
   compatible-rendition wait, most of all — can be held open by taking the
   single transcode slot first: run the server with `MEDIA_TRANSCODE_JOBS=1`,
