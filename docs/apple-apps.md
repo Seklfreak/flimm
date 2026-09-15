@@ -620,7 +620,13 @@ reach the provider, so the **server URL is the only thing a user enters**.
 3. Store tokens in the Keychain. Refresh tokens require the provider to grant
    `offline_access`; without it the app will silently log out.
    **The refresh token is the session** — there is no cookie behind it — so
-   two things follow. The app renews on returning to the foreground
+   three things follow. A refresh token is spent exactly once: `TokenStore`
+   funnels every caller through one in-flight refresh, and joins it *before*
+   anything can suspend — the provider rotates the token on use and answers
+   a second use of the old one with `invalid_grant`, so two concurrent
+   refreshes (a cold launch's burst of requests, all arriving while the
+   first refresh is still running discovery) are a sign-in screen, not a
+   retry. The app renews on returning to the foreground
    (`AuthSession.refreshIfNeeded()`), not only when a screen happens to ask
    for data, so the rotation most providers do happens inside a live app and
    the validity window keeps rolling forward for someone who opens the app

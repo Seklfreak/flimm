@@ -212,9 +212,63 @@ extension TokenStoreTests {
         let remaining = await store.current
         XCTAssertNotNil(remaining, "tokens survive a failed refresh")
     }
+
+    /// The bug behind the daily sign-in. A cold launch fires several requests
+    /// at once, the first refresh of the process has to run discovery before
+    /// it can start, and every caller that entered during that discovery held
+    /// the same refresh token. The provider rotates the token on use and
+    /// revokes the old one, so whichever request arrived second was answered
+    /// `invalid_grant` — and that is the one answer that ends the session.
+    func testConcurrentFirstRefreshSpendsTheTokenOnce() async throws {
+        let spent = SpentTokens()
+        let session = StubURLProtocol.session { _, body in
+            let form = String(decoding: body ?? Data(), as: UTF8.self)
+            let presented = form.split(separator: "&")
+                .first { $0.hasPrefix("refresh_token=") }
+                .map { String($0.dropFirst("refresh_token=".count)) } ?? ""
+            guard spent.spend(presented) else {
+                return (400, Data(#"{"error":"invalid_grant"}"#.utf8))
+            }
+            return (200, Data(#"{"access_token":"at-2","refresh_token":"rt-2","token_type":"Bearer","expires_in":600}"#.utf8))
+        }
+        let store = TokenStore(store: InMemorySecretStore())
+        try await store.adopt(tokens(expiresIn: 5))
+        // Discovery that answers one caller quickly and the next one late —
+        // late enough that the first refresh is over by then.
+        let built = SendableCounter()
+        await store.configure(clientProvider: { [client = self.client(session: session)] in
+            let call = await built.incrementAndGet()
+            try await Task.sleep(nanoseconds: call == 1 ? 10_000_000 : 200_000_000)
+            return client
+        })
+
+        async let first = store.accessToken()
+        async let second = store.accessToken()
+        let (one, two) = try await (first, second)
+
+        XCTAssertEqual(one, "at-2")
+        XCTAssertEqual(two, "at-2")
+        XCTAssertEqual(StubURLProtocol.recorded.count, 1, "one refresh, however many callers")
+        let remaining = await store.current?.refreshToken
+        XCTAssertEqual(remaining, "rt-2", "the session survived")
+    }
 }
 
 private actor SendableCounter {
     private(set) var value = 0
     func increment() { value += 1 }
+    func incrementAndGet() -> Int {
+        value += 1
+        return value
+    }
+}
+
+/// A provider that rotates: a refresh token can be spent once.
+private final class SpentTokens: @unchecked Sendable {
+    private let lock = NSLock()
+    private var used: Set<String> = []
+    /// `true` the first time a token is presented, `false` after that.
+    func spend(_ token: String) -> Bool {
+        lock.withLock { used.insert(token).inserted }
+    }
 }

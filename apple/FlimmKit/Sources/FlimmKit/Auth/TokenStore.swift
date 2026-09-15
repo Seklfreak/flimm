@@ -21,8 +21,9 @@ public actor TokenStore: TokenProvider {
     private var tokens: OIDCTokens?
     private var signOut: SignOutHandler?
     private var persistFailed: PersistFailureHandler?
-    /// Concurrent 401s must produce one refresh, not one each.
-    private var inFlight: Task<OIDCTokens, any Error>?
+    /// Concurrent 401s must produce one refresh, not one each. `nil` inside
+    /// means there was no client to refresh with.
+    private var inFlight: Task<OIDCTokens?, any Error>?
 
     public init(store: any SecretStore, key: String = "oidc-tokens") {
         self.store = store
@@ -112,19 +113,29 @@ public actor TokenStore: TokenProvider {
     }
 
     private func renew() async throws -> OIDCTokens? {
-        guard let refreshToken = tokens?.refreshToken else { return nil }
-        guard let client = try await resolveClient() else { return nil }
-
+        // Join a refresh already under way *before* anything can suspend.
+        // The provider rotates the refresh token on every use and treats a
+        // second use of the old one as an attack, so two requests carrying
+        // the same token end the session. This check used to sit after
+        // `resolveClient()`, whose first call runs discovery over the
+        // network: every request a cold launch fires entered here during
+        // that await holding the same token, and whichever came back after
+        // the first refresh had finished sent it again — `invalid_grant`,
+        // sign-in screen, most mornings and after every update. From here
+        // to `inFlight = task` there is no `await`, so a second caller
+        // cannot slip past.
         if let inFlight { return try await inFlight.value }
+        guard let refreshToken = tokens?.refreshToken else { return nil }
 
-        let task = Task { [client] () throws -> OIDCTokens in
-            try await client.refresh(refreshToken: refreshToken)
+        let task = Task { () throws -> OIDCTokens? in
+            guard let client = try await resolveClient() else { return nil }
+            return try await client.refresh(refreshToken: refreshToken)
         }
         inFlight = task
         defer { inFlight = nil }
 
         do {
-            let refreshed = try await task.value
+            guard let refreshed = try await task.value else { return nil }
             // Providers that don't rotate refresh tokens omit the field; the
             // old one stays valid, so keep it rather than losing the session.
             let merged = OIDCTokens(
