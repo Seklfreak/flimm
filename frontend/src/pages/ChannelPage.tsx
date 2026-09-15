@@ -100,6 +100,10 @@ export default function ChannelPage() {
               <span className="meta">
                 {plural(c.video_count, "video")} · {c.unseen_count} unseen
                 {c.last_upload && ` · last upload ${relativeDay(c.last_upload)}`}
+                {/* Still coming. A channel whose archive looks short is
+                    usually one with a queue, and that is invisible from a
+                    list of what has already been downloaded. */}
+                {c.queued_count > 0 && ` · ${c.queued_count} queued`}
               </span>
             )}
           </div>

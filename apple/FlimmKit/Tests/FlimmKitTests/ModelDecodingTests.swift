@@ -242,6 +242,11 @@ final class ModelDecodingTests: XCTestCase {
         XCTAssertEqual(detail.id, "UC-chan")
         XCTAssertEqual(detail.description, "About this channel.")
         XCTAssertEqual(detail.summary.videoCount, 212)
+        // Waiting in TubeArchivist's queue, and absent from a server too old
+        // to report it — where it must read as "none queued", not as a
+        // decoding failure that costs the whole channel page.
+        XCTAssertEqual(detail.queuedCount, 7)
+        XCTAssertEqual(try decode(Channel.self, Fixtures.channelSummary).queuedCount, 0)
     }
 
     func testFeed() throws {

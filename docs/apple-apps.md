@@ -1021,6 +1021,16 @@ a side effect of caching.
   more. Note that the sessions it lists include the Apple clients from the
   first release — they are observed from the requests they already make, so
   neither target needed a line of code.
+- ~~Whether the Apple clients get the **downloads** view (what TubeArchivist is
+  fetching and what is stuck in its queue; `GET /admin/downloads`).~~ **They do
+  not**, for the same reason and on the same screen: it is the archive's
+  maintenance, and the thing it is for — noticing a queue that has silently
+  stopped moving — ends in TubeArchivist's own UI, which is a browser anyway.
+  What *did* ship to every client is the one part of it a viewer has a use for:
+  `queued_count` on a channel, shown as `· N queued` in the channel header on
+  iPhone, iPad and Apple TV alongside the web. A channel whose archive looks
+  short is usually a channel with a queue, and that is worth knowing from the
+  sofa.
 - ~~Whether Apple TV takes part in feed notifications.~~ **It does not.**
   tvOS shows no notification banners, so there is nothing to deliver, and
   the top shelf already surfaces the pinned feed — which is the television's

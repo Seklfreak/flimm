@@ -29,6 +29,7 @@ export const keys = {
   search: (q: string, scope: string, unseen: boolean, feed: string | undefined) =>
     ["search", { q, scope, unseen, feed }] as const,
   live: ["admin", "sessions"] as const,
+  downloads: ["admin", "downloads"] as const,
 };
 
 // Generic paged → infinite adapter for the { items, page, page_size, total }
@@ -399,6 +400,18 @@ export function useLiveSessions() {
   return useQuery({
     queryKey: keys.live,
     queryFn: () => api.liveSessions(),
+    refetchInterval: 4_000,
+    staleTime: 0,
+  });
+}
+
+// The download queue, on the same beat and the same terms as the sessions
+// above: a bar that is not moving is indistinguishable from a page that
+// stopped asking.
+export function useDownloads() {
+  return useQuery({
+    queryKey: keys.downloads,
+    queryFn: () => api.downloads(),
     refetchInterval: 4_000,
     staleTime: 0,
   });

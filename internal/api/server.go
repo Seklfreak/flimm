@@ -349,6 +349,9 @@ func (s *Server) Router() http.Handler {
 			// What the server is doing right now, across every account. Admin
 			// only; see sessions.go.
 			r.Get("/admin/sessions", s.listLiveSessions)
+			// What the archive is fetching, and what is stuck. Admin only;
+			// see downloads.go.
+			r.Get("/admin/downloads", s.getDownloads)
 
 			r.Get("/history", s.listHistory)
 			r.Get("/stats", s.getStats)

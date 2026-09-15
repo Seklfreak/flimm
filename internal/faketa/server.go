@@ -88,6 +88,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/playlist/{id}/", s.getPlaylist)
 	mux.HandleFunc("DELETE /api/playlist/{id}/", s.deletePlaylist)
 	mux.HandleFunc("GET /api/search/", s.search)
+	// The download queue and TA's live progress messages, which the Server
+	// page reads; see download.go.
+	mux.HandleFunc("GET /api/download/", s.listDownloads)
+	mux.HandleFunc("GET /api/notification/", s.notifications)
 	// Not TubeArchivist routes. The catalogue is fixed, so nothing in it is
 	// ever *new*: `arrive` adds a video modelled on one, with its own id,
 	// indexed just now — what a feed set to notify is waiting for — and

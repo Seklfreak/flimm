@@ -202,6 +202,13 @@ type ChannelSummary struct {
 type ChannelDetail struct {
 	ChannelSummary
 	Description string `json:"description"`
+	// QueuedCount is how many of the channel's videos are waiting in
+	// TubeArchivist's download queue — the one number that explains an
+	// archive that looks incomplete, and the reason it is on the detail page
+	// only: it costs a query per channel, which a list of hundreds cannot
+	// afford. 0 when nothing is queued *or* when the queue could not be read;
+	// a badge is not worth failing a page over.
+	QueuedCount int `json:"queued_count"`
 }
 
 // ---- feed ----

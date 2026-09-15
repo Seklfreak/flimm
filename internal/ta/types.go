@@ -334,7 +334,17 @@ func (v Video) DownloadedTime() time.Time {
 
 // Kind maps TA's vid_type to the API's video|short|stream.
 func (v Video) Kind() string {
-	switch v.VidType {
+	return kindOf(v.VidType)
+}
+
+// Kind names a queued video the same way a downloaded one is named, so a
+// queue entry and the video it becomes read alike.
+func (d DownloadItem) Kind() string {
+	return kindOf(d.VidType)
+}
+
+func kindOf(vidType string) string {
+	switch vidType {
 	case "shorts":
 		return "short"
 	case "streams":
@@ -362,4 +372,72 @@ func parseTADate(s string) (time.Time, error) {
 		}
 	}
 	return time.Time{}, errBadDate
+}
+
+// DownloadItem is one entry of TubeArchivist's download queue
+// (`/api/download/`). Status is "pending" or "ignore"; Message is the error
+// the last attempt stored on it, and its presence is what makes an item
+// invisible to the downloader — the queue's one silent failure mode, so it
+// is carried through rather than dropped.
+type DownloadItem struct {
+	YoutubeID   string `json:"youtube_id"`
+	Title       string `json:"title"`
+	ChannelID   string `json:"channel_id"`
+	ChannelName string `json:"channel_name"`
+	VidType     string `json:"vid_type"`
+	Duration    int    `json:"duration"`
+	Published   string `json:"published"`
+	ThumbURL    string `json:"vid_thumb_url"`
+	Status      string `json:"status"`
+	AutoStart   bool   `json:"auto_start"`
+	Message     string `json:"message"`
+	Timestamp   int64  `json:"timestamp"`
+}
+
+// DownloadPage is one page of the download queue.
+type DownloadPage struct {
+	Data     []DownloadItem
+	Paginate Paginate
+}
+
+// DownloadQuery mirrors the /api/download/ filters Flimm uses. There is no
+// page size: TA fixes it per user account, so a count comes from a page's
+// total_hits rather than from asking for one row. Error is a
+// three-state: ErrorAny leaves the filter off, so `pending` means every
+// queued item, while ErrorNo/ErrorYes split it into what the downloader can
+// actually pick up and what a stored message has masked from it.
+type DownloadQuery struct {
+	Filter  string // pending|ignore|""
+	Channel string
+	Error   ErrorFilter
+	Page    int
+}
+
+// ErrorFilter is DownloadQuery's tri-state error filter.
+type ErrorFilter int
+
+const (
+	ErrorAny ErrorFilter = iota
+	ErrorNo
+	ErrorYes
+)
+
+// Notification is one of TubeArchivist's live progress messages
+// (`/api/notification/`), which TA writes to Redis as work runs and expires
+// seconds later — so an empty list means nothing is running, not that
+// nothing ran.
+//
+// Messages is the pair TA renders in its own UI: a title line and a detail
+// line ("45.2% of 120MiB at 3.5MiB/s - time left: 00:32"). The percentage,
+// rate and ETA exist only inside that string; Progress (0–1) is the one
+// number TA reports, so the string is shown as it stands rather than parsed
+// into fields that would go stale with TA's formatting.
+type Notification struct {
+	ID       string   `json:"id"`
+	Title    string   `json:"title"`
+	Group    string   `json:"group"`
+	Level    string   `json:"level"`
+	Messages []string `json:"messages"`
+	// Progress is 0–1, nil when the step cannot say how far along it is.
+	Progress *float64 `json:"progress"`
 }

@@ -247,6 +247,46 @@ export interface LiveJob {
   encoder_segment: number;
 }
 
+/** What the archive is fetching, and what is stuck waiting to be. */
+export interface DownloadsResponse {
+  /** In flight right now; empty when nothing is downloading. */
+  active: DownloadActivity[];
+  counts: DownloadCounts;
+  /** The head of the queue, blocked items first. */
+  pending: QueuedItem[];
+}
+
+export interface DownloadActivity {
+  title: string;
+  /** TubeArchivist's own line — "45.2% of 120MiB at 3.5MiB/s - time left: 00:32".
+   *  The rate and the ETA exist nowhere else; it is shown, not parsed. */
+  detail: string;
+  /** 0–1, or null for a step that cannot say how far along it is. */
+  progress: number | null;
+  level: "info" | "error" | (string & {});
+}
+
+export interface DownloadCounts {
+  /** Pending and pickable by the downloader. */
+  ready: number;
+  /** Pending, but masked from the downloader by a stored error message —
+   *  nothing retries these on its own. */
+  blocked: number;
+  ignored: number;
+}
+
+export interface QueuedItem {
+  id: string;
+  title: string;
+  channel_id: string;
+  channel_name: string;
+  seconds: number;
+  kind: "video" | "short" | "stream" | (string & {});
+  auto_start: boolean;
+  /** The message that blocks the item; empty when it is ready. */
+  error: string;
+}
+
 export interface LiveStall {
   at: string;
   video_id: string;
@@ -377,6 +417,10 @@ export type ChannelSubscription = { status: "added"; channel: ChannelSummary } |
 
 export interface Channel extends ChannelSummary {
   description: string;
+  /** How many of the channel's videos are still waiting in TubeArchivist's
+   *  download queue. Detail only — it costs a query per channel — and 0 both
+   *  when nothing is queued and when the queue could not be read. */
+  queued_count: number;
 }
 
 export type FeedSort = "newest" | "oldest" | "shortest" | "longest";
@@ -728,6 +772,8 @@ export const api = {
   /** Admin only: what the server is doing right now — every account's
    *  playback, what is being transcoded for it, and what recently stalled. */
   liveSessions: () => req<LiveResponse>("/admin/sessions"),
+
+  downloads: () => req<DownloadsResponse>("/admin/downloads"),
 
   search: (q: string, opts: { scope?: SearchScope; unseen?: boolean; feed?: string }) =>
     req<SearchResult>(

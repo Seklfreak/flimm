@@ -1,6 +1,6 @@
 import { Link } from "react-router";
-import type { LiveJob, LiveResponse, LiveSession, LiveStall } from "@/lib/api";
-import { useLiveSessions, useMe } from "@/lib/queries";
+import type { DownloadsResponse, LiveJob, LiveResponse, LiveSession, LiveStall, QueuedItem } from "@/lib/api";
+import { useDownloads, useLiveSessions, useMe } from "@/lib/queries";
 import { fmtDuration } from "@/lib/format";
 import { PageHeader } from "@/components/Layout";
 import { EmptyState, ErrorState, ProgressBar, Spinner } from "@/components/ui";
@@ -28,6 +28,7 @@ import { EmptyState, ErrorState, ProgressBar, Spinner } from "@/components/ui";
 export default function AdminPage() {
   const me = useMe();
   const live = useLiveSessions();
+  const downloads = useDownloads();
 
   if (!me.data?.is_admin) {
     return (
@@ -45,21 +46,32 @@ export default function AdminPage() {
 
   return (
     <div className="flex flex-col gap-3 pb-10 md:gap-2.5">
-      <PageHeader title="Server" meta={live.data ? headline(live.data) : undefined} />
+      <PageHeader title="Server" meta={live.data ? headline(live.data, downloads.data) : undefined} />
       <div className="flex flex-col gap-7 px-5 pt-1 md:px-10 md:pt-2">
         {live.isLoading && <Spinner />}
         {live.isError && <ErrorState message="Couldn't load what the server is doing." retry={() => void live.refetch()} />}
         {live.data && <Report live={live.data} />}
+        {downloads.isError ? (
+          <ErrorState message="Couldn't load the download queue." retry={() => void downloads.refetch()} />
+        ) : (
+          downloads.data && <Downloads downloads={downloads.data} />
+        )}
       </div>
     </div>
   );
 }
 
-/** The one line under the title: the two counts worth knowing before reading. */
-function headline(live: LiveResponse): string {
+/** The one line under the title: the counts worth knowing before reading. */
+function headline(live: LiveResponse, downloads?: DownloadsResponse): string {
   const parts = [`${live.sessions.length} ${live.sessions.length === 1 ? "session" : "sessions"}`];
   if (live.jobs.length > 0) parts.push(`${live.jobs.length} transcoding`);
   if (live.stalls.length > 0) parts.push(`${live.stalls.length} recent ${live.stalls.length === 1 ? "stall" : "stalls"}`);
+  if (downloads) {
+    if (downloads.active.length > 0) parts.push(`${downloads.active.length} downloading`);
+    // A blocked queue is the one number on this page that means somebody has
+    // to do something, so it is said before anything is scrolled to.
+    if (downloads.counts.blocked > 0) parts.push(`${downloads.counts.blocked} blocked`);
+  }
   return parts.join(" · ");
 }
 
@@ -136,6 +148,101 @@ function Report({ live }: { live: LiveResponse }) {
         </section>
       )}
     </>
+  );
+}
+
+/**
+ * What the archive is fetching, and what it has quietly given up on.
+ *
+ * TubeArchivist answers two different questions and neither one alone is the
+ * truth. The progress message says something is moving right now; it expires
+ * seconds after the work does, so silence here means idle, not broken. The
+ * queue says how much is waiting — and hides the failure that matters: the
+ * downloader only picks items with no stored error message, so anything that
+ * has ever failed is invisible to it forever, with nothing to retry it. A
+ * queue of a thousand that can only move on twelve of them looks, in TA's own
+ * total, exactly like a healthy backlog.
+ *
+ * Which is why `blocked` is its own number and its own colour. Flimm does not
+ * offer to fix it: clearing the message is a write to instance-wide state, and
+ * this view is for finding out, not for operating the archive.
+ */
+function Downloads({ downloads }: { downloads: DownloadsResponse }) {
+  const { active, counts, pending } = downloads;
+  return (
+    <section className="flex flex-col gap-2">
+      <h2 className="sec">Downloading</h2>
+
+      {active.length === 0 ? (
+        <p className="max-w-[620px] text-[13px] text-muted-2">
+          Nothing is downloading right now. TubeArchivist reports progress only while it is working, so an empty line
+          here means idle rather than broken — the queue below is what says whether it has anything left to do.
+        </p>
+      ) : (
+        <div className="flex flex-col gap-2.5">
+          {active.map((a, i) => (
+            <article key={`${a.title}-${i}`} className="flex flex-col gap-1.5 rounded-2xl border border-hair bg-surface px-4 py-3">
+              <span className="truncate text-[14px] font-bold text-ink">{a.title}</span>
+              {a.progress !== null && (
+                <div className="flex items-center gap-3">
+                  <ProgressBar value={a.progress} className="max-w-[320px] flex-1" />
+                  <span className="text-[12px] font-semibold text-muted-2">{Math.round(a.progress * 100)}%</span>
+                </div>
+              )}
+              {/* TubeArchivist's own line. The rate and the ETA live nowhere
+                  else, so it is shown as it stands rather than taken apart. */}
+              {a.detail && (
+                <p className={`text-[12.5px] font-semibold ${a.level === "error" ? "text-danger" : "text-muted-2"}`}>{a.detail}</p>
+              )}
+            </article>
+          ))}
+        </div>
+      )}
+
+      <div className="flex flex-wrap items-center gap-2 pt-1">
+        {counts.ready + counts.blocked + counts.ignored === 0 ? (
+          <span className="chip">queue empty</span>
+        ) : (
+          <>
+            <span className="chip">{counts.ready} ready</span>
+            {counts.blocked > 0 && <span className="chip text-danger">{counts.blocked} blocked</span>}
+            {counts.ignored > 0 && <span className="chip">{counts.ignored} ignored</span>}
+          </>
+        )}
+      </div>
+
+      {counts.blocked > 0 && (
+        <p className="max-w-[620px] text-[13px] text-muted-2">
+          Blocked items recorded an error once and now carry it forever: TubeArchivist's downloader skips anything with
+          a stored message, and nothing clears it on its own. They will never be fetched until someone gives them
+          priority again in TubeArchivist, however long the queue sits there.
+        </p>
+      )}
+
+      {pending.length > 0 && (
+        <div className="flex flex-col gap-1.5 pt-1">
+          {pending.map((item) => (
+            <QueueRow key={item.id} item={item} />
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function QueueRow({ item }: { item: QueuedItem }) {
+  return (
+    <div className="flex flex-col gap-0.5 rounded-2xl border border-hair bg-surface px-4 py-2.5">
+      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+        <span className="min-w-0 flex-1 truncate text-[13px] font-bold text-ink">{item.title || item.id}</span>
+        {item.auto_start && <span className="chip">priority</span>}
+        {item.seconds > 0 && <span className="text-[12px] font-semibold text-muted-2">{fmtDuration(item.seconds)}</span>}
+      </div>
+      <Link to={`/channels/${item.channel_id}`} className="truncate text-[12.5px] font-semibold text-muted-2 no-underline hover:text-accent">
+        {item.channel_name}
+      </Link>
+      {item.error && <p className="text-[12.5px] font-semibold text-danger">{item.error}</p>}
+    </div>
   );
 }
 

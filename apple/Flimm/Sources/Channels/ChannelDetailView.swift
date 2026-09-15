@@ -155,7 +155,7 @@ struct ChannelDetailView: View {
                     Text(channel.name)
                         .font(.title3.bold())
                         .lineLimit(2)
-                    Text(headerMeta(channel.summary))
+                    Text(headerMeta(channel))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -178,9 +178,13 @@ struct ChannelDetailView: View {
         .padding(.horizontal, 16)
     }
 
-    private func headerMeta(_ summary: ChannelSummary) -> String {
+    private func headerMeta(_ channel: Channel) -> String {
+        let summary = channel.summary
         var parts = [Fmt.plural(summary.videoCount, "video")]
         if summary.unseenCount > 0 { parts.append("\(Fmt.count(summary.unseenCount)) unseen") }
+        // Still coming. A channel that looks short is usually one with a
+        // queue, and nothing in a list of downloaded videos can say so.
+        if channel.queuedCount > 0 { parts.append("\(Fmt.count(channel.queuedCount)) queued") }
         if let last = summary.lastUpload { parts.append("updated \(Fmt.relativeDay(last))") }
         return parts.joined(separator: " · ")
     }

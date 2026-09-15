@@ -31,6 +31,10 @@ type Fake struct {
 	Calls    []string
 	// Tasks is TA's task result store; SetChannelSubscribed appends to it.
 	Tasks []Task
+	// Queue is TA's download queue, newest first as TA returns it.
+	Queue []DownloadItem
+	// Downloading is what TA's live progress reports; empty means idle.
+	Downloading []Notification
 	// SubscribeOutcome shapes the subscribe task: "" or "SUCCESS" creates
 	// the channel, "PENDING" leaves it queued, "FAILURE" fails it with
 	// SubscribeError as the reason.
@@ -381,6 +385,67 @@ func (f *Fake) SetChannelSubscribed(_ context.Context, channelID string, subscri
 	}
 	f.Tasks = append(f.Tasks, task)
 	return nil
+}
+
+// downloadPageSize is the page size the Fake paginates the queue with, the
+// way a real TA fixes its own.
+const downloadPageSize = 12
+
+func (f *Fake) DownloadQueue(_ context.Context, q DownloadQuery) (*DownloadPage, error) {
+	if f.Err != nil {
+		return nil, f.Err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	all := []DownloadItem{}
+	for _, it := range f.Queue {
+		if q.Filter != "" && it.Status != q.Filter {
+			continue
+		}
+		if q.Channel != "" && it.ChannelID != q.Channel {
+			continue
+		}
+		// TA's error filter is exists(message), which is what hides an item
+		// from the downloader — not whether the item failed in some other sense.
+		if q.Error == ErrorYes && it.Message == "" {
+			continue
+		}
+		if q.Error == ErrorNo && it.Message != "" {
+			continue
+		}
+		all = append(all, it)
+	}
+	page := q.Page
+	if page < 1 {
+		page = 1
+	}
+	from := min((page-1)*downloadPageSize, len(all))
+	to := min(from+downloadPageSize, len(all))
+	last := (len(all) + downloadPageSize - 1) / downloadPageSize
+	return &DownloadPage{
+		Data: append([]DownloadItem{}, all[from:to]...),
+		Paginate: Paginate{
+			PageSize: downloadPageSize, PageFrom: from,
+			CurrentPage: page, LastPage: last, TotalHits: len(all),
+		},
+	}, nil
+}
+
+func (f *Fake) DownloadProgress(_ context.Context) ([]Notification, error) {
+	if f.Err != nil {
+		return nil, f.Err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]Notification{}, f.Downloading...), nil
+}
+
+func (f *Fake) QueuedCount(ctx context.Context, channelID string) (int, error) {
+	p, err := f.DownloadQueue(ctx, DownloadQuery{Filter: "pending", Channel: channelID})
+	if err != nil {
+		return 0, err
+	}
+	return p.Paginate.TotalHits, nil
 }
 
 func (f *Fake) ListTasks(_ context.Context, name string) ([]Task, error) {

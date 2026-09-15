@@ -197,7 +197,19 @@ func (s *Server) getChannel(w http.ResponseWriter, r *http.Request) {
 		s.writeTAError(w, "channel summary", err)
 		return
 	}
-	writeJSON(w, http.StatusOK, ChannelDetail{ChannelSummary: *cs, Description: c.ChannelDescription})
+	// A queue read that fails is not this page's failure: the channel, its
+	// videos and its description are all still true, and a missing badge is
+	// the right way to say "the archive could not be asked" on a view nobody
+	// opened to look at the queue.
+	queued, err := s.ta.QueuedCount(r.Context(), c.ChannelID)
+	if err != nil {
+		s.log.Warn("channel queued count", "channel", c.ChannelID, "err", err)
+	}
+	writeJSON(w, http.StatusOK, ChannelDetail{
+		ChannelSummary: *cs,
+		Description:    c.ChannelDescription,
+		QueuedCount:    queued,
+	})
 }
 
 func (s *Server) listChannelVideos(w http.ResponseWriter, r *http.Request) {

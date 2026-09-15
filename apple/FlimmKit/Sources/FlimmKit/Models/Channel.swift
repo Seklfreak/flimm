@@ -68,29 +68,38 @@ public struct ChannelSummary: Codable, Sendable, Hashable, Identifiable {
 public struct Channel: Codable, Sendable, Hashable, Identifiable {
     public let summary: ChannelSummary
     public let description: String
+    /// How many of the channel's videos are still waiting in TubeArchivist's
+    /// download queue. The detail response carries it and a list does not —
+    /// it costs the server a query per channel — and it is 0 both when
+    /// nothing is queued and when the queue could not be read.
+    public let queuedCount: Int
 
     public var id: String { summary.id }
     public var name: String { summary.name }
 
-    public init(summary: ChannelSummary, description: String) {
+    public init(summary: ChannelSummary, description: String, queuedCount: Int = 0) {
         self.summary = summary
         self.description = description
+        self.queuedCount = queuedCount
     }
 
     private enum CodingKeys: String, CodingKey {
         case description
+        case queuedCount
     }
 
     public init(from decoder: any Decoder) throws {
         summary = try ChannelSummary(from: decoder)
         let c = try decoder.container(keyedBy: CodingKeys.self)
         description = try c.decode(.description, or: "")
+        queuedCount = try c.decode(.queuedCount, or: 0)
     }
 
     public func encode(to encoder: any Encoder) throws {
         try summary.encode(to: encoder)
         var c = encoder.container(keyedBy: CodingKeys.self)
         try c.encode(description, forKey: .description)
+        try c.encode(queuedCount, forKey: .queuedCount)
     }
 }
 

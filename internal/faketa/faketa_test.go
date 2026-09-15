@@ -6,6 +6,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/Seklfreak/flimm/internal/faketa"
@@ -292,5 +293,81 @@ func TestSubtitlesAreServedAsWebVTT(t *testing.T) {
 	}
 	if string(body[:6]) != "WEBVTT" {
 		t.Errorf("subtitles start with %q", string(body[:6]))
+	}
+}
+
+// The stand-in has to produce the queue's interesting state, not just a list:
+// items the downloader can pick up, and items a stored message has masked from
+// it forever. A Downloads panel developed against a queue with no blocked item
+// in it would never show the thing it exists to show.
+func TestDownloadQueueHasBlockedAndReadyItems(t *testing.T) {
+	client, _ := fixture(t)
+	ctx := context.Background()
+
+	ready, err := client.DownloadQueue(ctx, ta.DownloadQuery{Filter: "pending", Error: ta.ErrorNo})
+	if err != nil {
+		t.Fatalf("ready queue: %v", err)
+	}
+	blocked, err := client.DownloadQueue(ctx, ta.DownloadQuery{Filter: "pending", Error: ta.ErrorYes})
+	if err != nil {
+		t.Fatalf("blocked queue: %v", err)
+	}
+	if ready.Paginate.TotalHits == 0 || blocked.Paginate.TotalHits == 0 {
+		t.Fatalf("ready = %d, blocked = %d; want both", ready.Paginate.TotalHits, blocked.Paginate.TotalHits)
+	}
+	for _, it := range blocked.Data {
+		if it.Message == "" {
+			t.Errorf("%q is in the blocked half with no message", it.YoutubeID)
+		}
+	}
+	for _, it := range ready.Data {
+		if it.Message != "" {
+			t.Errorf("%q is in the ready half carrying %q", it.YoutubeID, it.Message)
+		}
+	}
+}
+
+// A channel's badge reads its own queue, so the filter has to hold.
+func TestDownloadQueueFiltersByChannel(t *testing.T) {
+	client, catalogue := fixture(t)
+	id := catalogue.Channels[0].ChannelID
+
+	n, err := client.QueuedCount(context.Background(), id)
+	if err != nil {
+		t.Fatalf("queued count: %v", err)
+	}
+	if n == 0 {
+		t.Fatal("queued count = 0, want the channel's own pending items")
+	}
+	page, err := client.DownloadQueue(context.Background(), ta.DownloadQuery{Filter: "pending", Channel: id})
+	if err != nil {
+		t.Fatalf("queue: %v", err)
+	}
+	for _, it := range page.Data {
+		if it.ChannelID != id {
+			t.Errorf("channel %q in a queue filtered to %q", it.ChannelID, id)
+		}
+	}
+}
+
+// The progress message is what makes a bar move in local development, and it
+// has to carry TubeArchivist's own detail line — the rate and the ETA live
+// nowhere else.
+func TestProgressReportsADownloadInFlight(t *testing.T) {
+	client, _ := fixture(t)
+
+	msgs, err := client.DownloadProgress(context.Background())
+	if err != nil {
+		t.Fatalf("progress: %v", err)
+	}
+	if len(msgs) != 1 {
+		t.Fatalf("progress messages = %d, want 1", len(msgs))
+	}
+	m := msgs[0]
+	if m.Progress == nil || *m.Progress < 0 || *m.Progress > 1 {
+		t.Errorf("progress = %v, want a fraction", m.Progress)
+	}
+	if len(m.Messages) != 2 || !strings.Contains(m.Messages[1], "time left:") {
+		t.Errorf("messages = %q, want a title and TA's own detail line", m.Messages)
 	}
 }

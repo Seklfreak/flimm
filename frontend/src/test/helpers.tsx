@@ -118,6 +118,7 @@ export function channel(over: Partial<Channel> = {}): Channel {
     pinned: false,
     feeds: [],
     description: "A channel about shaders and math.",
+    queued_count: 0,
     ...over,
   };
 }

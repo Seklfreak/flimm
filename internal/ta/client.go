@@ -68,6 +68,16 @@ type Client interface {
 	// expected to gate it behind admin.
 	IndexChannelPlaylists(ctx context.Context, channelID string) error
 
+	// DownloadQueue reads one page of TA's download queue. Uncached: it
+	// backs a view that is watched precisely while it changes.
+	DownloadQueue(ctx context.Context, q DownloadQuery) (*DownloadPage, error)
+	// DownloadProgress is TA's live progress for the download group, empty
+	// when nothing is running.
+	DownloadProgress(ctx context.Context) ([]Notification, error)
+	// QueuedCount is how many of a channel's videos are waiting in the
+	// download queue (cached).
+	QueuedCount(ctx context.Context, channelID string) (int, error)
+
 	ListPlaylists(ctx context.Context, kind, channelID string) ([]Playlist, error)
 	GetPlaylist(ctx context.Context, id string) (*Playlist, error)
 	CreateCustomPlaylist(ctx context.Context, name string) (*Playlist, error)
@@ -117,6 +127,7 @@ type HTTP struct {
 	mu       sync.Mutex
 	channels *cached[[]Channel]
 	counts   map[string]*cached[int]
+	queued   map[string]*cached[int]
 	stats    map[string]*cached[ChannelStats]
 	videos   map[string]*cached[Video]
 	lists    map[string]*cached[VideoPage]
@@ -141,6 +152,7 @@ func New(baseURL, token string) *HTTP {
 		http:   &http.Client{Timeout: 30 * time.Second, Transport: obs.Transport{}},
 		stream: &http.Client{Transport: obs.Transport{Base: streamTransport}},
 		counts: map[string]*cached[int]{},
+		queued: map[string]*cached[int]{},
 		stats:  map[string]*cached[ChannelStats]{},
 		videos: map[string]*cached[Video]{},
 		lists:  map[string]*cached[VideoPage]{},
@@ -567,6 +579,96 @@ func (c *HTTP) ForgetChannels() {
 func (c *HTTP) IndexChannelPlaylists(ctx context.Context, channelID string) error {
 	body := map[string]any{"channel_overwrites": map[string]bool{"index_playlists": true}}
 	return c.do(ctx, http.MethodPost, "/api/channel/"+url.PathEscape(channelID)+"/", nil, body, nil)
+}
+
+func (q DownloadQuery) values() url.Values {
+	v := url.Values{}
+	if q.Filter != "" {
+		v.Set("filter", q.Filter)
+	}
+	if q.Channel != "" {
+		v.Set("channel", q.Channel)
+	}
+	switch q.Error {
+	case ErrorNo:
+		v.Set("error", "false")
+	case ErrorYes:
+		v.Set("error", "true")
+	}
+	if q.Page > 1 {
+		v.Set("page", strconv.Itoa(q.Page))
+	}
+	return v
+}
+
+// DownloadQueue fetches one page of /api/download/.
+//
+// Nothing here is cached. Every other list in this client is read to draw a
+// page that is then left alone, and 30 seconds of staleness costs nothing;
+// the queue is read by somebody watching it drain, where the same 30 seconds
+// is the whole point of looking.
+func (c *HTTP) DownloadQueue(ctx context.Context, q DownloadQuery) (*DownloadPage, error) {
+	var raw json.RawMessage
+	if err := c.do(ctx, http.MethodGet, "/api/download/", q.values(), nil, &raw); err != nil {
+		if errors.Is(err, ErrNotFound) {
+			// An empty queue 404s on some versions, as an empty video list does.
+			return &DownloadPage{Data: []DownloadItem{}}, nil
+		}
+		return nil, err
+	}
+	var env envelope
+	if err := json.Unmarshal(raw, &env); err != nil {
+		return nil, fmt.Errorf("decode download queue: %w", err)
+	}
+	page := DownloadPage{Data: []DownloadItem{}}
+	if len(env.Data) > 0 && !bytes.Equal(env.Data, []byte("null")) {
+		if err := json.Unmarshal(env.Data, &page.Data); err != nil {
+			return nil, fmt.Errorf("decode download queue: %w", err)
+		}
+	}
+	if env.Paginate != nil {
+		page.Paginate = *env.Paginate
+	}
+	return &page, nil
+}
+
+// DownloadProgress reads TA's live progress messages for the download group.
+//
+// These live in Redis with a lifetime measured in seconds, so an empty answer
+// is "nothing is downloading right now" — never "the downloader is broken",
+// which is what the queue counts are for.
+func (c *HTTP) DownloadProgress(ctx context.Context) ([]Notification, error) {
+	var out []Notification
+	if err := c.getDoc(ctx, "/api/notification/", url.Values{"filter": {"download"}}, &out); err != nil {
+		if errors.Is(err, ErrNotFound) {
+			return []Notification{}, nil
+		}
+		return nil, err
+	}
+	if out == nil {
+		out = []Notification{}
+	}
+	return out, nil
+}
+
+// QueuedCount is the channel's pending queue depth, read from a page's
+// total_hits (cached 60 s, like the unseen count it sits next to).
+func (c *HTTP) QueuedCount(ctx context.Context, channelID string) (int, error) {
+	c.mu.Lock()
+	if e, ok := c.queued[channelID]; ok && time.Now().Before(e.exp) {
+		c.mu.Unlock()
+		return e.val, nil
+	}
+	c.mu.Unlock()
+	page, err := c.DownloadQueue(ctx, DownloadQuery{Filter: "pending", Channel: channelID})
+	if err != nil {
+		return 0, err
+	}
+	n := page.Paginate.TotalHits
+	c.mu.Lock()
+	c.queued[channelID] = &cached[int]{val: n, exp: time.Now().Add(cacheCounts)}
+	c.mu.Unlock()
+	return n, nil
 }
 
 func (c *HTTP) ListPlaylists(ctx context.Context, kind, channelID string) ([]Playlist, error) {

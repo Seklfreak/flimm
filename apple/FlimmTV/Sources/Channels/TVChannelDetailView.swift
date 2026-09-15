@@ -73,9 +73,13 @@ struct TVChannelDetailView: View {
     }
 
     private var meta: String {
-        guard let summary = channel?.summary else { return "" }
+        guard let channel else { return "" }
+        let summary = channel.summary
         var parts = [Fmt.plural(summary.videoCount, "video")]
         if summary.unseenCount > 0 { parts.append("\(Fmt.count(summary.unseenCount)) unseen") }
+        // Still coming, the same line the phone and the web show: a short
+        // archive with a queue behind it is not a channel that stopped.
+        if channel.queuedCount > 0 { parts.append("\(Fmt.count(channel.queuedCount)) queued") }
         if !summary.feeds.isEmpty {
             parts.append("in " + summary.feeds.map(\.name).joined(separator: ", "))
         }

@@ -68,7 +68,9 @@ touches anything but the pin. An admin can also flip the archive's own
 downloading the channel's new videos — and subscribe a **brand-new channel**
 from the directory (URL, @handle or id; the archive resolves it in the
 background), all without visiting TA's UI. Both are instance-wide state,
-which is why they are admin-gated like series indexing.
+which is why they are admin-gated like series indexing. The channel page also
+says how many of the channel's videos are still **queued** for download in
+TubeArchivist, which is what explains an archive that looks incomplete.
 
 ## Player, resume and seen state
 
@@ -341,6 +343,21 @@ what it describes stops being true.
 It is admin-only and it is the **one** place per-user scoping is deliberately
 crossed. Whoever runs the archive has to answer for what it is doing, and
 cannot from a view of their own screens alone.
+
+The same screen says what the archive is **fetching**: the download in flight
+with TubeArchivist's own percentage, rate and ETA, and the queue behind it —
+split into what the downloader can still pick up and what it has silently
+given up on. The split is the whole reason the view exists. TubeArchivist skips
+any queued video that recorded an error on a past attempt, and nothing ever
+clears that mark, so a full disk on one night can leave hundreds of videos that
+will never be fetched, behind a queue total that goes on reading like an
+ordinary backlog. Flimm only reports it: retrying an item is a write to
+instance-wide archive state, and this is a view for finding out.
+
+A channel's own queue depth is not maintenance, though, and it is not
+admin-only: a channel whose archive looks short is usually a channel with
+videos still coming, so every client shows `N queued` in the channel header
+next to its video and unseen counts.
 
 ## Platforms
 

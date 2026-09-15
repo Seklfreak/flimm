@@ -86,6 +86,16 @@ One container image: a Go backend with the React frontend embedded.
   behind — and the recent stalls with the server's own attribution. It is
   assembled from the requests clients already make, so every client appears in
   it without knowing it exists.
+- **What the archive is fetching** (web, admin) — on the same screen: the
+  download TubeArchivist has in flight with its own percentage, rate and ETA,
+  and the queue behind it split into what the downloader can pick up and what
+  it has silently given up on. That second number is the point. TubeArchivist
+  skips any queued video carrying an error message from a past attempt, and
+  nothing ever clears it, so one bad night — a full disk, a network blip —
+  can leave hundreds of videos that will never be fetched while the queue
+  total goes on looking like an ordinary backlog. Every client also shows a
+  channel's own queue depth on its page, which is what explains a channel
+  whose archive looks short.
 - **An even volume across channels** — each video is measured once (EBU R128)
   and the loud ones are turned down to a common target, so you stop reaching
   for the volume between one channel and the next. The measurement is made
@@ -214,7 +224,7 @@ All configuration is via environment variables.
 | `OIDC_ISSUER` | unless `AUTH_DISABLED=true` | issuer URL (discovery at `<issuer>/.well-known/openid-configuration`) |
 | `OIDC_CLIENT_ID` | unless `AUTH_DISABLED=true` | public client id |
 | `AUTH_DISABLED` | no | `true` skips auth and uses a fixed dev user — **dev only** |
-| `ADMIN_EMAILS` | no | comma-separated; admins see `/healthz` details and the live sessions view (`/admin`), and get the archive-side controls (index a channel's series, subscribe/unsubscribe) |
+| `ADMIN_EMAILS` | no | comma-separated; admins see `/healthz` details and the server view (`/admin`: live sessions and the download queue), and get the archive-side controls (index a channel's series, subscribe/unsubscribe) |
 | `APP_NAME` | no | default `Flimm` |
 | `PORT` | no | default `8080` |
 | `MIN_PLAY_SECONDS` | no | how long a video must play before it enters history and gets a resume position (default 15) |

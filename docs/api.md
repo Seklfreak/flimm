@@ -251,6 +251,9 @@ video differ.
 }
 ```
 
+`GET /channels/{id}` returns this plus `description` and `queued_count` — see
+[Queue depth on a channel](#queue-depth-on-a-channel).
+
 Channel pins work exactly like playlist pins (see "Pinned playlists"): Flimm's
 own per-user state, appended to the end of the pin order, and a pinned channel
 that is later deleted in TubeArchivist simply drops out of
@@ -1074,6 +1077,91 @@ actually left it.
 **Clients.** The web client only (`/admin`, linked from Settings for an admin,
 re-read every 4 s). Deliberately not on iPhone, iPad or Apple TV — see
 `docs/apple-apps.md`.
+
+### Downloads (admin)
+
+`GET /admin/downloads` is the other half of the present tense: what the archive
+is *fetching*, as opposed to what it is serving. Admin-only on the same terms
+as [live sessions](#live-sessions-admin) — instance-wide state, naming channels
+no particular viewer subscribed to, `403` for everyone else.
+
+```json
+{
+  "active": [
+    {
+      "title": "Braising, the long way",
+      "detail": "45.2% of 120MiB at 3.5MiB/s - time left: 00:32",
+      "progress": 0.452,
+      "level": "info"
+    }
+  ],
+  "counts": { "ready": 12, "blocked": 933, "ignored": 4 },
+  "pending": [
+    {
+      "id": "yt-id", "title": "The one that keeps failing",
+      "channel_id": "UC-chan", "channel_name": "Slow Kitchen",
+      "seconds": 600, "kind": "video", "auto_start": false,
+      "error": "[Errno 28] No space left on device"
+    }
+  ]
+}
+```
+
+It is assembled from two different TubeArchivist things, because either alone
+misleads:
+
+| TA source | What it answers |
+| --- | --- |
+| `GET /api/notification/?filter=download` | what is moving right now. TA writes these to Redis from yt-dlp's progress hook and they expire seconds later, so an **empty `active` means idle**, never broken |
+| `GET /api/download/?filter=pending\|ignore&error=true\|false` | how much is waiting, read from the page's `total_hits` |
+
+**`blocked` is the number this endpoint exists for.** TubeArchivist's
+downloader picks its next job with `must_not: exists(message)`, so an item that
+has ever recorded an error is invisible to it *forever* — nothing retries it and
+nothing clears the field. Splitting pending into `ready` (what the downloader
+can actually pick up) and `blocked` (what a stored message has masked from it)
+is the same split TA's own query makes, and it is the difference between a
+healthy backlog and a queue that will never move again: a filling disk once
+stamped `[Errno 28]` onto 933 queued videos, and the undivided total sat
+unchanged for three weeks looking exactly like work in progress.
+
+`detail` is TubeArchivist's own line, passed through **unparsed**. The
+percentage, the rate and the ETA are formatted into that string inside TA's
+progress hook and reported nowhere else; `progress` (0–1) is the only number,
+and it is `null` for a step that cannot say how far along it is — which must
+render as *no bar*, not as 0%, since a bar stuck at zero reads as a stall.
+`pending` lists **blocked items first**, capped at 24: the counts answer "how
+much", the list answers "what", and what is stuck is what gets read.
+
+Nothing here writes. Retrying a blocked item (TA's `priority` action), starting
+the downloader and queueing a video are all writes to instance-wide archive
+state, and this view is for finding out rather than for operating the archive —
+TubeArchivist's own UI is one click away.
+
+There are no thumbnails: a queued video is not in TA's video index yet, so
+Flimm's media proxy has nothing to serve for it, and the artwork TA carries on
+a queue entry is a YouTube URL.
+
+**Clients.** The web client only (`/admin`, re-read every 4 s), for the same
+reason as live sessions. The one part that does reach every client is the
+per-channel count below.
+
+#### Queue depth on a channel
+
+`GET /channels/{id}` carries **`queued_count`**: how many of that channel's
+videos are waiting in the download queue. It is on the **detail** response only
+— it costs TubeArchivist one query per channel, and a list of hundreds cannot
+afford it (see the fan-out note under channel aggregates) — and it is **not**
+admin-gated: it describes the shared archive, like `video_count` next to it,
+and it is the one thing that explains a channel whose archive looks short.
+
+`0` means both "nothing queued" and "the queue could not be read": a failed
+queue read is logged and the field falls back to 0 rather than failing the
+channel page, because a missing badge is a smaller lie than a missing channel.
+
+**Clients.** Web (channel header meta), iPhone/iPad and Apple TV (the same
+`· N queued` in the channel header). A server too old to send the field decodes
+as 0 everywhere.
 
 ### Remote control
 

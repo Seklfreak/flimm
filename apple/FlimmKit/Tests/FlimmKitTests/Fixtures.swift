@@ -62,7 +62,8 @@ enum Fixtures {
       "last_upload": "2026-08-25T00:00:00Z",
       "subscribed": true,
       "feeds": [],
-      "description": "About this channel."
+      "description": "About this channel.",
+      "queued_count": 7
     }
     """
 
