@@ -1,7 +1,7 @@
 import XCTest
 @testable import FlimmKit
 
-final class ProgressReporterTests: XCTestCase {
+final class ProgressHeartbeatTests: XCTestCase {
     private let baseURL = URL(string: "https://flimm.example.com")!
 
     private func client(_ session: URLSession) -> APIClient {
@@ -12,10 +12,10 @@ final class ProgressReporterTests: XCTestCase {
     /// must post whatever the player's position is right now.
     func testFlushPostsTheCurrentPosition() async throws {
         let session = StubURLProtocol.session(json: Fixtures.progressResult)
-        let reporter = ProgressReporter(client: client(session), interval: .seconds(600))
+        let heartbeat = ProgressHeartbeat(client: client(session), interval: .seconds(600))
 
-        await reporter.start(videoId: "yt-id", context: .playlist("PL-music")) { 42 }
-        await reporter.flush()
+        await heartbeat.start(videoId: "yt-id", context: .playlist("PL-music")) { 42 }
+        await heartbeat.flush()
 
         let request = try XCTUnwrap(StubURLProtocol.recorded.last)
         XCTAssertEqual(request.path, "/api/v1/videos/yt-id/progress")
@@ -28,28 +28,28 @@ final class ProgressReporterTests: XCTestCase {
 
     func testRepeatedFlushAtTheSamePositionPostsOnce() async throws {
         let session = StubURLProtocol.session(json: Fixtures.progressResult)
-        let reporter = ProgressReporter(client: client(session), interval: .seconds(600))
+        let heartbeat = ProgressHeartbeat(client: client(session), interval: .seconds(600))
 
-        await reporter.start(videoId: "yt-id") { 42 }
-        await reporter.flush()
-        await reporter.flush()
-        await reporter.flush()
+        await heartbeat.start(videoId: "yt-id") { 42 }
+        await heartbeat.flush()
+        await heartbeat.flush()
+        await heartbeat.flush()
 
         XCTAssertEqual(StubURLProtocol.recorded.count, 1)
     }
 
     func testHeartbeatTicks() async throws {
         let session = StubURLProtocol.session(json: Fixtures.progressResult)
-        let reporter = ProgressReporter(client: client(session), interval: .milliseconds(20))
+        let heartbeat = ProgressHeartbeat(client: client(session), interval: .milliseconds(20))
         let position = MovingPosition()
 
-        await reporter.start(videoId: "yt-id") { await position.next() }
+        await heartbeat.start(videoId: "yt-id") { await position.next() }
         // Wait for the ticks, not for a stretch of wall clock. A loaded CI
         // machine takes far longer than 3 × 20 ms to run three of them, and a
         // fixed sleep long enough to be safe there is a slow test everywhere
         // else — the assertion is "it keeps ticking", not "it ticks this fast".
         let ticked = await heartbeatCount(reaches: 3, within: .seconds(10))
-        await reporter.stop()
+        await heartbeat.stop()
 
         XCTAssertGreaterThanOrEqual(ticked, 3)
     }
@@ -71,11 +71,11 @@ final class ProgressReporterTests: XCTestCase {
     /// being left.
     func testStartingANewVideoFlushesThePreviousOne() async throws {
         let session = StubURLProtocol.session(json: Fixtures.progressResult)
-        let reporter = ProgressReporter(client: client(session), interval: .seconds(600))
+        let heartbeat = ProgressHeartbeat(client: client(session), interval: .seconds(600))
 
-        await reporter.start(videoId: "yt-1") { 10 }
-        await reporter.start(videoId: "yt-2") { 20 }
-        await reporter.stop()
+        await heartbeat.start(videoId: "yt-1") { 10 }
+        await heartbeat.start(videoId: "yt-2") { 20 }
+        await heartbeat.stop()
 
         let paths = StubURLProtocol.recorded.compactMap(\.path)
         XCTAssertEqual(paths, ["/api/v1/videos/yt-1/progress", "/api/v1/videos/yt-2/progress"])
@@ -85,13 +85,13 @@ final class ProgressReporterTests: XCTestCase {
     /// one from going out.
     func testAFailedHeartbeatIsSwallowedAndRetriedAtTheSamePosition() async throws {
         let session = StubURLProtocol.session { _, _ in (503, Data(#"{"error":"nope"}"#.utf8)) }
-        let reporter = ProgressReporter(client: client(session), interval: .seconds(600))
+        let heartbeat = ProgressHeartbeat(client: client(session), interval: .seconds(600))
 
-        await reporter.start(videoId: "yt-id") { 42 }
-        await reporter.flush()
+        await heartbeat.start(videoId: "yt-id") { 42 }
+        await heartbeat.flush()
         // The first attempt failed, so the same position is sent again rather
         // than being suppressed as a duplicate.
-        await reporter.flush()
+        await heartbeat.flush()
 
         XCTAssertEqual(StubURLProtocol.recorded.count, 2)
     }

@@ -3,10 +3,19 @@ import Foundation
 /// Sends the playback heartbeat.
 ///
 /// `POST /videos/{id}/progress` every ~10s while playing, and once more on
-/// pause, seek, background and termination. The reporter decides *when* to
+/// pause, seek, background and termination. The heartbeat decides *when* to
 /// post; the server decides what the position means — what counts as watched
 /// and what is too brief to record at all. Neither rule is duplicated here.
-public actor ProgressReporter {
+///
+/// **Not `ProgressReporter`**, which is what this was called until Foundation
+/// grew a type of that name. A file in an app target imports Foundation and
+/// FlimmKit both, so the two collide there and nowhere else: the whole app
+/// stops compiling on `'ProgressReporter' is ambiguous for type lookup`, which
+/// names neither module and points at a line that has not changed in months.
+/// Qualifying the use sites would have fixed the build and left the next
+/// unqualified mention to do it again. This name is also the one the rest of
+/// the repo uses for the thing — "the heartbeat" — and cannot collide.
+public actor ProgressHeartbeat {
     /// Reads the player's current position, in seconds.
     public typealias PositionProvider = @Sendable () async -> Double
 

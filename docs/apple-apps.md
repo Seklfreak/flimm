@@ -52,7 +52,7 @@ What is there:
   typed errors, `mediaHeaders()` and `assetHTTPHeaderFieldsKey` for
   `AVURLAsset`), **auth** (`ServerProbe`, `OIDCClient` with PKCE,
   Keychain-backed `TokenStore`, `AuthSession`), and **playback**
-  (`PlaybackContext`, `ProgressReporter`, `WebVTT` cue parsing,
+  (`PlaybackContext`, `ProgressHeartbeat`, `WebVTT` cue parsing,
   `ChapterMath`, `SponsorRules`, `CodecGate` with the quality rule,
   `QualityPreference`/`PlaybackSettings` for the per-device quality choice and
   `DeviceCapabilities` for what this screen and this chip can actually do).

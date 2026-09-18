@@ -91,7 +91,7 @@ final class TVWatchModel {
     /// Per-device, unlike ``prefs``: a TV on ethernet wants a different answer
     /// from a phone on cellular, so quality never goes to `PATCH /me/prefs`.
     @ObservationIgnored private let playback: PlaybackSettings
-    @ObservationIgnored private let reporter: ProgressReporter
+    @ObservationIgnored private let heartbeat: ProgressHeartbeat
     /// Whether the server accepted a heartbeat this session; see the phone's
     /// `WatchModel` for why that alone stales every cached list.
     @ObservationIgnored private var reportedProgress = false
@@ -174,7 +174,7 @@ final class TVWatchModel {
         self.context = request.context
         self.audioOnly = request.context.audioOnly
         self.startAtOverride = request.startAt
-        self.reporter = ProgressReporter(client: app.client)
+        self.heartbeat = ProgressHeartbeat(client: app.client)
         self.steering = RenditionSteering(client: app.client)
         wireSteering()
         observeTime()
@@ -345,7 +345,7 @@ final class TVWatchModel {
         player.seek(to: CMTime(seconds: target, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
         steering.steer(to: target)
         resumedFrom = nil
-        Task { await reporter.flush() }
+        Task { await heartbeat.flush() }
     }
 
     /// "Start over": clear the server-side position, then rewind.
@@ -460,7 +460,7 @@ final class TVWatchModel {
     }
 
     func go(to id: String) async {
-        await reporter.stop()
+        await heartbeat.stop()
         hasEnded = false
         videoId = id
         video = nil
@@ -483,7 +483,7 @@ final class TVWatchModel {
         handoff.stop()
         services.stop()
         steering.cancel()
-        await reporter.stop()
+        await heartbeat.stop()
         // After the last heartbeat: the list underneath reloads once this
         // returns, and its in-progress row has to show where playback stopped.
         if reportedProgress { await app.videoListStateChanged() }
@@ -502,11 +502,11 @@ final class TVWatchModel {
     // MARK: - Internals
 
     private func beginReporting() async {
-        await reporter.onResult { [weak self] result in
+        await heartbeat.onResult { [weak self] result in
             guard let model = self else { return }
             await model.applyProgress(result)
         }
-        await reporter.start(videoId: videoId, context: context) { [weak self] in
+        await heartbeat.start(videoId: videoId, context: context) { [weak self] in
             guard let model = self else { return 0 }
             return await model.reportedPosition
         }
@@ -598,7 +598,7 @@ final class TVWatchModel {
     /// with the phone and the web so the three cannot drift on when a viewer
     /// is told their video is over.
     private func handleEnded() async {
-        await reporter.flush()
+        await heartbeat.flush()
         switch PlaybackEnd.decide(autoplay: prefs.autoplay, hasNext: canGoNext) {
         case .advance: await goNext()
         case .finished: hasEnded = true

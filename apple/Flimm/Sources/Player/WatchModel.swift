@@ -93,7 +93,7 @@ final class WatchModel {
     /// Per-device, unlike ``prefs``: quality belongs to this screen and this
     /// network, so it never goes to `PATCH /me/prefs`.
     @ObservationIgnored private let playback: PlaybackSettings
-    @ObservationIgnored private let reporter: ProgressReporter
+    @ObservationIgnored private let heartbeat: ProgressHeartbeat
     /// Whether the server accepted a heartbeat this session. A position that
     /// moved is what an "in progress" row shows, so the lists are stale once
     /// it has, not only when the video finished.
@@ -152,7 +152,7 @@ final class WatchModel {
         self.context = request.context
         self.audioOnly = request.context.audioOnly
         self.startAtOverride = request.startAt
-        self.reporter = ProgressReporter(client: app.client)
+        self.heartbeat = ProgressHeartbeat(client: app.client)
         self.steering = RenditionSteering(client: app.client)
         wireSteering()
         wireEngine()
@@ -367,13 +367,13 @@ final class WatchModel {
         hasEnded = false
         NowPlayingController.configureAudioSession()
         engine.play()
-        Task { await reporter.resume() }
+        Task { await heartbeat.resume() }
         pushNowPlaying(force: true)
     }
 
     func pause() {
         engine.pause()
-        Task { await reporter.pause() }
+        Task { await heartbeat.pause() }
         pushNowPlaying(force: true)
     }
 
@@ -382,7 +382,7 @@ final class WatchModel {
         engine.seek(to: seconds)
         steering.steer(to: seconds)
         resumedFrom = nil
-        Task { await reporter.flush() }
+        Task { await heartbeat.flush() }
         pushNowPlaying(force: true)
     }
 
@@ -483,7 +483,7 @@ final class WatchModel {
     }
 
     func go(to id: String) async {
-        await reporter.stop()
+        await heartbeat.stop()
         hasEnded = false
         videoId = id
         video = nil
@@ -494,7 +494,7 @@ final class WatchModel {
     // MARK: - Lifecycle
 
     func handleBackground() async {
-        await reporter.flush()
+        await heartbeat.flush()
         // Video keeps the screen; audio-only is what earns background playback.
         if !audioOnly && !engine.isPiPActive { pause() }
     }
@@ -504,7 +504,7 @@ final class WatchModel {
         compatibleRetry = nil
         services.stop()
         steering.cancel()
-        await reporter.stop()
+        await heartbeat.stop()
         nowPlaying.unregister()
         engine.tearDown()
         NowPlayingController.deactivateAudioSession()
@@ -520,11 +520,11 @@ final class WatchModel {
         // Both closures run off the main actor; binding `self` to a local
         // immutable keeps them out of Swift 6's captured-var diagnostic, and
         // hopping back is implicit because the model is `@MainActor`.
-        await reporter.onResult { [weak self] result in
+        await heartbeat.onResult { [weak self] result in
             guard let model = self else { return }
             await model.applyProgress(result)
         }
-        await reporter.start(videoId: videoId, context: context) { [weak self] in
+        await heartbeat.start(videoId: videoId, context: context) { [weak self] in
             guard let model = self else { return 0 }
             return await model.playbackPosition
         }
@@ -547,7 +547,7 @@ final class WatchModel {
     }
 
     private func handleEnded() async {
-        await reporter.flush()
+        await heartbeat.flush()
         switch PlaybackEnd.decide(autoplay: prefs.autoplay, hasNext: hasNext) {
         case .advance: await goNext()
         case .finished: hasEnded = true
