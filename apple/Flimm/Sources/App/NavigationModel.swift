@@ -142,6 +142,19 @@ final class NavigationModel {
         stacks[.playlists] = NavigationPath([Route.playlist(id)])
     }
 
+    /// A channel opened from outside the app — a continuation from another
+    /// device. Its own section, with the stack replaced rather than pushed:
+    /// arriving here is a new place to be, not a step deeper into wherever the
+    /// phone happened to be left.
+    func openChannel(_ id: String) {
+        tab = .channels
+        stacks[.channels] = NavigationPath([Route.channel(id)])
+    }
+
+    func openStats() {
+        push(.stats)
+    }
+
     func openSettings() {
         push(.settings)
     }

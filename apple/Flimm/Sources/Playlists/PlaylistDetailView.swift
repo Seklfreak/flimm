@@ -50,6 +50,7 @@ struct PlaylistDetailView: View {
         .refreshable { await load() }
         .navigationTitle(summary?.name ?? "Playlist")
         .onAppear { Analytics.screen(.playlist) }
+        .handoffPage(.playlist(playlistId), title: summary?.name ?? "")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { toolbar }
         .sheet(isPresented: $showFeedsSheet) {

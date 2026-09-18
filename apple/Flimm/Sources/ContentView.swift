@@ -24,6 +24,21 @@ struct ContentView: View {
     /// never leave the device, so they are not tied to the account and outlive
     /// a sign-out.
     @State private var playback = PlaybackSettings()
+    /// Handoff: what this phone is doing, offered to the devices beside it.
+    /// Owned here rather than by the player, because a screen being read is as
+    /// continuable as a video being watched and only one of the two is a
+    /// playback session.
+    @State private var handoff = HandoffPublisher()
+    /// Which screen is on top — the half of that offer the player does not
+    /// answer. See ``HandoffPage``.
+    @State private var handoffPage = HandoffPage()
+    /// A continuation that arrived before there was an app to open it in: a
+    /// handoff that launches the app lands before the session is restored.
+    @State private var pendingContinuation: Continuation?
+    /// The server a continuation came from, when it is not this phone's. The
+    /// ids in it mean nothing here, and saying so beats four screens of "not
+    /// found".
+    @State private var otherServer: String?
 
     var body: some View {
         Group {
@@ -44,6 +59,7 @@ struct ContentView: View {
                         .environment(player)
                         .environment(nav)
                         .environment(playback)
+                        .environment(handoffPage)
                 } else {
                     LoadingState()
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -57,6 +73,19 @@ struct ContentView: View {
         // because opening anything needs the player and the navigation
         // model, and a tap that launched the app arrives before either.
         .onChange(of: push.pendingLink) { _, _ in openPendingLink() }
+        // Another device of this account's, in this room, handing over what it
+        // was doing. It may arrive at launch — before the session is restored —
+        // so it is held rather than acted on, exactly like a tapped
+        // notification.
+        .onContinueUserActivity(Continuation.activityType) { activity in
+            pendingContinuation = Continuation(userInfo: activity.userInfo ?? [:])
+            openPendingContinuation()
+        }
+        .alert("From another server", isPresented: showingOtherServer, presenting: otherServer) { _ in
+            Button("OK", role: .cancel) {}
+        } message: { host in
+            Text("That was handed over from \(host). This device is signed in to a different Flimm, which has none of it.")
+        }
         // A backgrounded phone has nobody to show a scrubber to, and the poll
         // it holds open would be a connection kept alive for nothing. Coming
         // back after a while reloads everything; see AppModel.sceneReturned.
@@ -86,6 +115,9 @@ struct ContentView: View {
             // A signed-out session has no client to report progress with, so
             // the player goes with it rather than playing on silently.
             player.configure(app: nil, playback: playback)
+            // An activity outlives the app that published it: a signed-out
+            // phone must not go on offering a library it can no longer open.
+            handoff.stop()
             return
         }
         if app?.client !== client {
@@ -96,8 +128,59 @@ struct ContentView: View {
         remote?.start()
         push.attach(client: client)
         player.configure(app: app, playback: playback)
+        let session = self.session
+        let player = self.player
+        let page = self.handoffPage
+        handoff.start { Self.continuation(session: session, player: player, page: page) }
         openPendingLink()
+        openPendingContinuation()
         openDebugVideo()
+    }
+
+    /// What this phone is doing, as another device would have to open it.
+    ///
+    /// The player wins when there is one: a video being watched is what
+    /// somebody picking up an iPad means to carry on with, and the screen
+    /// underneath it is still there when they close it.
+    private static func continuation(
+        session: AuthSession,
+        player: PlayerCoordinator,
+        page: HandoffPage
+    ) -> Continuation? {
+        guard let server = session.server?.baseURL else { return nil }
+        if let playing = player.model?.continuation { return playing }
+        guard let current = page.page, !page.title.isEmpty else { return nil }
+        return Continuation(server: server, destination: .page(current), title: page.title)
+    }
+
+    private var showingOtherServer: Binding<Bool> {
+        Binding(get: { otherServer != nil }, set: { if !$0 { otherServer = nil } })
+    }
+
+    /// Opens what another device handed over, once there is an app to open it
+    /// in. Playback starts where that device actually was rather than from the
+    /// server's held position, which is up to a heartbeat behind it.
+    private func openPendingContinuation() {
+        guard app != nil, let continuation = pendingContinuation, let server = session.server?.baseURL else { return }
+        pendingContinuation = nil
+        guard continuation.matches(server: server) else {
+            otherServer = continuation.server.host() ?? continuation.server.absoluteString
+            return
+        }
+        switch continuation.destination {
+        case .watch(let videoId, let position, let context):
+            player.play(videoId, context: context, startAt: position > 0 ? position : nil)
+        case .page(.feed(let id)):
+            nav.select(feed: id)
+        case .page(.channel(let id)):
+            nav.openChannel(id)
+        case .page(.playlist(let id)):
+            nav.openPlaylist(id)
+        case .page(.history):
+            nav.select(.history)
+        case .page(.stats):
+            nav.openStats()
+        }
     }
 
     /// Opens what a tapped notification asked for, once there is an app to

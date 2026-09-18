@@ -41,6 +41,7 @@ struct StatsView: View {
             .padding(16)
         }
         .navigationTitle("Stats")
+        .handoffPage(.stats, title: "Stats")
         .task(id: range) { await load() }
     }
 

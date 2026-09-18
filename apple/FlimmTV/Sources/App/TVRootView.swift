@@ -57,6 +57,20 @@ struct TVRootView: View {
             guard let id = TopShelfLink.videoID(from: url) else { return }
             player.play(id)
         }
+        // A phone in the room handing a video to the television.
+        //
+        // The TV publishes activities of its own (see ``TVWatchModel``), and an
+        // app that names an activity type is a device the system will offer as
+        // a destination for it — so it has to be able to act on one, or the
+        // offer opens Flimm on the Home screen and does nothing. Only the
+        // watch case: a page is not something anybody hands to a television.
+        .onContinueUserActivity(Continuation.activityType) { activity in
+            guard let continuation = Continuation(userInfo: activity.userInfo ?? [:]),
+                  let server = session.server?.baseURL,
+                  continuation.matches(server: server),
+                  case .watch(let videoId, let position, let context) = continuation.destination else { return }
+            player.play(videoId, context: context, startAt: position > 0 ? position : nil)
+        }
     }
 
     /// Changes when the session or the server does, which is exactly when the

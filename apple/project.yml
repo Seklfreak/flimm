@@ -92,6 +92,13 @@ targets:
         # locked; this is what makes that mode worth having on a phone.
         UIBackgroundModes:
           - audio
+        # Handoff. The one activity type both apps publish and continue —
+        # ``Continuation.activityType`` — and it has to read the same here as
+        # in the TV's plist: an activity is only ever offered to apps of the
+        # same team that name its type. No entitlement and no provisioning
+        # goes with this; Handoff between two of your own apps needs neither.
+        NSUserActivityTypes:
+          - dev.winktech.flimm.continue
         # OIDC redirect target. The provider must allow
         # dev.winktech.flimm://auth as a native redirect URI — a deployment-side
         # configuration step the app surfaces verbatim when sign-in fails.
@@ -169,6 +176,12 @@ targets:
         # them with the screen saver up.
         UIBackgroundModes:
           - audio
+        # Handoff — the same type as the phone's, which is what makes the
+        # two apps see each other's activities. The television publishes what
+        # it is playing and accepts a video handed to it; it offers no page
+        # activities, having no screen anybody continues *onto* a TV.
+        NSUserActivityTypes:
+          - dev.winktech.flimm.continue
         # Not for sign-in: tvOS has no ASWebAuthenticationSession and no
         # browser, so the device authorization grant never redirects back
         # here. This scheme exists for the top shelf, whose actions are URLs

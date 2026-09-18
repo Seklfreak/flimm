@@ -74,6 +74,7 @@ struct HistoryView: View {
         .refreshable { await pager?.reload() }
         .navigationTitle("History")
         .onAppear { Analytics.screen(.history) }
+        .handoffPage(.history, title: "History")
         .searchable(text: $searchText, isPresented: nav.searchPresented(for: .history), prompt: "Search history")
         .toolbar {
             // Stats live behind History because they are the same data read a

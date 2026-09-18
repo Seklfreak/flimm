@@ -38,6 +38,7 @@ struct FeedsView: View {
         .background(Palette.background)
         .navigationTitle(feed?.name ?? "Feeds")
         .onAppear { Analytics.screen(.feed) }
+        .handoffPage(feed.map { .feed($0.id) }, title: feed?.name ?? "")
         .navigationBarTitleDisplayMode(.large)
         .toolbar { toolbar }
         .searchable(

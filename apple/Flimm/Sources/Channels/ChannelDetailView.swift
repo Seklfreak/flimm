@@ -62,6 +62,7 @@ struct ChannelDetailView: View {
         .refreshable { await load() }
         .navigationTitle(channel?.name ?? "Channel")
         .onAppear { Analytics.screen(.channel) }
+        .handoffPage(.channel(channelId), title: channel?.name ?? "")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { toolbar }
         .sheet(isPresented: $showFeedPicker) {

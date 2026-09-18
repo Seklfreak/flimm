@@ -124,6 +124,11 @@ final class TVWatchModel {
     @ObservationIgnored private lazy var remote = RemotePublisher(
         client: client, device: UIDevice.current.name, platform: "tvos"
     )
+    /// Offers this session to the room: an iPhone beside the television can
+    /// take the video into the kitchen. Publish-only — a television is not a
+    /// screen anybody hands a half-read page *to*, and the phone steers this
+    /// one through ``RemotePublisher`` above rather than through Handoff.
+    @ObservationIgnored private let handoff = HandoffPublisher()
 
     /// How long to keep retrying a playlist the server could not open. A
     /// segment that has not been encoded yet no longer lands here — it blocks
@@ -472,6 +477,10 @@ final class TVWatchModel {
         // Before anything else the phone reads: a controller must learn the
         // screen went dark now, not when the session expires.
         await remote.stop()
+        // Same reason, for the devices in the room rather than the account:
+        // an offer to continue something that stopped is an offer to open a
+        // black screen.
+        handoff.stop()
         services.stop()
         steering.cancel()
         await reporter.stop()
@@ -677,6 +686,18 @@ private extension TVWatchModel {
         remote.start(
             state: { [weak self] in self?.remoteState },
             onCommand: { [weak self] command in self?.apply(command) }
+        )
+        handoff.start { [weak self] in self?.continuation }
+    }
+
+    /// What a device beside the television would have to open to carry on.
+    /// `nil` until the video is loaded, for the reason ``remoteState`` is.
+    var continuation: Continuation? {
+        guard let video else { return nil }
+        return Continuation(
+            server: client.baseURL,
+            destination: .watch(videoId: videoId, position: reportedPosition, context: context),
+            title: video.title
         )
     }
 

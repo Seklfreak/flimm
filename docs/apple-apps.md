@@ -312,6 +312,54 @@ What is there:
     touch and is otherwise invisible to a screenshot. `FLIMM_SHOW_STATS=1` opens
     the playback stats panel at launch, on the player and the companion both,
     because it lives behind a menu a simulator cannot open.
+  - **Handoff is the other half of that, and a different question.** The
+    companion answers "steer what is playing over there"; Handoff answers
+    "carry this here" — pick up the iPad and the video, the second and the run
+    it is playing in are on it, one tap from the app switcher. Progress already
+    syncs through the server, so what this adds is not the position: it is not
+    having to *find* the video again, and it covers the screens the server
+    knows nothing about — a feed, a channel, a playlist, History, Stats.
+
+    One activity type (``Continuation/activityType``) and one payload, in
+    `FlimmKit/Handoff`. The payload is deliberately the web client's own link:
+    the context travels as ``PlaybackContext/queryItems``, which is what makes
+    ``Continuation/webpageURL`` a real address — and *that* is what a Mac with
+    no Flimm installed opens instead, at the same video and the same second.
+    Native → web is free that way; **web → native is not**, and is not
+    implemented: Safari can only hand a page to an app that claims its domain
+    in `com.apple.developer.associated-domains`, that entitlement is fixed at
+    build time, and this app's server is typed in at onboarding. Baking one
+    deployment's hostname into a generic client is the rule at the top of
+    `CLAUDE.md`, so the asymmetry is stated rather than papered over.
+
+    **What publishes, and when.** ``HandoffPublisher`` owns a tick and asks the
+    app what it is doing, for the reason ``RemotePublisher`` does: the states
+    worth handing over are the still ones — a paused player, a screen somebody
+    is reading — and a publisher driven by pushes goes quiet exactly then.
+    ``HandoffRule`` decides whether to speak: anything but the position
+    republishes at once, and the position itself only every ten seconds, the
+    heartbeat's own granularity. The phone publishes the player when there is
+    one and the screen underneath otherwise (``HandoffPage``, because a
+    `NavigationPath` cannot be read back — the screens say what they are). The
+    television publishes only what it is playing; a page is not something
+    anybody hands *to* a TV.
+
+    **Both apps also receive**, the phone into any of those destinations and
+    the television into playback only. The TV receives because it must: an app
+    that names an activity type is a destination the system will offer, and an
+    offer that opens the Home screen is worse than none. Playback starts at the
+    position the other device was actually at, not the server's held one, which
+    is up to a heartbeat behind. A continuation from **another server** is
+    refused by name — the app is multi-server, and those ids mean nothing here.
+
+    **No entitlement and no provisioning goes with any of this** — Handoff
+    between two apps of the same team needs neither, unlike the App Group the
+    top shelf needed. What it does need is two signed-in devices in the same
+    room on one Apple ID, with Bluetooth and Wi-Fi on: it is not remote
+    control, and it is not casting. And it **cannot be exercised in a
+    simulator at all**, which is why the parts that decide anything — the
+    payload, the web address, the rule — are pure and tested in `FlimmKit`,
+    and why the rest is stated as unverified until it has run on hardware.
   - **The Home screen's top shelf shows the pinned feed.** When Flimm is
     focused in the Home screen's top row, tvOS draws a row of what is waiting
     in the feed the app opens on — titles, artwork, and the resume bar on
@@ -499,6 +547,11 @@ What is still missing:
   be exercised: the sidebar, the grids, the side-by-side player, and on tvOS
   the focus behaviour, the navigation markers and the interstitials have not
   been seen against real data.
+- **Handoff on hardware.** Published, received and unit-tested, but never
+  seen: Handoff needs two signed-in devices in one room and does not exist in
+  a simulator. Unknown until then — whether the Apple TV is offered as a
+  destination at all, and how the banner reads on a Mac with no Flimm app,
+  where it should fall back to the web client.
 - **A Stage Manager / external display pass.** The layout follows the size
   class and so behaves, but nobody has looked at it in a resizable window or
   on a second screen.

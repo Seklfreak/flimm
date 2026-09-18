@@ -70,6 +70,14 @@ One container image: a Go backend with the React frontend embedded.
   steering: a comment thread is unreadable across a room and ordinary in your
   hand. Nothing to pair — it works over your own Flimm account, so it needs
   neither the same network nor a code to type.
+- **Handoff between your Apple devices** (iPhone/iPad + Apple TV) — pick up
+  the iPad and the video you were watching is on it, at the same second and in
+  the same feed or playlist, one tap from the app switcher; the same for a
+  feed, a channel, a playlist, History or Stats. A Mac with no Flimm app
+  installed opens the web client at the same place instead. It is the opposite
+  of the companion above — carrying something *here* rather than steering
+  something over there — and, being Handoff, it wants your devices near each
+  other on one Apple ID.
 - **Playback stats** (web) — a panel under the video saying what the player is
   actually doing: whether the archived file is playing directly or a rendition
   is, *why* the gate chose that, how far the transcode has got, how far the
