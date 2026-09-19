@@ -86,7 +86,7 @@ struct TVSearchView: View {
             section("Videos", count: results.videos.total) {
                 LazyVGrid(columns: TVGrids.videos, alignment: .leading, spacing: TVMetrics.gridSpacing) {
                     ForEach(results.videos.items) { match in
-                        TVVideoMatchCard(match: match, onDismissChange: updateVideo)
+                        TVVideoMatchCard(match: match, onVideoChange: updateVideo)
                     }
                 }
             }
@@ -151,13 +151,13 @@ struct TVSearchView: View {
 /// A video result with its subtitle hits underneath; each hit seeks.
 struct TVVideoMatchCard: View {
     let match: VideoMatch
-    var onDismissChange: ((VideoSummary) -> Void)?
+    var onVideoChange: ((VideoSummary) -> Void)?
 
     @Environment(TVPlayerCoordinator.self) private var player
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            TVVideoCard(video: match.video, onDismissChange: onDismissChange)
+            TVVideoCard(video: match.video, onVideoChange: onVideoChange)
             ForEach(Array(match.subtitleHits.prefix(3).enumerated()), id: \.offset) { _, hit in
                 Button {
                     player.play(match.video.id, startAt: hit.start)

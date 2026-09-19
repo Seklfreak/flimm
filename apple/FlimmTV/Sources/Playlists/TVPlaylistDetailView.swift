@@ -99,7 +99,7 @@ struct TVPlaylistDetailView: View {
             } else {
                 LazyVGrid(columns: TVGrids.videos, alignment: .leading, spacing: TVMetrics.gridSpacing) {
                     ForEach(playlist.items) { item in
-                        TVVideoCard(video: item.video, context: context, onDismissChange: updateVideo)
+                        TVVideoCard(video: item.video, context: context, canMarkSeen: !isMusic, onVideoChange: updateVideo)
                     }
                 }
             }

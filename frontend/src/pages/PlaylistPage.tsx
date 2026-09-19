@@ -2,9 +2,9 @@ import { useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
-import { invalidateFeedish, usePlaylist, useSetPlaylistMusic, useSetPlaylistPinned, useSetWatched } from "@/lib/queries";
+import { invalidateFeedish, usePlaylist, useSetPlaylistMusic, useSetPlaylistPinned } from "@/lib/queries";
 import { ccLabel, fmtDuration, fmtDurationLong, plural, relativeDay } from "@/lib/format";
-import { CheckIcon, EmptyState, ErrorState, HeadphonesIcon, LoadingState, PinIcon } from "@/components/ui";
+import { EmptyState, ErrorState, HeadphonesIcon, LoadingState, PinIcon } from "@/components/ui";
 import { InFeedsControl } from "@/components/InFeedsControl";
 import { VideoRow } from "@/components/VideoRow";
 import { watchHref } from "@/components/VideoCard";
@@ -15,7 +15,6 @@ export default function PlaylistPage() {
   const playlist = usePlaylist(id);
   const navigate = useNavigate();
   const qc = useQueryClient();
-  const setWatched = useSetWatched();
   const setPinned = useSetPlaylistPinned();
   const setMusic = useSetPlaylistMusic();
   const [unseenOnly, setUnseenOnly] = useState(false);
@@ -226,19 +225,17 @@ export default function PlaylistPage() {
                     {inProgress && ` · stopped at ${fmtDuration(v.position)}`}
                   </>
                 }
+                canMarkSeen={!p.music}
                 actions={
                   <>
-                    {/* A music playlist records no watch state, so every row is
-                        simply Play — never Seen or Resume. */}
-                    {!p.music && v.watched ? (
-                      <button className="btn" onClick={() => setWatched.mutate({ id: v.id, watched: false })} title="Mark unseen">
-                        <CheckIcon size={13} /> <span className="hidden sm:inline">Seen</span>
-                      </button>
-                    ) : (
-                      <Link to={watchHref(v, ctx)} className={`btn no-underline ${inProgress ? "pri" : ""}`}>
-                        <PlayIcon /> <span className="hidden sm:inline">{inProgress ? "Resume" : "Play"}</span>
-                      </Link>
-                    )}
+                    {/* Play, whatever the watch state: a seen row is started
+                        over, not resumed, and marking it unseen is the row's
+                        own seen toggle — the same control every other list
+                        has. A music playlist records no watch state at all,
+                        so there it is never Resume either. */}
+                    <Link to={watchHref(v, ctx)} className={`btn no-underline ${inProgress ? "pri" : ""}`}>
+                      <PlayIcon /> <span className="hidden sm:inline">{inProgress ? "Resume" : "Play"}</span>
+                    </Link>
                     {isCustom && (
                       <button className="text-muted-3 hover:text-danger" aria-label="Remove from playlist" onClick={() => void move(v.id, "remove")}>
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M6 6l12 12M18 6L6 18" /></svg>

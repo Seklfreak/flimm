@@ -28,8 +28,8 @@ One container image: a Go backend with the React frontend embedded.
 - **Channels** directory — search, sort, see which feeds each channel is in,
   find channels in no feed; add/remove from feeds right on the channel page.
 - **Resume & seen state per user** — heartbeat progress, automatic resume
-  with *Start over*, auto-seen at ~90 %, *Mark seen* / *Mark unseen*, mark a
-  whole feed or channel seen.
+  with *Start over*, auto-seen at ~90 %, *Mark seen* / *Mark unseen* on any
+  card or row as well as in the player, mark a whole feed or channel seen.
 - **History** — grouped by day, in-progress rows resume in place, entries can
   be hidden.
 - **Not interested** — take a video out of every feed without watching it. It

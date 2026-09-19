@@ -67,6 +67,21 @@ public struct VideoSummary: Codable, Sendable, Hashable, Identifiable {
         )
     }
 
+    /// A copy with ``watched`` flipped, patched the way `POST /videos/{id}/watched`
+    /// leaves the video: marking it seen keeps the recorded position (it is
+    /// started over, not resumed) and puts `progress` at 1; marking it unseen
+    /// clears both. `lastPlayedAt` is untouched either way, because the server
+    /// deliberately does not bump it — toggling from a list must not reorder
+    /// history.
+    public func withWatched(_ watched: Bool) -> VideoSummary {
+        VideoSummary(
+            id: id, title: title, channel: channel, thumbUrl: thumbUrl, duration: duration,
+            published: published, downloaded: downloaded, type: type, subtitleLangs: subtitleLangs,
+            hasAutoSubtitles: hasAutoSubtitles, watched: watched, dismissed: dismissed,
+            position: watched ? position : 0, progress: watched ? 1 : 0, lastPlayedAt: lastPlayedAt
+        )
+    }
+
     public init(
         id: String,
         title: String,

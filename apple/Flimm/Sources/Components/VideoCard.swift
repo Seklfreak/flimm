@@ -80,9 +80,14 @@ struct VideoCard: View {
     let video: VideoSummary
     var context: PlaybackContext = .none
     var showChannel = true
-    /// Called with the updated summary once a dismiss/undismiss round trip
-    /// succeeds. See ``DismissMenuItem``.
-    var onDismissChange: ((VideoSummary) -> Void)?
+    /// False inside a music playlist, which records no watch state at all
+    /// (docs/api.md, "Music playlists") — marking a song seen there would
+    /// write a flag back to TubeArchivist that nothing in the playlist reads.
+    var canMarkSeen = true
+    /// Called with the updated summary once a hold-menu round trip succeeds —
+    /// dismiss/undismiss or seen/unseen alike. See ``DismissMenuItem`` and
+    /// ``WatchedMenuItem``.
+    var onVideoChange: ((VideoSummary) -> Void)?
 
     @Environment(PlayerCoordinator.self) private var player
     @Environment(NavigationModel.self) private var nav
@@ -117,7 +122,10 @@ struct VideoCard: View {
                     Label("Go to channel", systemImage: "person.crop.rectangle")
                 }
             }
-            DismissMenuItem(video: video, onChange: onDismissChange)
+            if canMarkSeen {
+                WatchedMenuItem(video: video, onChange: onVideoChange)
+            }
+            DismissMenuItem(video: video, onChange: onVideoChange)
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(video.title)
@@ -142,10 +150,13 @@ struct VideoRow: View {
     let video: VideoSummary
     var context: PlaybackContext = .none
     var subtitle: String?
-    /// Called with the updated summary once a dismiss/undismiss round trip
-    /// succeeds. `VideoRow` is never used inside a feed, so every caller just
-    /// patches the row in place — see ``DismissMenuItem``.
-    var onDismissChange: ((VideoSummary) -> Void)?
+    /// See ``VideoCard/canMarkSeen``.
+    var canMarkSeen = true
+    /// Called with the updated summary once a hold-menu round trip succeeds —
+    /// dismiss/undismiss or seen/unseen alike. `VideoRow` is never used inside
+    /// a feed, so every caller just patches the row in place — see
+    /// ``DismissMenuItem`` and ``WatchedMenuItem``.
+    var onVideoChange: ((VideoSummary) -> Void)?
 
     @Environment(PlayerCoordinator.self) private var player
 
@@ -172,7 +183,12 @@ struct VideoRow: View {
         }
         .buttonStyle(.plain)
         .opacity(video.watched ? 0.6 : 1)
-        .contextMenu { DismissMenuItem(video: video, onChange: onDismissChange) }
+        .contextMenu {
+            if canMarkSeen {
+                WatchedMenuItem(video: video, onChange: onVideoChange)
+            }
+            DismissMenuItem(video: video, onChange: onVideoChange)
+        }
     }
 
     private var defaultSubtitle: String {
@@ -252,14 +268,20 @@ struct VideoList: View {
     @ViewBuilder
     private var cards: some View {
         ForEach(pager.items) { video in
-            VideoCard(video: video, context: context, showChannel: showChannel, onDismissChange: handleDismissChange)
+            VideoCard(video: video, context: context, showChannel: showChannel, onVideoChange: handleVideoChange)
                 .task { await pager.loadMoreIfNeeded(after: video) }
         }
     }
 
     // MARK: - Dismiss / undo
 
-    private func handleDismissChange(_ updated: VideoSummary) {
+    /// One handler for both hold-menu actions, because only one of them ever
+    /// takes a card out of the list: a feed never shows a dismissed video, so
+    /// dismissing there removes it and offers an undo. Marking a video seen
+    /// never does — it stays where it is, dimmed and checked, even in a feed
+    /// showing only unseen videos, so the viewer can undo a misfire without
+    /// hunting for it. The reload that drops it comes later, on the next visit.
+    private func handleVideoChange(_ updated: VideoSummary) {
         if isFeedContext, updated.dismissed, let index = pager.items.firstIndex(where: { $0.id == updated.id }) {
             pendingUndo = PendingDismiss(video: updated, index: index)
             withAnimation { pager.remove(id: updated.id) }

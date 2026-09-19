@@ -145,7 +145,7 @@ struct SearchResultsView: View {
     @ViewBuilder
     private func videoMatches(_ results: SearchResults) -> some View {
         ForEach(results.videos.items) { match in
-            VideoMatchRow(match: match, onDismissChange: updateVideo)
+            VideoMatchRow(match: match, onVideoChange: updateVideo)
         }
     }
 
@@ -216,13 +216,13 @@ struct SearchResultsView: View {
 /// A video result, with its subtitle hits underneath. Each hit seeks.
 struct VideoMatchRow: View {
     let match: VideoMatch
-    var onDismissChange: ((VideoSummary) -> Void)?
+    var onVideoChange: ((VideoSummary) -> Void)?
 
     @Environment(PlayerCoordinator.self) private var player
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            VideoRow(video: match.video, onDismissChange: onDismissChange)
+            VideoRow(video: match.video, onVideoChange: onVideoChange)
             ForEach(Array(match.subtitleHits.enumerated()), id: \.offset) { _, hit in
                 Button {
                     player.play(match.video.id, startAt: hit.start)

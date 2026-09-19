@@ -101,9 +101,14 @@ struct TVVideoCard: View {
     let video: VideoSummary
     var context: PlaybackContext = .none
     var showChannel = true
-    /// Called with the updated summary once a dismiss/undismiss round trip
-    /// succeeds. See ``DismissMenuItem``.
-    var onDismissChange: ((VideoSummary) -> Void)?
+    /// False inside a music playlist, which records no watch state at all
+    /// (docs/api.md, "Music playlists") — marking a song seen there would
+    /// write a flag back to TubeArchivist that nothing in the playlist reads.
+    var canMarkSeen = true
+    /// Called with the updated summary once a hold-menu round trip succeeds —
+    /// dismiss/undismiss or seen/unseen alike. See ``DismissMenuItem`` and
+    /// ``WatchedMenuItem``.
+    var onVideoChange: ((VideoSummary) -> Void)?
 
     @Environment(TVPlayerCoordinator.self) private var player
     @Environment(\.tvPush) private var push
@@ -148,7 +153,10 @@ struct TVVideoCard: View {
                         Label("Go to channel", systemImage: "person.crop.rectangle")
                     }
                 }
-                DismissMenuItem(video: video, onChange: onDismissChange)
+                if canMarkSeen {
+                    WatchedMenuItem(video: video, onChange: onVideoChange)
+                }
+                DismissMenuItem(video: video, onChange: onVideoChange)
             }
 
             VStack(alignment: .leading, spacing: 4) {

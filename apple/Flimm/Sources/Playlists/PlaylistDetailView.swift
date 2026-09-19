@@ -30,7 +30,12 @@ struct PlaylistDetailView: View {
                                     .foregroundStyle(.secondary)
                                     .frame(width: 22, alignment: .trailing)
                                     .padding(.top, 6)
-                                VideoRow(video: item.video, context: context, onDismissChange: updateVideo)
+                                VideoRow(
+                                    video: item.video,
+                                    context: context,
+                                    canMarkSeen: !(summary?.music ?? false),
+                                    onVideoChange: updateVideo
+                                )
                             }
                         }
                     }

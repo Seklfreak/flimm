@@ -49,7 +49,7 @@ struct TVVideoGrid: View {
     var body: some View {
         LazyVGrid(columns: TVGrids.videos, alignment: .leading, spacing: TVMetrics.gridSpacing) {
             ForEach(pager.items) { video in
-                TVVideoCard(video: video, context: context, showChannel: showChannel, onDismissChange: handleDismissChange)
+                TVVideoCard(video: video, context: context, showChannel: showChannel, onVideoChange: handleVideoChange)
                     .task { await pager.loadMoreIfNeeded(after: video) }
             }
         }
@@ -67,7 +67,13 @@ struct TVVideoGrid: View {
 
     // MARK: - Dismiss / undo
 
-    private func handleDismissChange(_ updated: VideoSummary) {
+    /// One handler for both hold-menu actions, because only one of them ever
+    /// takes a card out of the grid: a feed never shows a dismissed video, so
+    /// dismissing there removes it and offers an undo. Marking a video seen
+    /// never does — it stays where it is, dimmed and checked, even in a feed
+    /// showing only unseen videos, so the viewer can undo a misfire without
+    /// hunting for it. The reload that drops it comes later, on the next visit.
+    private func handleVideoChange(_ updated: VideoSummary) {
         if isFeedContext, updated.dismissed, let index = pager.items.firstIndex(where: { $0.id == updated.id }) {
             pendingUndo = PendingDismiss(video: updated, index: index)
             withAnimation { pager.remove(id: updated.id) }

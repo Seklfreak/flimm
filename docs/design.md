@@ -88,6 +88,21 @@ TubeArchivist, which is what explains an archive that looks incomplete.
   it flips in place; playback carries on either way. Every client
   offers an undo without navigating away, because the action is one tap from a
   card and easy to hit by accident.
+- **Seen is a per-video decision, reachable wherever the video is.** Marking
+  something seen without playing it is how a list of things to watch stops
+  claiming something the viewer has already seen elsewhere, or has decided to
+  skip but wants to keep. So *Mark seen* / *Mark unseen* is not only a control
+  in the player: every card and row carries it — behind the hold menu on the
+  phone, the iPad and the Apple TV's remote, as a check on the thumbnail on
+  the web — next to "Not interested", which is the other half of the choice
+  and deliberately not the same thing (it lies about nothing and writes
+  nothing back to TubeArchivist). Toggling from a list never reorders history,
+  and a video marked seen stays exactly where it was — dimmed and checked,
+  even in a list of unseen videos — because an action that removes the card it
+  was aimed at cannot be undone by aiming at it again. The list catches up on
+  its next load. A **music playlist offers neither**: it records no watch
+  state at all, so a seen flag there would be written back to TubeArchivist
+  and read by nothing.
 - **A context that has run out says so, and its suggestions say what they
   are.** At the end of a playlist or feed the server still offers TA's similar
   videos, but marked (`suggestions` in `docs/api.md`) and with anything

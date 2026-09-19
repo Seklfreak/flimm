@@ -34,6 +34,35 @@ describe("VideoCard", () => {
       expect(calls.some((c) => c.url.includes("/videos/vid1/dismiss") && c.init?.method === "POST")).toBe(true),
     );
   });
+  it('marks a video seen: the toggle posts watched:true and the card flips without a refetch', async () => {
+    const { calls } = mockFetch({ "POST /api/v1/videos/vid1/watched": { position: 561, watched: true } });
+    renderWithProviders(<VideoCard video={video()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Mark seen" }));
+    await waitFor(() =>
+      expect(
+        calls.some((c) => c.url.includes("/videos/vid1/watched") && String(c.init?.body).includes('"watched":true')),
+      ).toBe(true),
+    );
+    // Optimistic: the resume chip is gone and the button now offers the way back.
+    expect(screen.queryByText(/Resume/)).toBeNull();
+    expect(screen.getByRole("button", { name: "Mark unseen" })).toBeTruthy();
+  });
+  it("marks a seen video unseen again", async () => {
+    const { calls } = mockFetch({ "POST /api/v1/videos/vid1/watched": { position: 0, watched: false } });
+    renderWithProviders(<VideoCard video={video({ watched: true, position: 0, progress: 1 })} />);
+    fireEvent.click(screen.getByRole("button", { name: "Mark unseen" }));
+    await waitFor(() =>
+      expect(
+        calls.some((c) => c.url.includes("/videos/vid1/watched") && String(c.init?.body).includes('"watched":false')),
+      ).toBe(true),
+    );
+  });
+  it("offers no seen toggle where watch state is not recorded", () => {
+    renderWithProviders(<VideoCard video={video()} canMarkSeen={false} />);
+    expect(screen.queryByRole("button", { name: /Mark (un)?seen/ })).toBeNull();
+    // The other hold-menu action is unaffected.
+    expect(screen.getByRole("button", { name: "Not interested" })).toBeTruthy();
+  });
   it('shows a dismissed video as "Hidden from feeds" and restores it', async () => {
     const { calls } = mockFetch({ "DELETE /api/v1/videos/vid1/dismiss": { dismissed: false } });
     renderWithProviders(<VideoCard video={video({ dismissed: true })} />);

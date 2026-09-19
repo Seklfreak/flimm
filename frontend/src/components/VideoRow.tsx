@@ -1,7 +1,7 @@
 import { Link } from "react-router";
 import type { VideoSummary } from "@/lib/api";
-import { CloseIcon } from "./ui";
-import { Thumb, useDismissToggle, watchHref } from "./VideoCard";
+import { CheckIcon, CloseIcon } from "./ui";
+import { Thumb, useDismissToggle, useWatchedToggle, watchedLabel, watchHref } from "./VideoCard";
 
 // List row (Playlist / History / Search): 148×84 thumb, title, meta, trailing actions.
 // Every row (channel, playlist, search, history) still shows a dismissed
@@ -17,6 +17,7 @@ export function VideoRow({
   dim,
   thumbWidth = 148,
   extra,
+  canMarkSeen = true,
 }: {
   video: VideoSummary;
   ctx?: Record<string, string | undefined>;
@@ -26,13 +27,17 @@ export function VideoRow({
   dim?: boolean;
   thumbWidth?: number;
   extra?: React.ReactNode;
+  /** False inside a music playlist, which records no watch state at all
+   *  (docs/api.md, "Music playlists"). */
+  canMarkSeen?: boolean;
 }) {
   const { dismissed, toggle, pending } = useDismissToggle(video);
+  const seen = useWatchedToggle(video);
   return (
     <div className={`row gap-3 md:gap-4 ${dim ? "opacity-55" : ""}`}>
       {lead}
       <Link to={watchHref(video, ctx)} className="flex-none" style={{ width: thumbWidth }} aria-label={video.title}>
-        <Thumb video={video} compact className="!rounded-[10px]" />
+        <Thumb video={seen.shown} compact className="!rounded-[10px]" />
       </Link>
       <div className="flex min-w-0 flex-1 flex-col gap-[3px]">
         <Link to={watchHref(video, ctx)} className="text-[15px] font-extrabold leading-[1.25] text-ink no-underline hover:text-ink line-clamp-2" title={video.title}>
@@ -51,6 +56,18 @@ export function VideoRow({
       </div>
       <div className="flex flex-none items-center gap-2">
         {actions}
+        {canMarkSeen && (
+          <button
+            type="button"
+            aria-label={watchedLabel(seen.watched)}
+            title={seen.watched ? "Mark unseen" : "Mark seen — without playing it"}
+            className={seen.watched ? "text-accent" : "text-muted-3 hover:text-ink"}
+            onClick={seen.toggle}
+            disabled={seen.pending}
+          >
+            <CheckIcon size={16} />
+          </button>
+        )}
         {!dismissed && (
           <button
             type="button"

@@ -448,6 +448,20 @@ What is there:
     only ever watches there never pays for a sheet — which is why the
     television's stats panel reports the sheet as never asked for, and why the
     companion's scrubber is usually the first request for one.
+  - **The hold menu is where a card's per-video state lives.** `.contextMenu`
+    is the same SwiftUI API on iOS and tvOS — only the gesture that opens it
+    differs, a hold on the phone and a long press on the remote's touch
+    surface, and that is the platform's job — so both entries on it are shared
+    view code and neither target has its own copy. *Mark seen* / *Mark unseen*
+    (`apple/Shared/WatchedAction.swift`) is the watch-state half: real watch
+    state, written back to TubeArchivist, patched into the card locally with
+    `VideoSummary.withWatched` exactly as the server would leave it rather
+    than costing a reload. The card keeps its place in the list either way —
+    dropping a card because it was just marked seen would take away the only
+    way to undo it. Inside a **music playlist** the entry is absent
+    (`canMarkSeen: false`): that playlist records no watch state at all, which
+    is also why the phone's player hides its own seen button in audio-only
+    mode.
   - **"Not interested" is one action in one place.** `apple/Shared/DismissAction.swift`
     holds both the round trip and the context-menu row, because `.contextMenu`
     is the same SwiftUI API on iOS and tvOS — only the gesture that opens it

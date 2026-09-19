@@ -61,7 +61,7 @@ struct TVHistoryView: View {
                                 TVVideoCard(
                                     video: entry.video,
                                     context: entry.playbackContext,
-                                    onDismissChange: { updateEntry(entry, video: $0) }
+                                    onVideoChange: { updateEntry(entry, video: $0) }
                                 )
                                     .task { await pager.loadMoreIfNeeded(after: entry) }
                             }
@@ -116,8 +116,23 @@ struct TVHistoryView: View {
     /// History keeps listing a video after it is dismissed — the contract
     /// makes an exception for feeds only — so this patches the card's own
     /// state in place rather than removing it.
+    /// `state` follows the patched video rather than being carried over: a row
+    /// the hold menu just marked seen is a seen row, and one marked unseen has
+    /// had its position cleared, which is what the server reports on the next
+    /// load. `playlistId` and `feed` have to be carried over by hand — dropping
+    /// them would leave the row playing with no context, so up next would
+    /// answer with suggestions instead of the rest of the series.
     private func updateEntry(_ entry: HistoryEntry, video: VideoSummary) {
-        pager?.replace(HistoryEntry(id: entry.id, video: video, playedAt: entry.playedAt, state: entry.state))
+        pager?.replace(
+            HistoryEntry(
+                id: entry.id,
+                video: video,
+                playedAt: entry.playedAt,
+                state: video.watched ? .seen : .inProgress,
+                playlistId: entry.playlistId,
+                feed: entry.feed
+            )
+        )
         Task { await app.videoListStateChanged() }
     }
 }

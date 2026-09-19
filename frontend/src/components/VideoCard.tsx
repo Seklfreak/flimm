@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router";
 import type { VideoSummary } from "@/lib/api";
-import { useDismissVideo, useUndismissVideo } from "@/lib/queries";
+import { useDismissVideo, useSetWatched, useUndismissVideo } from "@/lib/queries";
 import { ccLabel, fmtDuration, relativeDay, seenLabel } from "@/lib/format";
 import { CheckIcon, CloseIcon, MediaImg, ProgressBar } from "./ui";
 
@@ -40,6 +40,50 @@ export function useDismissToggle(video: VideoSummary, onDismiss?: (video: VideoS
     }
   };
   return { dismissed, toggle, pending };
+}
+
+// Shared "Mark seen" / "Mark unseen" behaviour for one video, used by both
+// VideoCard and VideoRow so clearing something off an unseen list without
+// playing it is one interaction wherever a video appears — the same action
+// the phone and the Apple TV put in a card's hold menu.
+//
+// Unlike "Not interested" this *is* watch state: it goes back to
+// TubeArchivist and follows the viewer into every other client
+// (docs/design.md, "Player, resume and seen state").
+//
+// Optimistic like useDismissToggle, and for the same reason: the flip is
+// instant, rolls back on error, and resets once `video.watched` itself
+// changes — the refetch after invalidation is what confirms it.
+export function useWatchedToggle(video: VideoSummary) {
+  const setWatched = useSetWatched();
+  const [override, setOverride] = useState<boolean | null>(null);
+  useEffect(() => setOverride(null), [video.id, video.watched]);
+  const watched = override ?? video.watched;
+  const toggle = (e: { preventDefault(): void; stopPropagation(): void }) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const next = !watched;
+    setOverride(next);
+    setWatched.mutate({ id: video.id, watched: next }, { onError: () => setOverride(!next) });
+  };
+  return { watched, toggle, pending: setWatched.isPending, shown: patchWatched(video, watched) };
+}
+
+// The video as the server will report it once the toggle lands, so the check,
+// the resume chip and the progress bar follow the optimistic flip instead of
+// waiting for the refetch: marking seen keeps the recorded position (a seen
+// video is started over, not resumed) and puts progress at 1, marking unseen
+// clears both. `last_played_at` is untouched — the server deliberately does
+// not bump it, so toggling from a list never reorders history.
+function patchWatched(video: VideoSummary, watched: boolean): VideoSummary {
+  if (watched === video.watched) return video;
+  return { ...video, watched, position: watched ? video.position : 0, progress: watched ? 1 : 0 };
+}
+
+// The round toggle on a card and the bare icon on a row are the same action,
+// so they share a label: what the click will do, never what the state is.
+export function watchedLabel(watched: boolean) {
+  return watched ? "Mark unseen" : "Mark seen";
 }
 
 export function watchHref(v: { id: string }, ctx?: Record<string, string | undefined>) {
@@ -83,38 +127,57 @@ export function VideoCard({
   video,
   ctx,
   showChannel = true,
+  canMarkSeen = true,
   onDismiss,
 }: {
   video: VideoSummary;
   ctx?: Record<string, string | undefined>;
   showChannel?: boolean;
+  /** False inside a music playlist, which records no watch state at all
+   *  (docs/api.md, "Music playlists"). */
+  canMarkSeen?: boolean;
   /** See useDismissToggle. Pass this from a feed, which never shows a
    *  dismissed video, so the card is pulled out of the list rather than
    *  toggled in place. */
   onDismiss?: (video: VideoSummary) => void;
 }) {
   const { dismissed, toggle, pending } = useDismissToggle(video, onDismiss);
+  const seen = useWatchedToggle(video);
   return (
-    <div className={`flex flex-col gap-2.5 ${video.watched ? "opacity-50" : ""}`}>
+    <div className={`flex flex-col gap-2.5 ${seen.watched ? "opacity-50" : ""}`}>
       <div className="relative">
         <Link to={watchHref(video, ctx)} className="block" aria-label={video.title}>
-          <Thumb video={video} />
+          <Thumb video={seen.shown} />
         </Link>
-        {!dismissed && (
-          <button
-            type="button"
-            aria-label="Not interested"
-            title="Not interested — hide from feeds"
-            onClick={toggle}
-            disabled={pending}
-            // 36px circle, and the pseudo-element pushes the hit area out to
-            // 44px so a thumb can land on it without covering the thumbnail
-            // with a button that large.
-            className="absolute right-2 top-2 flex h-9 w-9 items-center justify-center rounded-full bg-[rgba(23,24,26,0.8)] text-white transition-colors before:absolute before:-inset-1 before:content-[''] hover:bg-[rgba(23,24,26,0.95)] disabled:opacity-50"
-          >
-            <CloseIcon size={16} />
-          </button>
-        )}
+        {/* 36px circles, and the pseudo-element pushes each hit area out to
+            44px so a thumb can land on one without covering the thumbnail
+            with a button that large. */}
+        <div className="absolute right-2 top-2 flex items-center gap-1.5">
+          {canMarkSeen && (
+            <button
+              type="button"
+              aria-label={watchedLabel(seen.watched)}
+              title={seen.watched ? "Mark unseen" : "Mark seen — without playing it"}
+              onClick={seen.toggle}
+              disabled={seen.pending}
+              className={`relative flex h-9 w-9 items-center justify-center rounded-full text-white transition-colors before:absolute before:-inset-1 before:content-[''] disabled:opacity-50 ${seen.watched ? "bg-accent" : "bg-[rgba(23,24,26,0.8)] hover:bg-[rgba(23,24,26,0.95)]"}`}
+            >
+              <CheckIcon size={15} />
+            </button>
+          )}
+          {!dismissed && (
+            <button
+              type="button"
+              aria-label="Not interested"
+              title="Not interested — hide from feeds"
+              onClick={toggle}
+              disabled={pending}
+              className="relative flex h-9 w-9 items-center justify-center rounded-full bg-[rgba(23,24,26,0.8)] text-white transition-colors before:absolute before:-inset-1 before:content-[''] hover:bg-[rgba(23,24,26,0.95)] disabled:opacity-50"
+            >
+              <CloseIcon size={16} />
+            </button>
+          )}
+        </div>
       </div>
       <div className="flex flex-col gap-0.5">
         <Link to={watchHref(video, ctx)} className="text-[16px] font-extrabold leading-[1.25] tracking-[-0.01em] text-ink no-underline hover:text-ink line-clamp-2" title={video.title}>
@@ -127,7 +190,7 @@ export function VideoCard({
               {" · "}
             </>
           )}
-          {video.watched ? seenLabel(video.last_played_at) : `${ccLabel(video.subtitle_langs, video.has_auto_subtitles)} · ${relativeDay(video.published)}`}
+          {seen.watched ? seenLabel(video.last_played_at) : `${ccLabel(video.subtitle_langs, video.has_auto_subtitles)} · ${relativeDay(video.published)}`}
         </span>
         {dismissed && (
           <span className="meta">

@@ -5,7 +5,7 @@ import { api, type HistoryEntry, type HistoryFilter } from "@/lib/api";
 import { useHistory } from "@/lib/queries";
 import { dayHeading, dayKey, fmtClock, fmtDuration } from "@/lib/format";
 import { PageHeader } from "@/components/Layout";
-import { CheckIcon, EmptyState, ErrorState, InfiniteSentinel, SearchBox, Segmented, Spinner } from "@/components/ui";
+import { EmptyState, ErrorState, InfiniteSentinel, SearchBox, Segmented, Spinner } from "@/components/ui";
 import { VideoRow } from "@/components/VideoRow";
 import { watchHref } from "@/components/VideoCard";
 
@@ -106,9 +106,12 @@ function HistoryRow({ entry, onRemove }: { entry: HistoryEntry; onRemove: () => 
               <span className="hidden sm:inline">Resume</span>
             </Link>
           ) : (
+            // Play, not "Seen": a seen row is started over, not resumed, and
+            // whether it was watched is the thumbnail's check and the row's
+            // own seen toggle — two checks side by side said it twice.
             <Link to={watchHref(v, ctx)} className="btn no-underline">
-              <CheckIcon size={13} />
-              <span className="hidden sm:inline">Seen</span>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M7 4l12 8-12 8z" /></svg>
+              <span className="hidden sm:inline">Play</span>
             </Link>
           )}
           <button className="text-muted-3 hover:text-danger" aria-label="Remove from history" onClick={onRemove}>
