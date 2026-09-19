@@ -62,3 +62,14 @@ jobs:
             iOS, iPadOS and tvOS apps, shipped to TestFlight on every version tag,
             so changes there reach users too. Only docs, CI workflows and scripts/
             live outside the shipped artifacts.
+
+            Bump policy: the iOS/iPadOS/tvOS apps' TestFlight marketing version is the tag's
+            major.minor, so a minor bump starts a NEW marketing version, and the first
+            build of one needs a full Beta App Review — hours, sometimes a day — while
+            later builds of an already-approved version are waved through. Worse,
+            consecutive minor bumps withdraw each other's pending review, so a run of
+            them can mean nothing reaches a tester at all. Reserve minor for genuinely
+            new user-facing capability: a new screen, a new kind of notification, a new
+            integration. Performance work, refactors, schema and infrastructure changes,
+            dependency bumps, and layout or behaviour fixes are patch, however large the
+            diff or however much care went into them.
