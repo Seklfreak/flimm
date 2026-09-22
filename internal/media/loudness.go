@@ -104,7 +104,7 @@ func GainFor(measuredLUFS, peakDBTP float64) float64 {
 // decoding only the audio is a fraction of the work, which is what makes this
 // cheap enough to run on demand.
 func Measure(ffmpegPath string, duration float64, log *slog.Logger, open RangeSourceFunc, report ProgressFunc) DirDeriveFunc {
-	return func(ctx context.Context, dir string) error {
+	return func(ctx context.Context, dir string) (err error) {
 		lb, err := newLoopbackSource(log)
 		if err != nil {
 			return fmt.Errorf("measure loudness: %w", err)
@@ -112,6 +112,10 @@ func Measure(ffmpegPath string, duration float64, log *slog.Logger, open RangeSo
 		defer lb.close()
 		src, release := lb.register(open)
 		defer release()
+		// Any way out of here, an ffmpeg failure that was really the
+		// archive being unreachable says so rather than reading as a
+		// broken file. See loopbackSource.classify.
+		defer func() { err = lb.classify(err) }()
 
 		args := withProgress([]string{
 			"-hide_banner",

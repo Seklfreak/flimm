@@ -106,7 +106,7 @@ func PlanPreview(duration float64) PreviewPlan {
 // faster and would put the stills wherever the encoder happened to leave one,
 // which is not a grid a track can describe.
 func Preview(ffmpegPath string, duration float64, log *slog.Logger, open RangeSourceFunc, report ProgressFunc) DirDeriveFunc {
-	return func(ctx context.Context, dir string) error {
+	return func(ctx context.Context, dir string) (err error) {
 		plan := PlanPreview(duration)
 		if plan.Tiles == 0 {
 			return fmt.Errorf("derive preview: duration %.3fs is not a video", duration)
@@ -118,6 +118,10 @@ func Preview(ffmpegPath string, duration float64, log *slog.Logger, open RangeSo
 		defer lb.close()
 		src, release := lb.register(open)
 		defer release()
+		// Any way out of here, an ffmpeg failure that was really the
+		// archive being unreachable says so rather than reading as a
+		// broken file. See loopbackSource.classify.
+		defer func() { err = lb.classify(err) }()
 
 		sheet := filepath.Join(dir, PreviewSheetName)
 		// Fit-and-pad rather than plain scale: every still comes out exactly

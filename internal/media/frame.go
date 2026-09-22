@@ -33,7 +33,7 @@ const (
 // `-i`), so cutting a frame twenty minutes in reads a few hundred kilobytes
 // rather than twenty minutes of video.
 func Frame(ffmpegPath string, at float64, log *slog.Logger, open RangeSourceFunc) DeriveFunc {
-	return func(ctx context.Context, dst string) error {
+	return func(ctx context.Context, dst string) (err error) {
 		lb, err := newLoopbackSource(log)
 		if err != nil {
 			return fmt.Errorf("derive frame: %w", err)
@@ -41,6 +41,10 @@ func Frame(ffmpegPath string, at float64, log *slog.Logger, open RangeSourceFunc
 		defer lb.close()
 		src, release := lb.register(open)
 		defer release()
+		// Any way out of here, an ffmpeg failure that was really the
+		// archive being unreachable says so rather than reading as a
+		// broken file. See loopbackSource.classify.
+		defer func() { err = lb.classify(err) }()
 
 		args := []string{
 			"-hide_banner", "-loglevel", "error",

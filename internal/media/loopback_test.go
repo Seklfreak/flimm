@@ -193,3 +193,66 @@ func TestHLSNeverPutsTheTokenOnTheCommandLine(t *testing.T) {
 		t.Errorf("ffmpeg was not given a loopback source: %s", line)
 	}
 }
+
+// FLIMM-BE-7: ffmpeg only ever reports that it exited non-zero, so without
+// the loopback recording *why* it was handed a 502, a TubeArchivist outage
+// and a corrupt file are indistinguishable — and the outage filed one issue
+// per video caught in flight.
+func TestClassifyMarksFailuresThatWereReallyTheArchive(t *testing.T) {
+	newFailed := func(t *testing.T) *loopbackSource {
+		t.Helper()
+		lb, err := newLoopbackSource(nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(lb.close)
+		url, release := lb.register(func(context.Context, string) (*SourceStream, error) {
+			return nil, errors.New("tubearchivist unavailable")
+		})
+		t.Cleanup(release)
+		if resp := getLoopback(t, url, ""); resp.status != http.StatusBadGateway {
+			t.Fatalf("setup: upstream failure = %d, want 502", resp.status)
+		}
+		return lb
+	}
+
+	t.Run("an ffmpeg failure after a 502 is upstream", func(t *testing.T) {
+		lb := newFailed(t)
+		err := lb.classify(errors.New("exit status 8"))
+		if !errors.Is(err, ErrUpstreamUnavailable) {
+			t.Errorf("classify = %v, want it to wrap ErrUpstreamUnavailable", err)
+		}
+		// The original stays readable — it is what a Warn line has to show.
+		if !strings.Contains(err.Error(), "exit status 8") {
+			t.Errorf("classify = %q, want it to keep the ffmpeg error", err)
+		}
+	})
+
+	t.Run("a corrupt file is still a defect", func(t *testing.T) {
+		lb, err := newLoopbackSource(nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer lb.close()
+		// No 502 was served: exit 190 is libdav1d refusing the bitstream.
+		got := lb.classify(errors.New("exit status 190: obu_forbidden_bit out of range"))
+		if errors.Is(got, ErrUpstreamUnavailable) {
+			t.Errorf("classify = %v, want it left alone", got)
+		}
+	})
+
+	t.Run("success stays success", func(t *testing.T) {
+		lb := newFailed(t)
+		// A byte-range read can fail and ffmpeg recover by re-reading it.
+		if got := lb.classify(nil); got != nil {
+			t.Errorf("classify(nil) = %v, want nil", got)
+		}
+	})
+
+	t.Run("a cancellation keeps its own meaning", func(t *testing.T) {
+		lb := newFailed(t)
+		if got := lb.classify(context.Canceled); errors.Is(got, ErrUpstreamUnavailable) {
+			t.Errorf("classify = %v, want the cancellation unchanged", got)
+		}
+	})
+}

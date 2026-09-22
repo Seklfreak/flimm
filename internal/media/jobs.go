@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sync"
@@ -148,7 +149,16 @@ func (c *Cache) startDir(name string, slots chan struct{}, prepare, derive DirDe
 		j.finish(err)
 		if err != nil {
 			if c.log != nil {
-				c.log.Error("media derivation failed", "entry", name, "err", err)
+				// The archive being unreachable is not a defect in the
+				// entry, and it takes every derivation in flight down with
+				// it at once — reported at Error it is one issue per video
+				// for something already reported where it happened. The
+				// entry still lands in the table as failed either way.
+				level := slog.LevelError
+				if errors.Is(err, ErrUpstreamUnavailable) {
+					level = slog.LevelWarn
+				}
+				c.log.Log(context.Background(), level, "media derivation failed", "entry", name, "err", err)
 			}
 			// A failure is kept in the table so DirState can report it; the
 			// next StartDir replaces it. A success is dropped: the marker on

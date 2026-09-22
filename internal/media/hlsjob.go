@@ -321,7 +321,7 @@ func (j *HLSJob) retire() {
 
 // run fills every gap in the rendition, one ffmpeg run at a time, until all N
 // segments exist.
-func (j *HLSJob) run(ctx context.Context) error {
+func (j *HLSJob) run(ctx context.Context) (err error) {
 	j.publish()
 	lb, err := newLoopbackSource(j.log)
 	if err != nil {
@@ -330,6 +330,10 @@ func (j *HLSJob) run(ctx context.Context) error {
 	defer lb.close()
 	src, release := lb.register(j.cfg.Open)
 	defer release()
+	// Any way out of here, an ffmpeg failure that was really the archive
+	// being unreachable says so rather than reading as a broken file. See
+	// loopbackSource.classify.
+	defer func() { err = lb.classify(err) }()
 
 	j.rescan()
 	attempts := hlsAttempts(j.cfg.Source, j.cfg.Height, j.cfg.HW)

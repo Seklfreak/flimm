@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -12,8 +13,17 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
+
+// ErrUpstreamUnavailable marks a derivation that failed because the archive
+// could not be read, not because anything about the media or this code is
+// wrong. Nothing here can fix it and the next request retries from scratch,
+// so it is logged rather than reported — the archive being away is already
+// reported once, where it is noticed, instead of once per derivation caught
+// in flight.
+var ErrUpstreamUnavailable = errors.New("upstream unavailable")
 
 // The loopback source: a tiny HTTP server on 127.0.0.1 that hands the archived
 // file to ffmpeg *seekably*.
@@ -68,6 +78,11 @@ type loopbackSource struct {
 
 	mu    sync.Mutex
 	opens map[string]RangeSourceFunc
+
+	// Set when a source read failed upstream. ffmpeg only ever tells us it
+	// exited non-zero, so without this the reason is gone by the time the
+	// job reports: a missing archive and a corrupt file look identical.
+	upstreamFailed atomic.Bool
 }
 
 // newLoopbackSource binds an ephemeral port on the loopback interface and
@@ -111,6 +126,23 @@ func (s *loopbackSource) register(open RangeSourceFunc) (string, func()) {
 // is not something to wait politely for.
 func (s *loopbackSource) close() { _ = s.srv.Close() }
 
+// classify marks err as an upstream failure when this job's source could not
+// be read. Deferred onto a derive function's named return, so every way out
+// of it is covered by one line: `defer func() { err = lb.classify(err) }()`.
+//
+// Order matters. A context cancellation is its own thing and keeps its
+// meaning; a success stays a success even if an earlier byte-range request
+// failed and ffmpeg recovered by re-reading it.
+func (s *loopbackSource) classify(err error) error {
+	if err == nil || !s.upstreamFailed.Load() {
+		return err
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return err
+	}
+	return fmt.Errorf("%w: %w", ErrUpstreamUnavailable, err)
+}
+
 func (s *loopbackSource) serve(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -136,6 +168,10 @@ func (s *loopbackSource) serve(w http.ResponseWriter, r *http.Request) {
 		if s.log != nil && r.Context().Err() == nil {
 			s.log.Warn("hls source", "err", scrubSecrets(err.Error()))
 		}
+		// ffmpeg will die on this 502 a moment from now. Remember why, so
+		// `classify` can say so rather than leaving the job to report a
+		// broken file.
+		s.upstreamFailed.Store(true)
 		http.Error(w, "upstream unavailable", http.StatusBadGateway)
 		return
 	}
