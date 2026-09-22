@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"time"
@@ -69,7 +70,18 @@ func (s *Server) writeTAError(w http.ResponseWriter, what string, err error) {
 	case errors.Is(err, ta.ErrNotFound):
 		writeError(w, http.StatusNotFound, "not found")
 	case errors.Is(err, ta.ErrUnavailable):
-		s.log.Error(what, "err", err)
+		// An archive that is simply away is an availability event, not a
+		// defect in this process: nothing here can fix it, the next request
+		// retries, and one outage would otherwise report once per request
+		// caught in flight — as many separate issues as there are distinct
+		// URLs. A rejected token is the exception: that is configuration,
+		// it stays broken until somebody changes it, and it is exactly what
+		// used to hide in the noise. Either way the client still gets 502.
+		level := slog.LevelWarn
+		if errors.Is(err, ta.ErrBadToken) {
+			level = slog.LevelError
+		}
+		s.log.Log(context.Background(), level, what, "err", err)
 		writeError(w, http.StatusBadGateway, "tubearchivist unavailable")
 	case errors.Is(err, context.Canceled):
 		// client went away; nothing to report

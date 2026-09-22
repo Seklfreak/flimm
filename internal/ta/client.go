@@ -24,7 +24,13 @@ var (
 	// ErrUnavailable wraps connection failures and 5xx responses; handlers
 	// map it to 502 "tubearchivist unavailable".
 	ErrUnavailable = errors.New("tubearchivist unavailable")
-	errBadDate     = errors.New("bad date")
+	// ErrBadToken is wrapped *alongside* ErrUnavailable when TA rejects our
+	// credentials, so the 502 mapping is unchanged but callers can tell the
+	// two apart. An archive that is away comes back on its own; a token it
+	// refuses stays refused until somebody changes it, and only the second
+	// is worth reporting as a defect.
+	ErrBadToken = errors.New("tubearchivist rejected the token")
+	errBadDate  = errors.New("bad date")
 )
 
 // Client is what the handlers depend on. HTTP is the real implementation,
@@ -200,7 +206,7 @@ func (c *HTTP) do(ctx context.Context, method, path string, query url.Values, bo
 	case resp.StatusCode >= 500:
 		return fmt.Errorf("%w: %s %s: status %d", ErrUnavailable, method, path, resp.StatusCode)
 	case resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden:
-		return fmt.Errorf("%w: %s %s: status %d (check TA_TOKEN)", ErrUnavailable, method, path, resp.StatusCode)
+		return fmt.Errorf("%w: %w: %s %s: status %d (check TA_TOKEN)", ErrUnavailable, ErrBadToken, method, path, resp.StatusCode)
 	case resp.StatusCode < 200 || resp.StatusCode >= 300:
 		return fmt.Errorf("tubearchivist %s %s: status %d: %s", method, path, resp.StatusCode, truncate(string(data), 200))
 	}

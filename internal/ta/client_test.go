@@ -89,6 +89,43 @@ func TestClientUnavailable(t *testing.T) {
 	}
 }
 
+// FLIMM-BE-8/9/A/B/C/E/F: an archive that is away and a token it refuses both
+// answer 502, but only the second is a defect somebody has to go and fix.
+// writeTAError logs on exactly this distinction, so it has to survive the
+// wrapping.
+func TestClientSeparatesARejectedTokenFromAnOutage(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		status   int
+		badToken bool
+	}{
+		{"connection refused", 0, false},
+		{"bad gateway", http.StatusBadGateway, false},
+		{"internal error", http.StatusInternalServerError, false},
+		{"unauthorized", http.StatusUnauthorized, true},
+		{"forbidden", http.StatusForbidden, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := New("http://127.0.0.1:1", "tok")
+			if tc.status != 0 {
+				srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+					w.WriteHeader(tc.status)
+				}))
+				defer srv.Close()
+				c = New(srv.URL, "tok")
+			}
+			err := c.Ping(context.Background())
+			// Every one of them still maps to 502 for the client.
+			if !errors.Is(err, ErrUnavailable) {
+				t.Fatalf("err = %v, want it to wrap ErrUnavailable", err)
+			}
+			if got := errors.Is(err, ErrBadToken); got != tc.badToken {
+				t.Errorf("errors.Is(err, ErrBadToken) = %v, want %v (err = %v)", got, tc.badToken, err)
+			}
+		})
+	}
+}
+
 func TestVideoHelpers(t *testing.T) {
 	var v Video
 	if err := json.Unmarshal([]byte(`{"published":"2026-08-23","date_downloaded":1755921120,"streams":[{"type":"audio"},{"type":"video","height":1080}]}`), &v); err != nil {
