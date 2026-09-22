@@ -46,19 +46,58 @@ struct RichTextView: UIViewRepresentable {
 
     func updateUIView(_ view: UITextView, context: Context) {
         context.coordinator.onSeek = onSeek
-        view.attributedText = attributed
+        // Only when it actually changed. Assigning `attributedText` throws
+        // TextKit's layout away, and SwiftUI calls `updateUIView` for
+        // reasons that have nothing to do with the text — so an
+        // unconditional assignment makes every following measurement lay
+        // the whole comment out again from nothing. Comparing two
+        // attributed strings is a fraction of laying one out.
+        let next = attributed
+        // Compared against what we last set, not against `view.attributedText`:
+        // a text view normalises what it is given, so reading it back can
+        // never equal what we built and the check would never hold.
+        if context.coordinator.assigned != next {
+            view.attributedText = next
+            context.coordinator.assigned = next
+        }
         // Applied to every link range on top of the string's own attributes,
         // so the underline (https only) stays per run.
-        view.linkTextAttributes = [.foregroundColor: UIColor(Palette.accent)]
-        view.textContainer.maximumNumberOfLines = lineLimit ?? 0
+        let linkAttributes: [NSAttributedString.Key: Any] = [.foregroundColor: UIColor(Palette.accent)]
+        if view.linkTextAttributes?[.foregroundColor] as? UIColor != linkAttributes[.foregroundColor] as? UIColor {
+            view.linkTextAttributes = linkAttributes
+        }
+        let lines = lineLimit ?? 0
+        if view.textContainer.maximumNumberOfLines != lines {
+            view.textContainer.maximumNumberOfLines = lines
+        }
     }
 
     func sizeThatFits(_ proposal: ProposedViewSize, uiView: UITextView, context: Context) -> CGSize? {
         // Take the width offered and answer with the height the text needs
         // at it; a text view left to itself wants one very long line.
         let width = proposal.width ?? UIView.layoutFittingExpandedSize.width
-        let fitted = uiView.sizeThatFits(CGSize(width: width, height: .greatestFiniteMagnitude))
-        return CGSize(width: proposal.width ?? fitted.width, height: fitted.height)
+        // Measured once per width, not once per ask. A UITextView sizes
+        // itself by running a full TextKit2 layout — glyph advances and all
+        // — and SwiftUI asks repeatedly: a stack resolves its alignment,
+        // resizes, and sizes its children ideally, each pass measuring
+        // every child again, and comment lists nest those stacks several
+        // deep with one of these views per comment. FLIMM-IOS-3 was 7
+        // seconds of exactly that on an iPad. The answers are identical, so
+        // only the first one is paid for.
+        guard let offered = proposal.width else {
+            // Nothing offered, so the text's own width is the answer and
+            // there is no width to key a cached height on.
+            let fitted = uiView.sizeThatFits(CGSize(width: width, height: .greatestFiniteMagnitude))
+            return CGSize(width: fitted.width, height: fitted.height)
+        }
+        let height = context.coordinator.height(
+            for: context.coordinator.assigned,
+            lineLimit: uiView.textContainer.maximumNumberOfLines,
+            width: width
+        ) {
+            uiView.sizeThatFits(CGSize(width: width, height: .greatestFiniteMagnitude)).height
+        }
+        return CGSize(width: offered, height: height)
     }
 
     func makeCoordinator() -> Coordinator { Coordinator() }
@@ -94,6 +133,41 @@ struct RichTextView: UIViewRepresentable {
 
     final class Coordinator: NSObject, UITextViewDelegate {
         var onSeek: ((Double) -> Void)?
+
+        /// The string last handed to the text view. Kept here because a
+        /// text view normalises what it is given, so it cannot answer
+        /// "is this still what you are showing?" about the string we built.
+        var assigned: NSAttributedString?
+
+        /// Heights already measured for `measured`, by proposed width.
+        /// Dropped whenever the text or the line limit changes, which is
+        /// the only time a previous answer could be wrong — Dynamic Type
+        /// included, since a new type size rebuilds the attributed string
+        /// with a different font and so fails the equality check.
+        private var heights: [CGFloat: CGFloat] = [:]
+        private var measured: NSAttributedString?
+        private var measuredLineLimit = 0
+
+        func height(
+            for text: NSAttributedString?,
+            lineLimit: Int,
+            width: CGFloat,
+            measure: () -> CGFloat
+        ) -> CGFloat {
+            if measured != text || measuredLineLimit != lineLimit {
+                measured = text
+                measuredLineLimit = lineLimit
+                heights.removeAll(keepingCapacity: true)
+            }
+            // Half-point buckets: SwiftUI offers the same column width back
+            // as a value that can differ in the last bits, and a cache that
+            // misses on that is not a cache.
+            let key = (width * 2).rounded() / 2
+            if let known = heights[key] { return known }
+            let height = measure()
+            heights[key] = height
+            return height
+        }
 
         func textView(_ textView: UITextView, primaryActionFor textItem: UITextItem, defaultAction: UIAction) -> UIAction? {
             guard case .link(let url) = textItem.content, let seconds = RichText.seekSeconds(url) else {
