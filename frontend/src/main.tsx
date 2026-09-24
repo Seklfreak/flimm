@@ -13,7 +13,17 @@ if (import.meta.env.VITE_SENTRY_DSN) {
     environment: "production",
     integrations: [Sentry.browserTracingIntegration()],
     tracesSampleRate: 0.2,
-    sendDefaultPii: false,
+    // SDK v11 collects request/response bodies, headers, cookies, query
+    // params, user info and stack-frame locals by default. Opt out of all of
+    // it: errors and traces are enough, the payloads are personal data.
+    dataCollection: {
+      userInfo: false,
+      cookies: false,
+      httpHeaders: false,
+      httpBodies: [],
+      urlQueryParams: false,
+      stackFrameVariables: false,
+    },
   });
 }
 
