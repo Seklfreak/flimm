@@ -32,8 +32,10 @@ docker network create "$net" >/dev/null
 docker pull -q postgres:18-alpine >/dev/null
 docker run -d --name flimm-smoke-pg --network "$net" \
   -e POSTGRES_PASSWORD=smoke -e POSTGRES_DB=flimm postgres:18-alpine >/dev/null
+# Over TCP: on first start the entrypoint runs a temporary socket-only server
+# for initdb, which a socket check reports ready just before it restarts.
 for _ in $(seq 60); do
-  docker exec flimm-smoke-pg pg_isready -q -U postgres -d flimm 2>/dev/null && break
+  docker exec flimm-smoke-pg pg_isready -q -h 127.0.0.1 -U postgres -d flimm 2>/dev/null && break
   sleep 0.5
 done
 
