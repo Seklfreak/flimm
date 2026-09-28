@@ -211,5 +211,12 @@ so plainly rather than implying it was seen.
 `.github/workflows/test.yaml` runs golangci-lint + `go test` and the frontend
 `lint` + `build` on every push/PR. Green `main` auto-cuts a versioned release
 (`release.yaml`, Seklfreak/ai-release-action) which dispatches `build.yaml` to
-push `ghcr.io/seklfreak/flimm:<version>` and `:latest`. Keep both
-test jobs green. Docs/CI-only commits do not cut a release.
+push `ghcr.io/seklfreak/flimm:<version>` and `:latest`. Keep the test jobs
+green. Docs/CI-only commits do not cut a release.
+
+The release build compiles the frontend and the Go binary on the runner — the
+binary with `go.mod`'s Go version, the one the tests use — and
+`Dockerfile.release` only copies it into the runtime image; `./Dockerfile` is
+for local from-source builds, so keep the two runtime stages in step. To move
+Go, bump the `go` directive. The `image` job builds that same release image and
+runs `scripts/image-smoke.sh` against a throwaway Postgres.

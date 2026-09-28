@@ -43,6 +43,11 @@
         "node/**"
       ],
       "groupName": "node"
+    },
+    {
+      "description": "Bump go.mod's go directive to each new Go release. By default Renovate reads it as a minimum ('>= 1.26.5'), which every newer Go already satisfies, so it never proposes one - and the release binary is built with exactly this version (setup-go go-version-file), so Go security patches would never ship.",
+      "matchDatasources": ["golang-version"],
+      "rangeStrategy": "bump"
     }
   ],
   "customManagers": [

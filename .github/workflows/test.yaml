@@ -49,3 +49,31 @@ jobs:
           npm run lint
           npm test
           npm run build
+
+  # Builds the release image exactly as build.yaml does and runs it against a
+  # throwaway Postgres (scripts/image-smoke.sh). Renovate auto-merges alpine,
+  # Go and frontend bumps once this workflow is green, and nothing else ever
+  # starts the image; an alpine bump is also an ffmpeg bump.
+  image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Build frontend
+        working-directory: frontend
+        env:
+          VITE_APP_VERSION: ci
+        run: |
+          npm ci --no-fund --no-audit
+          npm run build
+      - run: find frontend/dist -name '*.map' -delete
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - run: CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w -X main.version=ci" -o archive ./cmd/server
+      - run: docker build -f Dockerfile.release -t flimm:ci .
+      - run: scripts/image-smoke.sh flimm:ci

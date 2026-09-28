@@ -17,3 +17,5 @@ apple/**/.build/
 apple/**/DerivedData/
 apple/**/xcuserdata/
 .DS_Store
+/archive
+/fe-sourcemaps/

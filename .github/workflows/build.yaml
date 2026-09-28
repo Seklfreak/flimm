@@ -38,7 +38,46 @@ jobs:
           echo "APP_VERSION=$ver" >> "$GITHUB_ENV"
           echo "Building version $ver"
 
-      - uses: docker/setup-buildx-action@v4
+      # The frontend and the binary that embeds it are built here, the binary by
+      # setup-go from go.mod (the toolchain test.yaml tests with), so the image
+      # is a binary copy (Dockerfile.release). A golang builder stage would pin
+      # its own Go, which Renovate moves independently of go.mod.
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      # Baked into the bundle as import.meta.env.VITE_*: the release version,
+      # the Sentry DSN and the Umami analytics endpoint. VITE_SENTRY_DSN and the
+      # VITE_UMAMI_* pair are repo *variables* (Settings → Variables), not
+      # hardcoded values; leave them unset to build without frontend Sentry and
+      # without analytics.
+      - name: Build frontend
+        working-directory: frontend
+        env:
+          VITE_APP_VERSION: ${{ env.APP_VERSION }}
+          VITE_SENTRY_DSN: ${{ vars.VITE_SENTRY_DSN }}
+          VITE_UMAMI_URL: ${{ vars.VITE_UMAMI_URL }}
+          VITE_UMAMI_WEBSITE_ID: ${{ vars.VITE_UMAMI_WEBSITE_ID }}
+        run: |
+          npm ci --no-fund --no-audit
+          npm run build
+
+      # Sourcemaps are built "hidden" (no sourceMappingURL comment) for upload
+      # to Sentry only: set the assets aside for the upload below, then delete
+      # the maps so the binary never embeds or serves them.
+      - name: Set sourcemaps aside
+        run: |
+          cp -R frontend/dist/assets fe-sourcemaps
+          find frontend/dist -name '*.map' -delete
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - name: Build binary
+        run: CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w -X main.version=${APP_VERSION}" -o archive ./cmd/server
 
       - uses: docker/login-action@v4
         with:
@@ -46,44 +85,10 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - uses: docker/build-push-action@v7
-        with:
-          context: .
-          platforms: linux/amd64
-          push: true
-          # VITE_SENTRY_DSN and the VITE_UMAMI_* pair are repo *variables*
-          # (Settings → Variables), not hardcoded values; leave them unset to
-          # build without frontend Sentry and without analytics.
-          build-args: |
-            APP_VERSION=${{ env.APP_VERSION }}
-            VITE_SENTRY_DSN=${{ vars.VITE_SENTRY_DSN }}
-            VITE_UMAMI_URL=${{ vars.VITE_UMAMI_URL }}
-            VITE_UMAMI_WEBSITE_ID=${{ vars.VITE_UMAMI_WEBSITE_ID }}
-          tags: |
-            ${{ env.IMAGE }}:${{ env.APP_VERSION }}
-            ${{ env.IMAGE }}:latest
-          cache-from: type=gha,scope=flimm
-          cache-to: type=gha,mode=max,scope=flimm
-
-      # Sourcemaps exist only to make Sentry stack traces readable: they are
-      # built "hidden" (no sourceMappingURL comment) and deleted before the Go
-      # binary embeds the frontend, so they are never served. Re-running the
-      # frontend stage is a cache hit against the same buildkit cache.
-      - name: Export frontend sourcemaps
-        if: env.SENTRY_AUTH_TOKEN != ''
-        env:
-          VITE_SENTRY_DSN: ${{ vars.VITE_SENTRY_DSN }}
-          VITE_UMAMI_URL: ${{ vars.VITE_UMAMI_URL }}
-          VITE_UMAMI_WEBSITE_ID: ${{ vars.VITE_UMAMI_WEBSITE_ID }}
+      - name: Build and push image
         run: |
-          docker buildx build --target frontend \
-            --build-arg APP_VERSION="$APP_VERSION" \
-            --build-arg VITE_SENTRY_DSN="$VITE_SENTRY_DSN" \
-            --build-arg VITE_UMAMI_URL="$VITE_UMAMI_URL" \
-            --build-arg VITE_UMAMI_WEBSITE_ID="$VITE_UMAMI_WEBSITE_ID" \
-            --cache-from type=gha,scope=flimm \
-            --output type=local,dest=./fe-stage .
-          ls -la ./fe-stage/app/frontend/dist/assets/ | head
+          docker build -f Dockerfile.release -t "$IMAGE:$APP_VERSION" -t "$IMAGE:latest" .
+          docker push --all-tags "$IMAGE"
 
       # Register the release in both Sentry projects and mark it deployed to
       # production. The image is live ~1 min after the push (Flux automation),
@@ -102,5 +107,5 @@ jobs:
           environment: production
           set_commits: auto
           ignore_missing: true
-          sourcemaps: ./fe-stage/app/frontend/dist/assets
+          sourcemaps: ./fe-sourcemaps
           url_prefix: "~/assets"
