@@ -252,17 +252,21 @@ type PlaylistChannelRef struct {
 }
 
 type PlaylistSummary struct {
-	ID              string              `json:"id"`
-	Name            string              `json:"name"`
-	Kind            string              `json:"kind"`
-	Channel         *PlaylistChannelRef `json:"channel"`
-	ThumbURL        string              `json:"thumb_url"`
-	VideoCount      int                 `json:"video_count"`
-	TotalDuration   int                 `json:"total_duration"`
-	SeenCount       int                 `json:"seen_count"`
-	InProgressCount int                 `json:"in_progress_count"`
-	Progress        float64             `json:"progress"`
-	ResumeVideoID   *string             `json:"resume_video_id"`
+	ID         string              `json:"id"`
+	Name       string              `json:"name"`
+	Kind       string              `json:"kind"`
+	Channel    *PlaylistChannelRef `json:"channel"`
+	ThumbURL   string              `json:"thumb_url"`
+	VideoCount int                 `json:"video_count"`
+	// EntryCount is every entry TubeArchivist lists for the playlist,
+	// downloaded or not; VideoCount only the downloaded ones Flimm can play.
+	// The gap is what explains a playlist that looks shorter than on YouTube.
+	EntryCount      int     `json:"entry_count"`
+	TotalDuration   int     `json:"total_duration"`
+	SeenCount       int     `json:"seen_count"`
+	InProgressCount int     `json:"in_progress_count"`
+	Progress        float64 `json:"progress"`
+	ResumeVideoID   *string `json:"resume_video_id"`
 	// Pinned and Music are Flimm's own per-user state — TubeArchivist has no
 	// concept of either. Music means the playlist is played as audio and
 	// carries no watch state: songs are replayed, so "seen" is meaningless.

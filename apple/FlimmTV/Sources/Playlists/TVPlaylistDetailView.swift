@@ -77,7 +77,7 @@ struct TVPlaylistDetailView: View {
 
     private var meta: String {
         guard let summary else { return "" }
-        var parts = [Fmt.plural(summary.videoCount, "video")]
+        var parts = [Fmt.playlistCount(videoCount: summary.videoCount, entryCount: summary.entryCount)]
         if summary.totalDuration > 0 { parts.append(Fmt.durationLong(summary.totalDuration)) }
         if isMusic {
             parts.append("music · audio only, no watch state")

@@ -108,6 +108,16 @@ enum Fmt {
         Locale.current.localizedString(forLanguageCode: code) ?? code.uppercased()
     }
 
+    /// A playlist's size: "14 videos", or "65 of 697 downloaded" when
+    /// TubeArchivist lists entries it has not downloaded, so a partly archived
+    /// playlist does not just look short. A server too old to send
+    /// `entry_count` decodes it as 0 and reads as fully downloaded.
+    static func playlistCount(videoCount: Int, entryCount: Int) -> String {
+        entryCount > videoCount
+            ? "\(count(videoCount)) of \(count(entryCount)) downloaded"
+            : plural(videoCount, "video")
+    }
+
     /// A playlist's remaining-unseen count, clamped so a transiently high
     /// `seen_count` can never show a negative badge.
     static func remainingUnseen(videoCount: Int, seenCount: Int) -> Int {

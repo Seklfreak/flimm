@@ -22,7 +22,11 @@ public struct PlaylistSummary: Codable, Sendable, Hashable, Identifiable {
     public let kind: PlaylistKind
     public let channel: PlaylistChannelRef?
     public let thumbUrl: String
+    /// Downloaded videos — what Flimm can play.
     public let videoCount: Int
+    /// Every entry TubeArchivist lists, downloaded or not; above `videoCount`
+    /// when the playlist is only partly archived.
+    public let entryCount: Int
     public let totalDuration: Double
     public let seenCount: Int
     public let inProgressCount: Int
@@ -45,6 +49,7 @@ public struct PlaylistSummary: Codable, Sendable, Hashable, Identifiable {
         channel: PlaylistChannelRef? = nil,
         thumbUrl: String = "",
         videoCount: Int = 0,
+        entryCount: Int = 0,
         totalDuration: Double = 0,
         seenCount: Int = 0,
         inProgressCount: Int = 0,
@@ -60,6 +65,7 @@ public struct PlaylistSummary: Codable, Sendable, Hashable, Identifiable {
         self.channel = channel
         self.thumbUrl = thumbUrl
         self.videoCount = videoCount
+        self.entryCount = entryCount
         self.totalDuration = totalDuration
         self.seenCount = seenCount
         self.inProgressCount = inProgressCount
@@ -78,6 +84,7 @@ public struct PlaylistSummary: Codable, Sendable, Hashable, Identifiable {
         channel = try c.decodeIfPresent(PlaylistChannelRef.self, forKey: .channel)
         thumbUrl = try c.decode(.thumbUrl, or: "")
         videoCount = try c.decode(.videoCount, or: 0)
+        entryCount = try c.decode(.entryCount, or: 0)
         totalDuration = try c.decode(.totalDuration, or: 0)
         seenCount = try c.decode(.seenCount, or: 0)
         inProgressCount = try c.decode(.inProgressCount, or: 0)

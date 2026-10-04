@@ -212,7 +212,7 @@ extension PlaylistSummary {
     /// "12 videos · 3h 40m · 4 unseen" — a music playlist reports no watch
     /// state at all, so it never claims any (docs/api.md, "Music playlists").
     var metaLine: String {
-        var parts = [Fmt.plural(videoCount, "video")]
+        var parts = [Fmt.playlistCount(videoCount: videoCount, entryCount: entryCount)]
         if totalDuration > 0 { parts.append(Fmt.durationLong(totalDuration)) }
         if music {
             return parts.joined(separator: " · ")
@@ -317,7 +317,7 @@ struct PlaylistTile: View {
                 .font(.caption.weight(.bold))
                 .lineLimit(2)
                 .multilineTextAlignment(.leading)
-            Text(Fmt.plural(playlist.videoCount, "video"))
+            Text(Fmt.playlistCount(videoCount: playlist.videoCount, entryCount: playlist.entryCount))
                 .font(.caption2)
                 .foregroundStyle(.secondary)
         }

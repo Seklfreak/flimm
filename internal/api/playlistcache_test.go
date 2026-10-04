@@ -154,3 +154,32 @@ func TestPlaylistDetailStillReturnsItems(t *testing.T) {
 		t.Error("the detail view lost its titles")
 	}
 }
+
+// A subscribed playlist is often only partly downloaded. video_count counts
+// what Flimm can play; entry_count counts everything TubeArchivist lists, so
+// clients can say "2 of 5 downloaded" instead of a playlist looking short.
+func TestPlaylistSummaryCountsUndownloadedEntries(t *testing.T) {
+	client, s := playlistFixture(t, 2)
+	p := client.Playlists["PL1"]
+	for i := range 3 {
+		id := "missing" + strconv.Itoa(i)
+		p.PlaylistEntries = append(p.PlaylistEntries, ta.PlaylistEntry{YoutubeID: id, Idx: 2 + i})
+	}
+
+	// The cheap list path, cold and then from the cached aggregate.
+	for range 2 {
+		sum := summaryOf(t, s, "/api/v1/playlists")
+		if sum.VideoCount != 2 || sum.EntryCount != 5 {
+			t.Errorf("list: video/entry count = %d/%d, want 2/5", sum.VideoCount, sum.EntryCount)
+		}
+	}
+
+	rec := do(t, s.Router(), http.MethodGet, "/api/v1/playlists/PL1", "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", rec.Code, rec.Body.String())
+	}
+	d := decode[PlaylistDetail](t, rec)
+	if d.VideoCount != 2 || d.EntryCount != 5 || len(d.Items) != 2 {
+		t.Errorf("detail: video/entry count = %d/%d, items %d, want 2/5, 2", d.VideoCount, d.EntryCount, len(d.Items))
+	}
+}

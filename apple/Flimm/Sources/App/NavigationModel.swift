@@ -89,6 +89,10 @@ final class NavigationModel {
             // reaches — the admin's "Find series" most of all.
             case let route where route.hasPrefix("channel:"):
                 path.append(Route.channel(String(route.dropFirst("channel:".count))))
+            // `playlist:<id>` opens a playlist's header without playing it,
+            // which `FLIMM_PLAY_PLAYLIST` would.
+            case let route where route.hasPrefix("playlist:"):
+                path.append(Route.playlist(String(route.dropFirst("playlist:".count))))
             default: break
             }
             if !path.isEmpty { stacks[tab] = path }

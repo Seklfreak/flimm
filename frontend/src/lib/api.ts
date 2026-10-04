@@ -470,7 +470,10 @@ export interface PlaylistSummary {
   kind: "custom" | "channel";
   channel: { id: string; name: string } | null;
   thumb_url: string;
+  /** Downloaded videos — what Flimm can play. */
   video_count: number;
+  /** Every entry TubeArchivist lists, downloaded or not; above `video_count` when the playlist is only partly archived. */
+  entry_count: number;
   total_duration: number;
   seen_count: number;
   in_progress_count: number;

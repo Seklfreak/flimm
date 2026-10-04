@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ccLabel, compactCount, dayHeading, fmtDuration, fmtDurationLong, relativeDay, remainingUnseen, seenLabel } from "./format";
+import { ccLabel, compactCount, dayHeading, fmtDuration, fmtDurationLong, playlistCount, relativeDay, remainingUnseen, seenLabel } from "./format";
 
 const now = new Date(2026, 7, 26, 12, 0, 0); // Wed Aug 26 2026
 const daysAgo = (n: number) => new Date(now.getTime() - n * 86_400_000).toISOString();
@@ -70,5 +70,19 @@ describe("compactCount", () => {
   // number and keeping it is the whole point.
   it("does not borrow the search cap", () => {
     expect(compactCount(10000)).toBe("10K");
+  });
+});
+
+describe("playlistCount", () => {
+  it("is a plain video count when everything is downloaded", () => {
+    expect(playlistCount(14, 14)).toBe("14 videos");
+    expect(playlistCount(1, 1)).toBe("1 video");
+  });
+  it("says how much is downloaded when TubeArchivist lists more", () => {
+    expect(playlistCount(65, 697)).toBe("65 of 697 downloaded");
+    expect(playlistCount(0, 3)).toBe("0 of 3 downloaded");
+  });
+  it("reads an old server without entry_count as fully downloaded", () => {
+    expect(playlistCount(14)).toBe("14 videos");
   });
 });

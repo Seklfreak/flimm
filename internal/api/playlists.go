@@ -110,11 +110,12 @@ func (s *Server) playlistVideos(ctx context.Context, uid uuid.UUID, p *ta.Playli
 // itself.
 func playlistShell(p *ta.Playlist) *PlaylistSummary {
 	out := &PlaylistSummary{
-		ID:       p.PlaylistID,
-		Name:     p.PlaylistName,
-		Kind:     playlistKind(*p),
-		ThumbURL: playlistThumbURL(p.PlaylistID),
-		Feeds:    []FeedRef{},
+		ID:         p.PlaylistID,
+		Name:       p.PlaylistName,
+		Kind:       playlistKind(*p),
+		ThumbURL:   playlistThumbURL(p.PlaylistID),
+		EntryCount: len(p.PlaylistEntries),
+		Feeds:      []FeedRef{},
 	}
 	if p.PlaylistChannelID != "" {
 		out.Channel = &PlaylistChannelRef{ID: p.PlaylistChannelID, Name: p.PlaylistChannel}

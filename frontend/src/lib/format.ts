@@ -108,6 +108,16 @@ export function plural(n: number, one: string, many = one + "s"): string {
   return `${formatCount(n)} ${n === 1 ? one : many}`;
 }
 
+// A playlist's size: "14 videos", or "65 of 697 downloaded" when TubeArchivist
+// lists entries it has not downloaded, so a partly archived playlist does not
+// just look short. A server too old to send entry_count reads as fully
+// downloaded.
+export function playlistCount(videoCount: number, entryCount = 0): string {
+  return entryCount > videoCount
+    ? `${formatCount(videoCount)} of ${formatCount(entryCount)} downloaded`
+    : plural(videoCount, "video");
+}
+
 // A playlist's remaining-unseen count for the sidebar badge; clamped at 0 so
 // a seen_count that (transiently) exceeds video_count never shows negative.
 export function remainingUnseen(videoCount: number, seenCount: number): number {

@@ -198,7 +198,7 @@ enum Fixtures {
       "channel": null,
       "feeds": [{ "id": "feed-1", "name": "Home" }],
       "thumb_url": "/media/thumb/playlist/PL-1",
-      "video_count": 14, "total_duration": 15120,
+      "video_count": 14, "entry_count": 20, "total_duration": 15120,
       "seen_count": 11, "in_progress_count": 1,
       "progress": 0.78,
       "resume_video_id": "yt-id",

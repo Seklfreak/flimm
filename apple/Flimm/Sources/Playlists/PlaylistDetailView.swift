@@ -121,7 +121,7 @@ struct PlaylistDetailView: View {
     }
 
     private func meta(_ summary: PlaylistSummary) -> String {
-        var parts = [Fmt.plural(summary.videoCount, "video")]
+        var parts = [Fmt.playlistCount(videoCount: summary.videoCount, entryCount: summary.entryCount)]
         if summary.totalDuration > 0 { parts.append(Fmt.durationLong(summary.totalDuration)) }
         if summary.music {
             parts.append("music")

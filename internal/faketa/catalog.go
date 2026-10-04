@@ -10,6 +10,7 @@ package faketa
 import (
 	"fmt"
 	"math/rand/v2"
+	"strconv"
 	"strings"
 	"time"
 
@@ -347,6 +348,17 @@ func (c *Catalogue) subscribedPlaylist(id, name string, videoIDs []string) ta.Pl
 				p.PlaylistThumbnail = "/media/" + v.Channel.ChannelID + "/" + v.YoutubeID + ".jpg"
 			}
 		}
+	}
+	// TA only scans the newest entries of a subscribed playlist (its
+	// "playlist size" setting), so older ones are listed but never
+	// downloaded. Clients show that gap as "3 of 7 downloaded".
+	for i := range 4 {
+		p.PlaylistEntries = append(p.PlaylistEntries, ta.PlaylistEntry{
+			YoutubeID: "fake-undownloaded-" + strconv.Itoa(i),
+			Title:     "Never downloaded " + strconv.Itoa(i+1),
+			Uploader:  "Elsewhere",
+			Idx:       len(p.PlaylistEntries),
+		})
 	}
 	return p
 }

@@ -293,9 +293,13 @@ final class ModelDecodingTests: XCTestCase {
         XCTAssertFalse(summary.pinned)
         XCTAssertFalse(summary.music)
         XCTAssertEqual(summary.feeds.first?.name, "Home")
+        XCTAssertEqual(summary.videoCount, 14)
+        XCTAssertEqual(summary.entryCount, 20)
 
         let music = try decode(PlaylistSummary.self, Fixtures.musicPlaylistSummary)
         XCTAssertTrue(music.music)
+        // A server too old to send entry_count reads as fully downloaded.
+        XCTAssertEqual(music.entryCount, 0)
         XCTAssertTrue(music.pinned)
         XCTAssertEqual(music.channel?.name, "A Band")
         // Watch state comes back zeroed for a music playlist.

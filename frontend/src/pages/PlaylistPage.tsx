@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams } from "react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { invalidateFeedish, usePlaylist, useSetPlaylistMusic, useSetPlaylistPinned } from "@/lib/queries";
-import { ccLabel, fmtDuration, fmtDurationLong, plural, relativeDay } from "@/lib/format";
+import { ccLabel, fmtDuration, fmtDurationLong, playlistCount, relativeDay } from "@/lib/format";
 import { EmptyState, ErrorState, HeadphonesIcon, LoadingState, PinIcon } from "@/components/ui";
 import { InFeedsControl } from "@/components/InFeedsControl";
 import { VideoRow } from "@/components/VideoRow";
@@ -82,7 +82,7 @@ export default function PlaylistPage() {
 
   const stats = [
     isCustom ? "Your playlist" : p.channel?.name,
-    plural(p.video_count, "video"),
+    playlistCount(p.video_count, p.entry_count),
     fmtDurationLong(p.total_duration),
     // A music playlist carries no watch state to summarize (see docs/api.md
     // "Music playlists") — seen_count/in_progress_count come back zeroed.

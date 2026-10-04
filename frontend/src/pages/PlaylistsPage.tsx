@@ -3,7 +3,7 @@ import { Link, useNavigate } from "react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { api, type PlaylistSummary } from "@/lib/api";
 import { usePlaylists, useSetPlaylistPinned } from "@/lib/queries";
-import { plural } from "@/lib/format";
+import { playlistCount } from "@/lib/format";
 import { PageHeader } from "@/components/Layout";
 import { EmptyState, ErrorState, HeadphonesIcon, InfiniteSentinel, MediaImg, PinIcon, ProgressBar, Segmented, Spinner } from "@/components/ui";
 import { VideoGrid } from "@/components/VideoCard";
@@ -148,7 +148,7 @@ export function PlaylistCard({ playlist }: { playlist: PlaylistSummary }) {
           </span>
           <span className="meta">
             {playlist.channel ? `${playlist.channel.name} · ` : ""}
-            {plural(playlist.video_count, "video")}
+            {playlistCount(playlist.video_count, playlist.entry_count)}
             {seen}
           </span>
         </span>

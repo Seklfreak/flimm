@@ -305,7 +305,9 @@ it can read higher than `GET /feeds/{id}/videos?view=unseen` reports as its
   "id": "…", "name": "…", "kind": "custom|channel",
   "channel": { "id": "…", "name": "…" } | null,
   "thumb_url": "…",
-  "video_count": 14, "total_duration": 15120,
+  "video_count": 14,                   // downloaded videos: what Flimm can play
+  "entry_count": 20,                   // every entry TA lists, downloaded or not
+  "total_duration": 15120,
   "seen_count": 11, "in_progress_count": 1,
   "progress": 0.78,
   "resume_video_id": "yt-id" | null,   // first in-progress, else first unseen
@@ -314,6 +316,25 @@ it can read higher than `GET /feeds/{id}/videos?view=unseen` reports as its
   "feeds": [{ "id": "…", "name": "…" }] // feeds holding this playlist as a source
 }
 ```
+
+#### Partly downloaded playlists
+
+TubeArchivist lists every entry of a playlist it knows, but only downloads
+some of them. A subscribed playlist is only scanned as far as TA's
+"playlist size" setting (50 by default), so a long one that was subscribed
+late keeps its older entries listed and never downloaded. Flimm can play only
+what TA downloaded, so `video_count` and the items count those. `entry_count`
+is the length of TA's `playlist_entries`, including entries that were never
+downloaded or have since gone private or been deleted on YouTube.
+
+It costs nothing: TA sends the entries with the playlist document either way,
+so it is on every summary, not just the detail response.
+
+**Clients.** Where a playlist's size is shown (web playlist header and
+Playlists page card, the iPhone/iPad playlist header and list row, the Apple
+TV playlist header and card), a playlist with `entry_count > video_count`
+reads **"65 of 697 downloaded"** in place of "65 videos". A server too old to
+send the field decodes as 0, which reads as fully downloaded.
 
 #### Pinned playlists
 

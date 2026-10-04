@@ -251,7 +251,7 @@ struct TVPlaylistCard: View {
     }
 
     private var meta: String {
-        var parts = [Fmt.plural(playlist.videoCount, "video")]
+        var parts = [Fmt.playlistCount(videoCount: playlist.videoCount, entryCount: playlist.entryCount)]
         if playlist.totalDuration > 0 { parts.append(Fmt.durationLong(playlist.totalDuration)) }
         if !playlist.music {
             let remaining = Fmt.remainingUnseen(videoCount: playlist.videoCount, seenCount: playlist.seenCount)

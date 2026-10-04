@@ -65,6 +65,7 @@ export function playlist(over: Partial<PlaylistSummary> = {}): PlaylistSummary {
     channel: null,
     thumb_url: "/media/thumb/playlist/p1",
     video_count: 14,
+    entry_count: 14,
     total_duration: 15120,
     seen_count: 11,
     in_progress_count: 1,
