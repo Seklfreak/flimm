@@ -314,6 +314,95 @@ final class RemotePublisherTests: XCTestCase {
     }
 }
 
+final class RemoteCastTests: XCTestCase {
+    private let baseURL = URL(string: "https://flimm.example.com")!
+
+    /// The receivers arrive on the poll the controller already holds open, and
+    /// a cast carries the context, so the television's next/previous match.
+    @MainActor
+    func testReceiversArriveWithTheSessionsAndACastCarriesTheContext() async throws {
+        let calls = CallCounter()
+        let listing = """
+        {"sessions":[],"receivers":[{"id":"r1","device":"Living Room","platform":"tvos",
+        "updated_at":"2026-09-01T19:04:11Z"}],"version":3}
+        """
+        let session = StubURLProtocol.session { request, _ in
+            if request.url?.path == "/api/v1/playback/sessions" {
+                return calls.next() == 0 ? (200, Data(listing.utf8)) : (500, Data("{}".utf8))
+            }
+            return (202, Data(#"{"seq":1}"#.utf8))
+        }
+        let control = RemoteControl(client: APIClient(baseURL: baseURL, tokens: StaticTokenProvider("tok"), session: session))
+        control.start()
+        defer { control.stop() }
+
+        try await waitFor { !control.receivers.isEmpty }
+        let receiver = try XCTUnwrap(control.receivers.first)
+        XCTAssertEqual(receiver.device, "Living Room")
+        XCTAssertNil(control.current, "a receiver is not something playing")
+
+        try await control.cast("yt-id", position: 61.5, context: .playlist("pl1", shuffleSeed: "abc"), to: receiver)
+
+        let post = try XCTUnwrap(StubURLProtocol.recorded.last { $0.method == "POST" })
+        XCTAssertEqual(post.path, "/api/v1/playback/receivers/r1/commands")
+        let body = try XCTUnwrap(JSONSerialization.jsonObject(with: XCTUnwrap(post.body)) as? [String: Any])
+        XCTAssertEqual(body["kind"] as? String, "open")
+        XCTAssertEqual(body["video_id"] as? String, "yt-id")
+        XCTAssertEqual(body["position"] as? Double, 61.5)
+        let context = try XCTUnwrap(body["context"] as? [String: Any])
+        XCTAssertEqual(context["playlist"] as? String, "pl1")
+        XCTAssertEqual(context["shuffle"] as? String, "abc")
+        XCTAssertNil(context["feed"])
+        XCTAssertNil(context["audio"])
+    }
+
+    /// A server that predates casting answers without the key at all.
+    func testAListingWithoutReceiversDecodes() throws {
+        let decoded = try FlimmCoding.decoder.decode(RemoteSessions.self, from: Data(#"{"sessions":[],"version":1}"#.utf8))
+        XCTAssertEqual(decoded.receivers, [])
+    }
+
+    func testOpenRequestRoundTripsTheContext() throws {
+        let sent = RemoteCommand.open("v1", position: 10, context: .feed("f1", audioOnly: true))
+        let wire = try FlimmCoding.encoder.encode(sent)
+        let received = try FlimmCoding.decoder.decode(RemoteCommand.self, from: wire)
+        let request = try XCTUnwrap(received.openRequest)
+        XCTAssertEqual(request.videoId, "v1")
+        XCTAssertEqual(request.position, 10)
+        XCTAssertEqual(request.context, .feed("f1", audioOnly: true))
+        XCTAssertNil(received.action, "a cast is not a steering command")
+        XCTAssertNil(RemoteCommand.pause.openRequest)
+    }
+
+    /// Registers, then opens what it is asked to, in its context.
+    @MainActor
+    func testHostRegistersAndOpensWhatItIsAsked() async throws {
+        let calls = CallCounter()
+        let session = StubURLProtocol.session { request, _ in
+            guard request.url?.path.hasSuffix("/commands") == true else { return (204, Data()) }
+            let command = #"{"commands":[{"seq":1,"kind":"open","video_id":"yt-id","position":30,"#
+                + #""context":{"channel":"c1"}}],"cursor":1}"#
+            return calls.next() == 0 ? (200, Data(command.utf8)) : (500, Data("{}".utf8))
+        }
+        let client = APIClient(baseURL: baseURL, tokens: StaticTokenProvider("tok"), session: session)
+        let host = RemoteReceiverHost(client: client, device: "Living Room", platform: "tvos")
+
+        let opened = Box<RemoteCommand.OpenRequest?>(nil)
+        host.start { opened.value = $0 }
+        defer { host.stop() }
+
+        try await waitFor { opened.value != nil }
+        XCTAssertEqual(opened.value?.videoId, "yt-id")
+        XCTAssertEqual(opened.value?.position, 30)
+        XCTAssertEqual(opened.value?.context, .channel("c1"))
+
+        let put = try XCTUnwrap(StubURLProtocol.recorded.first { $0.method == "PUT" })
+        XCTAssertEqual(put.path, "/api/v1/playback/receivers/\(host.receiverId)")
+        let body = try XCTUnwrap(JSONSerialization.jsonObject(with: XCTUnwrap(put.body)) as? [String: Any])
+        XCTAssertEqual(body["device"] as? String, "Living Room")
+    }
+}
+
 // MARK: - Helpers
 
 /// Counts calls from the stub's handler, which is not isolated to an actor.

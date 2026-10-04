@@ -12,6 +12,7 @@ import { Chapters } from "@/player/Chapters";
 import { Comments } from "@/player/Comments";
 import { Description } from "@/player/Description";
 import { AddToPlaylist } from "@/player/AddToPlaylist";
+import { PlayOnTV } from "@/player/PlayOnTV";
 import { UpNextPanel } from "@/player/UpNextPanel";
 
 /// Whether the comments section is open, for the rest of this session. It
@@ -231,6 +232,12 @@ export default function WatchPage() {
                 {v.dismissed ? "Add back to feeds" : "Not interested"}
               </button>
               <AddToPlaylist videoId={v.id} memberOf={v.playlists} />
+              <PlayOnTV
+                videoId={v.id}
+                ctx={ctx}
+                currentTime={() => playerRef.current?.currentTime() ?? 0}
+                onCast={() => playerRef.current?.pause()}
+              />
               <button className="btn" onClick={() => onPrefs({ subtitle_lang: track ? SUBTITLE_OFF : (v.subtitles[0]?.lang ?? SUBTITLE_OFF) })} disabled={v.subtitles.length === 0}>
                 CC · {track ? langName(track.lang) : v.subtitles.length === 0 ? "none" : "Off"}
               </button>

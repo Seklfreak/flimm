@@ -401,7 +401,12 @@ the Apple TV shows up on the phone and the iPad, which can pause it, scrub it,
 step through it, and — the reason it is worth having — show the description and
 the comments, which are unreadable at two metres and ordinary in the hand. It
 is the account that connects them, not the network, and nothing is paired. The
-phone steers what the television started; it does not send it anything to play.
+phone steers what the television plays — and can start it there: while Flimm
+is open on the Apple TV, the player on the phone, the iPad and the web offers
+"Play on Living Room", and the video moves to the television at the same
+second and in the same feed or playlist. It moves rather than plays twice: the
+phone's player closes into the "playing on…" bar, and the browser pauses with
+the description and comments still in front of it.
 
 The iPad's columns follow the window rather than the device: three across a
 full-width iPad, fewer in Split View, and a pane narrow enough (Slide Over)

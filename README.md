@@ -70,6 +70,12 @@ One container image: a Go backend with the React frontend embedded.
   steering: a comment thread is unreadable across a room and ordinary in your
   hand. Nothing to pair — it works over your own Flimm account, so it needs
   neither the same network nor a code to type.
+- **Play on the TV** (iPhone/iPad/web → Apple TV) — while Flimm is open on an
+  Apple TV, the player on the phone, the iPad and the web offers "Play on
+  Living Room". The television opens the video from where you were, in the
+  same feed or playlist, and the companion above takes over: the phone's player
+  closes and the browser pauses. Over your Flimm account like the companion,
+  so there is nothing to pair; the TV app has to be open to be offered.
 - **Handoff between your Apple devices** (iPhone/iPad + Apple TV) — pick up
   the iPad and the video you were watching is on it, at the same second and in
   the same feed or playlist, one tap from the app switcher; the same for a

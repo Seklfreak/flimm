@@ -78,6 +78,25 @@ export interface PlayContext {
   audio?: string;
 }
 
+/**
+ * A screen that can be asked to play something — an Apple TV with Flimm open.
+ * It arrives beside the account's playing sessions in `GET /playback/sessions`.
+ */
+export interface RemoteReceiver {
+  id: string;
+  /** The name the viewer gave the screen ("Living Room"). */
+  device: string;
+  platform: string;
+  updated_at: string;
+}
+
+/** `GET /playback/sessions`, of which the web reads only the receivers: it
+ *  neither publishes a session nor steers one (docs/apple-apps.md). */
+export interface RemoteListing {
+  receivers?: RemoteReceiver[];
+  version: number;
+}
+
 /** Where a video sits in the list the player is stepping through. */
 /** A page of up-next videos that says whether it is the queue or a guess.
  *  `suggestions` is set only once the context has run out; the items are then
@@ -705,6 +724,29 @@ export const api = {
    * carrying its reason.
    */
   subscribeNewChannel: (channel: string) => req<ChannelSubscription>("/channels", json("POST", { channel })),
+
+  remoteSessions: () => req<RemoteListing>("/playback/sessions"),
+  /**
+   * Asks a receiver to open a video from `position`, in the list it is being
+   * played from here. The context goes as the same fields the URL carries, so
+   * next/previous and autoplay carry on on the television.
+   */
+  playOn: (receiverId: string, videoId: string, position: number, ctx: PlayContext) =>
+    req<{ seq: number }>(
+      `/playback/receivers/${receiverId}/commands`,
+      json("POST", {
+        kind: "open",
+        video_id: videoId,
+        position: Math.max(0, position),
+        context: {
+          feed: ctx.feed,
+          playlist: ctx.playlist,
+          channel: ctx.channel,
+          shuffle: ctx.shuffle,
+          audio: ctx.audio === "1" || undefined,
+        },
+      }),
+    ),
 
   video: (id: string) => req<Video>(`/videos/${id}`),
   upNext: (id: string, ctx: PlayContext, page: number, before?: boolean) =>

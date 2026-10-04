@@ -16,6 +16,11 @@ struct TVRootView: View {
     /// Per-device playback settings (video quality) — never a server
     /// preference, and not tied to the account.
     @State private var playback = PlaybackSettings()
+    /// Offers this television to the account's phones, iPads and browsers as
+    /// somewhere to "play on" — for as long as the app is in front, whether or
+    /// not anything is playing. A backgrounded app cannot answer, so it stops
+    /// offering itself the moment it is not.
+    @State private var receiver: RemoteReceiverHost?
 
     var body: some View {
         Group {
@@ -44,8 +49,10 @@ struct TVRootView: View {
         // yesterday's grid on it; see AppModel.sceneReturned.
         .onChange(of: scenePhase) { _, phase in
             if phase == .active {
+                startReceiving()
                 Task { await app?.sceneReturned() }
             } else {
+                stopReceiving()
                 app?.sceneLeft()
             }
         }
@@ -83,13 +90,32 @@ struct TVRootView: View {
         guard session.state == .signedIn, let client = session.client else {
             app = nil
             player.configure(app: nil, playback: playback)
+            stopReceiving()
+            receiver = nil
             return
         }
         if app?.client !== client {
             app = AppModel(client: client)
+            stopReceiving()
+            receiver = RemoteReceiverHost(client: client, device: UIDevice.current.name, platform: "tvos")
         }
         player.configure(app: app, playback: playback)
+        if scenePhase == .active { startReceiving() }
         openDebugVideo()
+    }
+
+    /// A phone asking for a video opens it exactly as selecting it here would,
+    /// from where the phone was and in the list it was playing from — and
+    /// replaces whatever was on, which is what "play on the TV" means.
+    private func startReceiving() {
+        let player = self.player
+        receiver?.start { request in
+            player.play(request.videoId, context: request.context, startAt: request.position > 0 ? request.position : nil)
+        }
+    }
+
+    private func stopReceiving() {
+        receiver?.stop()
     }
 
     /// Opens a video straight from launch, so a screen that only exists during

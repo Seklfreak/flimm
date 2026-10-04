@@ -1188,13 +1188,13 @@ as 0 everywhere.
 
 One screen plays; another steers it. A player publishes what it is doing as a
 **session**, and anything else signed in as the same account can read those
-sessions and send commands back. That is the whole model, and two things it
-deliberately is not: it is not a cast protocol — no client ever tells another
-*what to open*, so a session exists only because a player already started
-something itself — and it is not a pairing mechanism. Sessions are scoped by
-user id like every other piece of per-user state, so a viewer sees their own
-screens and no others, with no code to type and nothing to discover on the
-local network. It works from anywhere the server does.
+sessions and send commands back. A screen able to play — the Apple TV app,
+while it is open — can also register as a **receiver**, and be asked to open a
+video ("play on Living Room"); once it plays, it is a session like any other
+and is steered through that. It is not a pairing mechanism. Sessions and
+receivers are scoped by user id like every other piece of per-user state, so a
+viewer sees their own screens and no others, with no code to type and nothing
+to discover on the local network. It works from anywhere the server does.
 
 Sessions live **in memory**. A session describes a player that is running right
 now; after a restart of either end the truth is republished within one
@@ -1214,6 +1214,10 @@ heartbeat every 10 s, so that is four missed beats.
 | `GET` | `/playback/sessions` | a controller, to see what is playing |
 | `GET` | `/playback/sessions/{id}/commands` | the player, to receive what was pressed |
 | `POST` | `/playback/sessions/{id}/commands` | a controller, to press something |
+| `PUT` | `/playback/receivers/{id}` | a screen that can play, to offer itself; see *Receivers* below |
+| `DELETE` | `/playback/receivers/{id}` | the same screen, going away |
+| `GET` | `/playback/receivers/{id}/commands` | the receiver, to hear what to open |
+| `POST` | `/playback/receivers/{id}/commands` | a controller, to ask it to open something |
 
 Both `GET`s are **long polls**, held open for up to 25 s. A socket would need
 its own authentication, its own reconnect and its own place in every proxy
@@ -1246,11 +1250,16 @@ pausing or lapsing:
       "stats": { … }
     }
   ],
+  "receivers": [
+    { "id": "8c1e…", "device": "Living Room", "platform": "tvos", "updated_at": "2026-09-01T19:04:10Z" }
+  ],
   "version": 12
 }
 ```
 
-`stats` is optional and covered under *Playback stats* below.
+`stats` is optional and covered under *Playback stats* below. `receivers` is
+covered under *Receivers*; a receiver appearing, being renamed or lapsing moves
+`version` like a session does, but its heartbeat alone does not.
 
 `position` is a **fix, not a clock**. A controller runs it forward itself at
 `speed` while `paused` is false, or its scrubber jumps once a heartbeat and
@@ -1298,9 +1307,39 @@ A session that is not this user's — or that never existed, or has lapsed — i
 `404` from every one of these, not a `403`. One account may hold 8 sessions at
 a time; over that, the least recently published makes way.
 
-**Clients.** Apple TV publishes (FlimmKit's `RemotePublisher`); iPhone and iPad
-control (`RemoteControl`, and the companion screen behind the "playing on…"
-bar). The web client does neither — see `docs/apple-apps.md`.
+**Receivers.** A receiver says a screen can be asked to play something. It
+`PUT`s `{"device": "Living Room", "platform": "tvos"}` to
+`/playback/receivers/{id}` (a UUID it chooses, `204`) as its heartbeat — every
+15 s is what the Apple TV does — for as long as it can answer, and `DELETE`s it
+when it can no longer (the app leaves the foreground). It lapses on the same
+45 s as a session, and one account may hold 8 of them, counted apart from its
+sessions. It is listed in `GET /playback/sessions` and is not a session: a
+receiver's id is a `404` on every `/playback/sessions/…` path, and the reverse.
+
+A receiver takes exactly one command, `open`:
+
+```json
+{ "kind": "open", "video_id": "yt-id", "position": 61.5,
+  "context": { "playlist": "PL…", "shuffle": "seed", "audio": true } }
+```
+
+`position` (seconds, ≥ 0) is where to start; `0` means wherever the receiver
+would start anyway — the server-held resume position. `context` is the list the
+video is played from, with the same names and meaning as the query parameters
+on `/videos/{id}/nav` (`feed`, `playlist`, `channel` — at most one — plus
+`shuffle` and `audio`, a boolean here), so next/previous and autoplay carry on
+on the television as they were going in the hand. It may be omitted. Anything
+but `open`, or a missing `video_id`, is a `400`; the answer is `202` with the
+sequence number. The receiver long-polls `GET /playback/receivers/{id}/commands
+?after=<cursor>` exactly as a session polls its own, cursor rule included, and
+opens the last `open` in a batch. As with steering, nothing acknowledges the
+command: the session the receiver publishes once it plays is the answer.
+
+**Clients.** Apple TV publishes (FlimmKit's `RemotePublisher`) and, while the
+app is in front, is a receiver (`RemoteReceiverHost`); iPhone and iPad control
+(`RemoteControl`, and the companion screen behind the "playing on…" bar) and
+cast from the player. The web client only casts, from the watch page — it
+neither publishes nor steers; see `docs/apple-apps.md`.
 
 **Playback stats.** A session may carry a `stats` object: what that player is
 actually doing. Everything Flimm derives is invisible by design — a transcode

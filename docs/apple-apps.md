@@ -291,13 +291,20 @@ What is there:
     request for a video — a cost paid once, and paid because somebody holding
     the phone is the person about to drag the bar.
 
-    **The direction is one way, deliberately.** The television publishes a
-    session and the phone steers it; the phone never tells it what to *open*.
-    Casting is a different feature with a different question behind it ("play
-    this there") and would need a target picker, a queue and an answer for what
-    happens to the phone's own playback — none of which a viewer already
-    watching something needs. See *Remote control* in
-    [api.md](api.md#remote-control) for the protocol; the rule about what is
+    **Steering, and starting.** The television publishes a session and the
+    phone steers it. Starting something there is the one other thing: while
+    the TV app is in front it registers as a *receiver*
+    (``RemoteReceiverHost``, run from `TVRootView` and stopped when the scene
+    leaves the foreground, because a backgrounded tvOS app cannot answer), and
+    the phone's player offers "Play on <name>" (`CastMenu`) whenever
+    ``RemoteControl/receivers`` is non-empty — the receivers ride the poll the
+    companion already holds open, so the button costs nothing and never offers
+    a television that is off. Casting sends the video, the position and the
+    ``PlaybackContext``; the TV opens it exactly as selecting it would, and the
+    phone's player closes so the video moves rather than plays twice. There is
+    no queue: the context *is* the queue, as everywhere else. The iPad is a
+    sender, never a receiver — it is the thing in the hand. See *Remote
+    control* in [api.md](api.md#remote-control) for the protocol; the rule about what is
     published and when is ``RemotePublishRule``, and the clock a controller
     runs forward between heartbeats is ``RemoteClock``, both in FlimmKit so
     the two ends cannot drift on it.
@@ -1062,14 +1069,16 @@ a side effect of caching.
 - ~~Whether all three ship together or iPhone leads.~~ iPhone led.
 - Whether the derived-media cache gains a video variant (see above), and
   whether it is derived on demand or ahead of time.
-- ~~Whether the web client also takes part in remote control.~~ **It does
-  not**, in either direction: it neither publishes a session nor offers a
-  companion. The companion is a thing you hold while looking at a television,
-  and a browser tab is not that — the machine a laptop is on is usually the
-  machine you would rather just watch on. Nothing about the protocol excludes
-  it (it is the same five endpoints, and a page could publish itself in an
-  afternoon), so this is a decision about what is worth having on screen
-  rather than a platform quietly left behind.
+- ~~Whether the web client also takes part in remote control.~~ **Only to
+  start something**: the watch page offers "Play on <TV>" when a receiver is
+  registered, and pauses its own video once the television has it. It neither
+  publishes a session nor offers a companion. The companion is a thing you
+  hold while looking at a television, and a browser tab is not that — the
+  machine a laptop is on is usually the machine you would rather just watch
+  on. Handing a video *to* the television from that machine is a different
+  matter, and costs one button. Nothing about the protocol excludes the rest
+  (a page could publish itself in an afternoon), so this is a decision about
+  what is worth having on screen rather than a platform quietly left behind.
 - Offline downloads: in scope or explicitly not.
 - Whether the Apple clients get the web player's **playback stats** panel
   (which path is playing and why, the transcode's progress, the scrub-preview

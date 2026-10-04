@@ -134,19 +134,56 @@ public struct RemoteSession: Codable, Sendable, Hashable, Identifiable {
 /// turns the same request into a long poll that answers the moment anything
 /// changes — a session appearing, moving, pausing or lapsing — so a controller
 /// never polls on a timer and never misses a change between two polls.
+///
+/// The same answer carries the account's ``RemoteReceiver``s — the screens that
+/// could be asked to play something — so the one poll a controller already
+/// holds open also says when a television becomes available or goes away.
 public struct RemoteSessions: Codable, Sendable, Hashable {
     public let sessions: [RemoteSession]
+    /// Empty from a server that predates casting, which is the same as there
+    /// being nothing to cast to.
+    public let receivers: [RemoteReceiver]
     public let version: UInt64
 
-    public init(sessions: [RemoteSession] = [], version: UInt64 = 0) {
+    public init(sessions: [RemoteSession] = [], receivers: [RemoteReceiver] = [], version: UInt64 = 0) {
         self.sessions = sessions
+        self.receivers = receivers
         self.version = version
     }
 
     public init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         sessions = try c.decode(.sessions, or: [])
+        receivers = try c.decode(.receivers, or: [])
         version = try c.decode(.version, or: 0)
+    }
+}
+
+/// A screen that can be asked to play something: the Apple TV app, while it is
+/// open. It registers itself (`PUT /playback/receivers/{id}`) and takes one
+/// command, ``RemoteCommand/open(_:position:context:)``; once it plays, it is a
+/// ``RemoteSession`` like any other player and is steered through that.
+public struct RemoteReceiver: Codable, Sendable, Hashable, Identifiable {
+    public let id: String
+    /// The name the viewer gave the screen — "Living Room".
+    public let device: String
+    /// For an icon, never for a decision; as on ``RemoteSession``.
+    public let platform: String
+    public let updatedAt: Date
+
+    public init(id: String = "", device: String, platform: String, updatedAt: Date = Date()) {
+        self.id = id
+        self.device = device
+        self.platform = platform
+        self.updatedAt = updatedAt
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(.id, or: "")
+        device = try c.decode(.device, or: "")
+        platform = try c.decode(.platform, or: "")
+        updatedAt = try c.decode(.updatedAt, or: Date())
     }
 }
 
@@ -177,15 +214,25 @@ public struct RemoteCommand: Codable, Sendable, Hashable, Identifiable {
     /// trip, and a seek computed from a projected clock would land slightly
     /// wrong every time.
     public let delta: Double
+    /// What to open, for the one command a ``RemoteReceiver`` takes; `nil` on
+    /// every steering command. `position` is then where to start.
+    public let videoId: String?
+    let context: WireContext?
 
     public var id: UInt64 { seq }
     public var action: Action? { Action(rawValue: kind) }
 
     public init(seq: UInt64 = 0, kind: String, position: Double = 0, delta: Double = 0) {
+        self.init(seq: seq, kind: kind, position: position, delta: delta, videoId: nil, context: nil)
+    }
+
+    init(seq: UInt64, kind: String, position: Double, delta: Double, videoId: String?, context: WireContext?) {
         self.seq = seq
         self.kind = kind
         self.position = position
         self.delta = delta
+        self.videoId = videoId
+        self.context = context
     }
 
     public init(from decoder: any Decoder) throws {
@@ -194,6 +241,73 @@ public struct RemoteCommand: Codable, Sendable, Hashable, Identifiable {
         kind = try c.decode(.kind, or: "")
         position = try c.decode(.position, or: 0)
         delta = try c.decode(.delta, or: 0)
+        videoId = try c.decodeIfPresent(String.self, forKey: .videoId)
+        context = try c.decodeIfPresent(WireContext.self, forKey: .context)
+    }
+
+    // MARK: Casting
+
+    /// The kind a receiver takes. Not an ``Action``: a playing session is
+    /// never asked to open something, and a receiver is never steered.
+    static let openKind = "open"
+
+    /// Asks a receiver to play a video from `position`, in the list it was
+    /// being played from here — so previous/next and autoplay carry on on the
+    /// television exactly as they were going in the hand.
+    public static func open(_ videoId: String, position: Double, context: PlaybackContext) -> RemoteCommand {
+        RemoteCommand(
+            seq: 0, kind: openKind, position: max(0, position), delta: 0,
+            videoId: videoId, context: WireContext(context)
+        )
+    }
+
+    /// What a receiver is asked to open.
+    public struct OpenRequest: Sendable, Hashable {
+        public let videoId: String
+        /// Where to start, in seconds; 0 is "wherever the server would".
+        public let position: Double
+        public let context: PlaybackContext
+    }
+
+    /// What an ``open(_:position:context:)`` asks for, or `nil` for any other
+    /// command — including one a newer controller invented.
+    public var openRequest: OpenRequest? {
+        guard kind == Self.openKind, let videoId, !videoId.isEmpty else { return nil }
+        return OpenRequest(videoId: videoId, position: position, context: context?.playbackContext ?? .none)
+    }
+
+    /// A ``PlaybackContext`` as the API spells it: the web client's query
+    /// parameters, as an object.
+    struct WireContext: Codable, Sendable, Hashable {
+        var feed: String?
+        var playlist: String?
+        var channel: String?
+        var shuffle: String?
+        var audio: Bool?
+
+        init(_ context: PlaybackContext) {
+            switch context.source {
+            case .feed(let id): feed = id
+            case .playlist(let id): playlist = id
+            case .channel(let id): channel = id
+            case nil: break
+            }
+            shuffle = context.isShuffled ? context.shuffleSeed : nil
+            audio = context.audioOnly ? true : nil
+        }
+
+        var playbackContext: PlaybackContext {
+            let source: PlaybackContext.Source? = if let feed, !feed.isEmpty {
+                .feed(feed)
+            } else if let playlist, !playlist.isEmpty {
+                .playlist(playlist)
+            } else if let channel, !channel.isEmpty {
+                .channel(channel)
+            } else {
+                nil
+            }
+            return PlaybackContext(source: source, shuffleSeed: shuffle, audioOnly: audio ?? false)
+        }
     }
 
     public static let play = RemoteCommand(kind: Action.play.rawValue)

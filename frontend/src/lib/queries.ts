@@ -29,6 +29,7 @@ export const keys = {
   search: (q: string, scope: string, unseen: boolean, feed: string | undefined) =>
     ["search", { q, scope, unseen, feed }] as const,
   live: ["admin", "sessions"] as const,
+  remote: ["playback", "sessions"] as const,
   downloads: ["admin", "downloads"] as const,
 };
 

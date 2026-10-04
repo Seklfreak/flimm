@@ -57,4 +57,34 @@ extension APIClient {
         let accepted: Accepted = try await send(.post, "/playback/sessions/\(esc(id))/commands", body: command)
         return accepted.seq
     }
+
+    // MARK: - Casting
+
+    /// Says this screen can be asked to play something. Upsert, and its own
+    /// heartbeat; use ``RemoteReceiverHost`` rather than a timer of your own.
+    public func registerRemoteReceiver(_ id: String, _ receiver: RemoteReceiver) async throws {
+        try await discard(.put, "/playback/receivers/\(esc(id))", body: receiver)
+    }
+
+    /// Withdraws the offer — the app is going away — so a controller stops
+    /// listing this screen now rather than when it expires.
+    public func retireRemoteReceiver(_ id: String) async throws {
+        try await discard(.delete, "/playback/receivers/\(esc(id))")
+    }
+
+    /// What this receiver has been asked to play since `after`. A long poll,
+    /// with the same cursor rule as ``remoteCommands(_:after:)``.
+    public func receiverCommands(_ id: String, after: UInt64) async throws -> RemoteCommandBatch {
+        var query = QueryBuilder()
+        query.add("after", String(after))
+        return try await get("/playback/receivers/\(esc(id))/commands", query: query.items)
+    }
+
+    /// Asks a receiver to play something — ``RemoteCommand/open(_:position:context:)``.
+    @discardableResult
+    public func sendReceiverCommand(_ id: String, _ command: RemoteCommand) async throws -> UInt64 {
+        struct Accepted: Decodable { let seq: UInt64 }
+        let accepted: Accepted = try await send(.post, "/playback/receivers/\(esc(id))/commands", body: command)
+        return accepted.seq
+    }
 }

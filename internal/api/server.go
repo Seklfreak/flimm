@@ -343,6 +343,12 @@ func (s *Server) Router() http.Handler {
 			r.Delete("/playback/sessions/{id}", s.deleteRemoteSession)
 			r.Get("/playback/sessions/{id}/commands", s.pollRemoteCommands)
 			r.Post("/playback/sessions/{id}/commands", s.postRemoteCommand)
+			// Casting: a screen that can play registers as a receiver, and a
+			// controller asks it to open something. See cast.go.
+			r.Put("/playback/receivers/{id}", s.putRemoteReceiver)
+			r.Delete("/playback/receivers/{id}", s.deleteRemoteReceiver)
+			r.Get("/playback/receivers/{id}/commands", s.pollReceiverCommands)
+			r.Post("/playback/receivers/{id}/commands", s.postReceiverCommand)
 
 			r.Get("/prepare", s.getPrepareStatus)
 

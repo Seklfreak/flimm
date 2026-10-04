@@ -23,6 +23,10 @@ public final class RemoteControl {
     /// Every screen of this account's that is playing, most recently heard from
     /// first.
     public private(set) var sessions: [RemoteSession] = []
+    /// Every screen of this account's that could be asked to play something —
+    /// an Apple TV with Flimm open — by name. Empty means there is nothing to
+    /// offer a "play on…" for.
+    public private(set) var receivers: [RemoteReceiver] = []
     /// When ``sessions`` arrived *here*. The clock is run forward from this and
     /// never from the server's timestamp; see ``RemoteClock``.
     public private(set) var receivedAt = Date()
@@ -119,6 +123,19 @@ public final class RemoteControl {
         await send(.previous)
     }
 
+    // MARK: - Casting
+
+    /// Asks a receiver to play a video, from `position`, in `context`.
+    ///
+    /// Throws when the request did not get through, so the caller can keep
+    /// playing here rather than stop for a television that never heard. The
+    /// session it starts is steered like any other: whichever screen spoke
+    /// last is ``current``, and that is the one that has just started.
+    public func cast(_ videoId: String, position: Double, context: PlaybackContext, to receiver: RemoteReceiver) async throws {
+        try await client.sendReceiverCommand(receiver.id, .open(videoId, position: position, context: context))
+        attached = nil
+    }
+
     // MARK: - Internals
 
     private func run() async {
@@ -130,6 +147,7 @@ public final class RemoteControl {
                 let page = try await client.remoteSessions(since: since)
                 guard !Task.isCancelled else { return }
                 sessions = page.sessions
+                receivers = page.receivers
                 receivedAt = Date()
                 version = page.version
                 since = page.version

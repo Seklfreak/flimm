@@ -85,6 +85,9 @@ export interface PlayerProps {
 
 export interface PlayerHandle {
   seek: (time: number) => void;
+  /** Where playback is, in seconds. */
+  currentTime: () => number;
+  pause: () => void;
 }
 
 // HTML5 player with custom controls per the Player artboard: resume chip,
@@ -436,7 +439,15 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(function Player(
     },
     [el, seekTo],
   );
-  useImperativeHandle(ref, () => ({ seek: seekTo }), [seekTo]);
+  useImperativeHandle(
+    ref,
+    () => ({
+      seek: seekTo,
+      currentTime: () => el?.currentTime ?? 0,
+      pause: () => el?.pause(),
+    }),
+    [seekTo, el],
+  );
   const toggleFullscreen = useCallback(() => {
     const w = wrapRef.current;
     if (!w) return;

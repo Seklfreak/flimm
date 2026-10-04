@@ -182,19 +182,19 @@ func TestRemoteHubIsolatesUsers(t *testing.T) {
 	id := uuid.NewString()
 	hub.publish(mine, RemoteSession{ID: id, VideoID: "v1"})
 
-	if sessions, _ := hub.list(theirs); len(sessions) != 0 {
+	if sessions := hub.list(theirs).Sessions; len(sessions) != 0 {
 		t.Fatalf("another user sees %d sessions", len(sessions))
 	}
-	if _, err := hub.command(theirs, id, RemoteCommand{Kind: "pause"}); err == nil {
+	if _, err := hub.command(theirs, id, false, RemoteCommand{Kind: "pause"}); err == nil {
 		t.Fatal("another user could command the session")
 	}
-	if _, _, err := hub.waitCommands(t.Context(), theirs, id, 0, 0); err == nil {
+	if _, _, err := hub.waitCommands(t.Context(), theirs, id, false, 0, 0); err == nil {
 		t.Fatal("another user could read the session's commands")
 	}
-	if err := hub.end(theirs, id); err == nil {
+	if err := hub.end(theirs, id, false); err == nil {
 		t.Fatal("another user could end the session")
 	}
-	if sessions, _ := hub.list(mine); len(sessions) != 1 {
+	if sessions := hub.list(mine).Sessions; len(sessions) != 1 {
 		t.Fatalf("owner sees %d sessions, want 1", len(sessions))
 	}
 }
@@ -206,11 +206,11 @@ func TestRemoteListPollWakesOnPublish(t *testing.T) {
 	uid := uuid.New()
 	id := uuid.NewString()
 	hub.publish(uid, RemoteSession{ID: id, VideoID: "v1", Position: 10})
-	_, version := hub.list(uid)
+	version := hub.list(uid).Version
 
 	done := make(chan []RemoteSession, 1)
 	go func() {
-		sessions, _ := hub.waitList(context.Background(), uid, version, time.Second)
+		sessions := hub.waitList(context.Background(), uid, version, time.Second).Sessions
 		done <- sessions
 	}()
 	// Give the waiter a moment to be waiting, then move the television on.
@@ -237,11 +237,11 @@ func TestRemoteCommandPollWakesOnCommand(t *testing.T) {
 
 	done := make(chan []RemoteCommand, 1)
 	go func() {
-		commands, _, _ := hub.waitCommands(context.Background(), uid, id, 0, time.Second)
+		commands, _, _ := hub.waitCommands(context.Background(), uid, id, false, 0, time.Second)
 		done <- commands
 	}()
 	time.Sleep(20 * time.Millisecond)
-	if _, err := hub.command(uid, id, RemoteCommand{Kind: "pause"}); err != nil {
+	if _, err := hub.command(uid, id, false, RemoteCommand{Kind: "pause"}); err != nil {
 		t.Fatalf("command: %v", err)
 	}
 
@@ -265,11 +265,12 @@ func TestRemoteSessionLapses(t *testing.T) {
 	hub.publish(uid, RemoteSession{ID: uuid.NewString(), VideoID: "v1"})
 
 	now = now.Add(remoteSessionTTL / 2)
-	if sessions, _ := hub.list(uid); len(sessions) != 1 {
+	if sessions := hub.list(uid).Sessions; len(sessions) != 1 {
 		t.Fatalf("session vanished after half the TTL: %+v", sessions)
 	}
 	now = now.Add(remoteSessionTTL)
-	sessions, version := hub.list(uid)
+	listing := hub.list(uid)
+	sessions, version := listing.Sessions, listing.Version
 	if len(sessions) != 0 {
 		t.Fatalf("lapsed session is still listed: %+v", sessions)
 	}
@@ -288,11 +289,11 @@ func TestRemoteListPollReturnsOnLapse(t *testing.T) {
 	// A session already at the end of its life, so the wait shortens to
 	// nothing rather than the caller's second.
 	hub.publish(uid, RemoteSession{ID: uuid.NewString(), VideoID: "v1"})
-	_, version := hub.list(uid)
+	version := hub.list(uid).Version
 	hub.now = func() time.Time { return time.Now().Add(remoteSessionTTL) }
 
 	start := time.Now()
-	sessions, _ := hub.waitList(context.Background(), uid, version, time.Second)
+	sessions := hub.waitList(context.Background(), uid, version, time.Second).Sessions
 	if len(sessions) != 0 {
 		t.Fatalf("poll returned %+v, want the lapsed session gone", sessions)
 	}
@@ -309,11 +310,11 @@ func TestRemoteCommandBacklogIsBounded(t *testing.T) {
 	id := uuid.NewString()
 	hub.publish(uid, RemoteSession{ID: id, VideoID: "v1"})
 	for i := 0; i < remoteCommandBacklog*2; i++ {
-		if _, err := hub.command(uid, id, RemoteCommand{Kind: "skip", Delta: 10}); err != nil {
+		if _, err := hub.command(uid, id, false, RemoteCommand{Kind: "skip", Delta: 10}); err != nil {
 			t.Fatalf("command %d: %v", i, err)
 		}
 	}
-	commands, cursor, err := hub.waitCommands(context.Background(), uid, id, 0, 0)
+	commands, cursor, err := hub.waitCommands(context.Background(), uid, id, false, 0, 0)
 	if err != nil {
 		t.Fatalf("wait: %v", err)
 	}
@@ -337,7 +338,7 @@ func TestRemoteSessionsAreCapped(t *testing.T) {
 		now = now.Add(time.Second)
 		hub.publish(uid, RemoteSession{ID: uuid.NewString(), VideoID: "v1"})
 	}
-	sessions, _ := hub.list(uid)
+	sessions := hub.list(uid).Sessions
 	if len(sessions) != maxRemoteSessions {
 		t.Fatalf("sessions = %d, want %d", len(sessions), maxRemoteSessions)
 	}

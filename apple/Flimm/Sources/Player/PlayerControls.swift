@@ -121,6 +121,7 @@ struct PlayerControls: View {
                 .accessibilityLabel("Exit full screen")
             }
             Spacer(minLength: 0)
+            CastMenu(model: model, hit: hit)
             Button {
                 Task { await model.toggleAudioOnly() }
             } label: {

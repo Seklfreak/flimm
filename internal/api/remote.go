@@ -4,9 +4,13 @@ package api
 //
 // A player publishes what it is doing as a *session*; anything else signed in
 // as the same user can read those sessions and send commands back. That is the
-// whole model. It is deliberately not a cast protocol — no client tells another
-// what to open — so a session only ever exists because a player already started
-// something on its own.
+// whole model for steering.
+//
+// Starting something is the one other thing: a screen that is able to play —
+// the Apple TV app, while it is open — registers as a *receiver*, and a
+// controller can ask it to open a video ("play on Living Room"). That is all a
+// receiver takes. Once it plays, it publishes a session like any other player
+// and is steered through that; see cast.go.
 //
 // It lives in memory rather than in Postgres, because none of it is worth
 // keeping. A session describes a player that is running *right now*; after a
@@ -224,6 +228,10 @@ type RemoteCommand struct {
 	// the round trip, and a seek computed from a projected clock would land
 	// somewhere slightly wrong every time.
 	Delta float64 `json:"delta,omitempty"`
+	// VideoID and Context are what to open. Only for kind "open", which only
+	// a receiver takes; Position is then where to start.
+	VideoID string         `json:"video_id,omitempty"`
+	Context *RemoteContext `json:"context,omitempty"`
 }
 
 // remoteCommandKinds is the whole vocabulary. Anything else is a 400: a
@@ -238,9 +246,13 @@ var remoteCommandKinds = map[string]bool{
 	"previous": true,
 }
 
-// remoteEntry is a session plus what has been sent to it.
+// remoteEntry is a session or a receiver, plus what has been sent to it. The
+// two share the TTL, the per-user bucket and the command queue; they differ
+// in what they publish and in which commands they take.
 type remoteEntry struct {
-	session  RemoteSession
+	session RemoteSession
+	// receiver is set when this entry is a receiver rather than a session.
+	receiver *RemoteReceiver
 	userID   uuid.UUID
 	commands []RemoteCommand
 	nextSeq  uint64
@@ -250,7 +262,21 @@ type remoteEntry struct {
 	commanded chan struct{}
 }
 
-// remoteUser is one account's live sessions.
+// updatedAt is when the entry was last heard from.
+func (e *remoteEntry) updatedAt() time.Time {
+	if e.receiver != nil {
+		return e.receiver.UpdatedAt
+	}
+	return e.session.UpdatedAt
+}
+
+// is reports whether the entry is of the kind asked for: a receiver, or a
+// session.
+func (e *remoteEntry) is(receiver bool) bool {
+	return (e.receiver != nil) == receiver
+}
+
+// remoteUser is one account's live sessions and receivers.
 //
 // The version counts changes to the *set* — a session appearing, lapsing, or
 // publishing new state — so a controller can hold a poll open against a number
@@ -313,7 +339,7 @@ func (h *remoteHub) prune(u *remoteUser) bool {
 	dropped := false
 	for id := range u.ids {
 		entry, ok := h.entries[id]
-		if !ok || entry.session.UpdatedAt.Before(cutoff) {
+		if !ok || entry.updatedAt().Before(cutoff) {
 			delete(h.entries, id)
 			delete(u.ids, id)
 			dropped = true
@@ -330,7 +356,7 @@ func (h *remoteHub) publish(uid uuid.UUID, s RemoteSession) {
 	h.prune(u)
 	s.UpdatedAt = h.now()
 	entry, ok := h.entries[s.ID]
-	if ok && entry.userID != uid {
+	if ok && (entry.userID != uid || !entry.is(false)) {
 		// Another account already holds this id. Refusing outright would tell
 		// the caller the id exists; ignoring the publish leaves it with a
 		// session that never appears, which is what a colliding random id
@@ -340,8 +366,8 @@ func (h *remoteHub) publish(uid uuid.UUID, s RemoteSession) {
 	if !ok {
 		// Over the ceiling, the least recently heard from makes way — a
 		// screen that stopped publishing is the one nobody is watching.
-		if len(u.ids) >= maxRemoteSessions {
-			h.evictOldest(u)
+		if h.count(u, false) >= maxRemoteSessions {
+			h.evictOldest(u, false)
 		}
 		entry = &remoteEntry{userID: uid, commanded: make(chan struct{})}
 		h.entries[s.ID] = entry
@@ -351,18 +377,30 @@ func (h *remoteHub) publish(uid uuid.UUID, s RemoteSession) {
 	h.bumped(u)
 }
 
-// evictOldest removes the user's least recently published session.
+// count is how many of the user's entries are of one kind.
 // Caller holds the lock.
-func (h *remoteHub) evictOldest(u *remoteUser) {
+func (h *remoteHub) count(u *remoteUser, receiver bool) int {
+	n := 0
+	for id := range u.ids {
+		if entry, ok := h.entries[id]; ok && entry.is(receiver) {
+			n++
+		}
+	}
+	return n
+}
+
+// evictOldest removes the user's least recently published entry of one kind.
+// Caller holds the lock.
+func (h *remoteHub) evictOldest(u *remoteUser, receiver bool) {
 	var oldestID string
 	var oldest time.Time
 	for id := range u.ids {
 		entry, ok := h.entries[id]
-		if !ok {
+		if !ok || !entry.is(receiver) {
 			continue
 		}
-		if oldestID == "" || entry.session.UpdatedAt.Before(oldest) {
-			oldestID, oldest = id, entry.session.UpdatedAt
+		if oldestID == "" || entry.updatedAt().Before(oldest) {
+			oldestID, oldest = id, entry.updatedAt()
 		}
 	}
 	if oldestID != "" {
@@ -371,14 +409,15 @@ func (h *remoteHub) evictOldest(u *remoteUser) {
 	}
 }
 
-// end retires a session: the player stopped, rather than went quiet.
-func (h *remoteHub) end(uid uuid.UUID, id string) error {
+// end retires a session or a receiver: the player stopped, or the app went
+// away, rather than went quiet.
+func (h *remoteHub) end(uid uuid.UUID, id string, receiver bool) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	u := h.userState(uid)
 	h.prune(u)
 	entry, ok := h.entries[id]
-	if !ok || entry.userID != uid {
+	if !ok || entry.userID != uid || !entry.is(receiver) {
 		return errNoRemoteSession
 	}
 	delete(h.entries, id)
@@ -387,8 +426,16 @@ func (h *remoteHub) end(uid uuid.UUID, id string) error {
 	return nil
 }
 
-// list is the user's live sessions and the version they were read at.
-func (h *remoteHub) list(uid uuid.UUID) ([]RemoteSession, uint64) {
+// remoteListing is everything a controller is told: what is playing, what
+// could be asked to play, and the version both were read at.
+type remoteListing struct {
+	Sessions  []RemoteSession  `json:"sessions"`
+	Receivers []RemoteReceiver `json:"receivers"`
+	Version   uint64           `json:"version"`
+}
+
+// list is the user's live sessions and receivers.
+func (h *remoteHub) list(uid uuid.UUID) remoteListing {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	return h.listLocked(h.userState(uid))
@@ -397,16 +444,27 @@ func (h *remoteHub) list(uid uuid.UUID) ([]RemoteSession, uint64) {
 // listLocked prunes, then reads. Pruning here rather than on a timer is what
 // makes a poll that woke for nothing still report a television that lapsed
 // while it was asleep. Caller holds the lock.
-func (h *remoteHub) listLocked(u *remoteUser) ([]RemoteSession, uint64) {
+func (h *remoteHub) listLocked(u *remoteUser) remoteListing {
 	if h.prune(u) {
 		h.bumped(u)
 	}
 	out := make([]RemoteSession, 0, len(u.ids))
+	receivers := make([]RemoteReceiver, 0)
 	for id := range u.ids {
-		if entry, ok := h.entries[id]; ok {
+		entry, ok := h.entries[id]
+		switch {
+		case !ok:
+		case entry.receiver != nil:
+			receivers = append(receivers, *entry.receiver)
+		default:
 			out = append(out, entry.session)
 		}
 	}
+	// Receivers by name: a menu that reshuffles itself every heartbeat is one
+	// somebody taps the wrong line of.
+	slices.SortFunc(receivers, func(a, b RemoteReceiver) int {
+		return cmp.Or(cmp.Compare(a.Device, b.Device), cmp.Compare(a.ID, b.ID))
+	})
 	// Newest first, so a controller with no preference attaches to the screen
 	// that spoke most recently. Ties break on id so the order is stable.
 	slices.SortFunc(out, func(a, b RemoteSession) int {
@@ -418,20 +476,20 @@ func (h *remoteHub) listLocked(u *remoteUser) ([]RemoteSession, uint64) {
 		}
 		return cmp.Compare(a.ID, b.ID)
 	})
-	return out, u.version
+	return remoteListing{Sessions: out, Receivers: receivers, Version: u.version}
 }
 
 // waitList answers as soon as the user's sessions differ from `since`, and
 // otherwise waits — but never past the moment the next session lapses, or the
 // phone would keep drawing a television that stopped answering.
-func (h *remoteHub) waitList(ctx context.Context, uid uuid.UUID, since uint64, wait time.Duration) ([]RemoteSession, uint64) {
+func (h *remoteHub) waitList(ctx context.Context, uid uuid.UUID, since uint64, wait time.Duration) remoteListing {
 	for {
 		h.mu.Lock()
 		u := h.userState(uid)
-		sessions, version := h.listLocked(u)
-		if version != since || wait <= 0 {
+		listing := h.listLocked(u)
+		if listing.Version != since || wait <= 0 {
 			h.mu.Unlock()
-			return sessions, version
+			return listing
 		}
 		changed := u.changed
 		deadline := h.nextLapseLocked(u, wait)
@@ -448,7 +506,7 @@ func (h *remoteHub) waitList(ctx context.Context, uid uuid.UUID, since uint64, w
 			return h.list(uid)
 		case <-ctx.Done():
 			timer.Stop()
-			return sessions, version
+			return listing
 		}
 	}
 }
@@ -464,7 +522,7 @@ func (h *remoteHub) nextLapseLocked(u *remoteUser, wait time.Duration) time.Dura
 		}
 		// A hair past the deadline, so the poll that wakes finds it expired
 		// rather than one nanosecond short of it.
-		remaining := entry.session.UpdatedAt.Add(remoteSessionTTL + time.Millisecond).Sub(now)
+		remaining := entry.updatedAt().Add(remoteSessionTTL + time.Millisecond).Sub(now)
 		if remaining < wait {
 			wait = remaining
 		}
@@ -475,15 +533,15 @@ func (h *remoteHub) nextLapseLocked(u *remoteUser, wait time.Duration) time.Dura
 	return wait
 }
 
-// command queues one instruction for a session and returns its sequence
-// number.
-func (h *remoteHub) command(uid uuid.UUID, id string, cmd RemoteCommand) (uint64, error) {
+// command queues one instruction for a session or a receiver and returns its
+// sequence number.
+func (h *remoteHub) command(uid uuid.UUID, id string, receiver bool, cmd RemoteCommand) (uint64, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	u := h.userState(uid)
 	h.prune(u)
 	entry, ok := h.entries[id]
-	if !ok || entry.userID != uid {
+	if !ok || entry.userID != uid || !entry.is(receiver) {
 		return 0, errNoRemoteSession
 	}
 	entry.nextSeq++
@@ -504,12 +562,12 @@ func (h *remoteHub) command(uid uuid.UUID, id string, cmd RemoteCommand) (uint64
 // adopt it: a session whose backlog overflowed has commands it will never see,
 // and a cursor that only moved on delivery would ask for them forever.
 func (h *remoteHub) waitCommands(
-	ctx context.Context, uid uuid.UUID, id string, after uint64, wait time.Duration,
+	ctx context.Context, uid uuid.UUID, id string, receiver bool, after uint64, wait time.Duration,
 ) ([]RemoteCommand, uint64, error) {
 	for {
 		h.mu.Lock()
 		entry, ok := h.entries[id]
-		if !ok || entry.userID != uid {
+		if !ok || entry.userID != uid || !entry.is(receiver) {
 			h.mu.Unlock()
 			return nil, 0, errNoRemoteSession
 		}
@@ -600,7 +658,7 @@ func (s *Server) deleteRemoteSession(w http.ResponseWriter, r *http.Request) {
 	// Ending a session that is already gone is a success: a player tearing
 	// down after a dropped connection must not have to care whether its own
 	// lapse got there first.
-	_ = s.remote.end(uid, chi.URLParam(r, "id"))
+	_ = s.remote.end(uid, chi.URLParam(r, "id"), false)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -612,21 +670,26 @@ func (s *Server) deleteRemoteSession(w http.ResponseWriter, r *http.Request) {
 // client that has just opened wants.
 func (s *Server) listRemoteSessions(w http.ResponseWriter, r *http.Request) {
 	uid := currentUserID(r.Context())
-	sessions, version := s.remote.list(uid)
+	listing := s.remote.list(uid)
 	if raw := r.URL.Query().Get("since"); raw != "" {
 		since, err := strconv.ParseUint(raw, 10, 64)
 		if err != nil {
 			writeError(w, http.StatusBadRequest, "since must be a number")
 			return
 		}
-		sessions, version = s.remote.waitList(r.Context(), uid, since, s.remoteWait)
+		listing = s.remote.waitList(r.Context(), uid, since, s.remoteWait)
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"sessions": sessions, "version": version})
+	writeJSON(w, http.StatusOK, listing)
 }
 
 // pollRemoteCommands is the publisher's half: hold a request open until
 // somebody presses something.
 func (s *Server) pollRemoteCommands(w http.ResponseWriter, r *http.Request) {
+	s.pollCommands(w, r, false)
+}
+
+// pollCommands serves a session's or a receiver's command poll.
+func (s *Server) pollCommands(w http.ResponseWriter, r *http.Request, receiver bool) {
 	uid := currentUserID(r.Context())
 	id := chi.URLParam(r, "id")
 	var after uint64
@@ -638,7 +701,7 @@ func (s *Server) pollRemoteCommands(w http.ResponseWriter, r *http.Request) {
 		}
 		after = parsed
 	}
-	commands, cursor, err := s.remote.waitCommands(r.Context(), uid, id, after, s.remoteWait)
+	commands, cursor, err := s.remote.waitCommands(r.Context(), uid, id, receiver, after, s.remoteWait)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "not found")
 		return
@@ -661,6 +724,7 @@ func (s *Server) postRemoteCommand(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "unknown command")
 		return
 	}
+	cmd.VideoID, cmd.Context = "", nil
 	switch cmd.Kind {
 	case "seek":
 		if cmd.Position < 0 {
@@ -677,7 +741,7 @@ func (s *Server) postRemoteCommand(w http.ResponseWriter, r *http.Request) {
 	default:
 		cmd.Position, cmd.Delta = 0, 0
 	}
-	seq, err := s.remote.command(uid, chi.URLParam(r, "id"), cmd)
+	seq, err := s.remote.command(uid, chi.URLParam(r, "id"), false, cmd)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "not found")
 		return
