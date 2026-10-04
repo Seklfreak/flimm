@@ -1,10 +1,11 @@
 import { useMemo, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { invalidateFeedish, usePlaylist, useSetPlaylistMusic, useSetPlaylistPinned } from "@/lib/queries";
 import { ccLabel, fmtDuration, fmtDurationLong, playlistCount, relativeDay } from "@/lib/format";
-import { EmptyState, ErrorState, HeadphonesIcon, LoadingState, PinIcon } from "@/components/ui";
+import { EmptyState, ErrorState, HeadphonesIcon, LoadingState, PinIcon, SearchBox } from "@/components/ui";
+import { filterPlaylistItems } from "@/lib/playlistFilter";
 import { InFeedsControl } from "@/components/InFeedsControl";
 import { VideoRow } from "@/components/VideoRow";
 import { watchHref } from "@/components/VideoCard";
@@ -23,12 +24,18 @@ export default function PlaylistPage() {
   // conditionally, and a hook there changes hook order between renders.
   const [shuffling, setShuffling] = useState(false);
   const [name, setName] = useState("");
+  // The filter lives in the URL, so coming back from the player (or
+  // reloading) finds the list still filtered.
+  const [params, setParams] = useSearchParams();
+  const query = params.get("q") ?? "";
+  const setQuery = (q: string) => setParams(q ? { q } : {}, { replace: true });
 
   const p = playlist.data;
   const items = useMemo(() => {
     const all = p?.items ?? [];
-    return unseenOnly ? all.filter((i) => !i.video.watched) : all;
-  }, [p, unseenOnly]);
+    return filterPlaylistItems(unseenOnly ? all.filter((i) => !i.video.watched) : all, query);
+  }, [p, unseenOnly, query]);
+  const filtering = query.trim() !== "";
 
   if (playlist.isError) return <ErrorState message={playlist.error.message} retry={() => playlist.refetch()} />;
   if (!p) return <LoadingState label="Loading playlist…" />;
@@ -191,9 +198,18 @@ export default function PlaylistPage() {
           )}
         </div>
       </div>
+      {p.items.length > 0 && (
+        <div className="flex items-center gap-3">
+          <SearchBox value={query} onChange={setQuery} placeholder="Filter this playlist" className="w-full md:max-w-sm" />
+          {filtering && <span className="meta flex-none text-[12px]">{items.length} of {p.items.length}</span>}
+        </div>
+      )}
       <div className="flex flex-col">
         {items.length === 0 ? (
-          <EmptyState title={unseenOnly ? "Everything here is seen" : "This playlist is empty"} />
+          <EmptyState
+            title={filtering ? "Nothing here matches" : unseenOnly ? "Everything here is seen" : "This playlist is empty"}
+            hint={filtering ? "Matches titles and channel names." : undefined}
+          />
         ) : (
           items.map((it, idx) => {
             const v = it.video;
@@ -206,7 +222,9 @@ export default function PlaylistPage() {
                 dim={v.watched}
                 lead={
                   <span className="flex flex-none items-center gap-2">
-                    {isCustom && (
+                    {/* Up/down move within the whole playlist, so they would
+                        lie about a filtered list's neighbours. */}
+                    {isCustom && !filtering && (
                       <span className="hidden flex-col text-muted-3 md:flex">
                         <button aria-label="Move up" className="hover:text-ink disabled:opacity-30" disabled={idx === 0} onClick={() => void move(v.id, "up")}>
                           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M6 15l6-6 6 6" /></svg>

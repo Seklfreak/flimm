@@ -25,7 +25,20 @@ struct TVShell: View {
     /// One path per tab, owned here so a context menu deep in a grid can push
     /// onto the tab it is in (``TVPushAction``); a stack without a path binding
     /// cannot be pushed from anywhere but a `NavigationLink`.
-    @State private var paths: [TVTab: NavigationPath] = [:]
+    @State private var paths: [TVTab: NavigationPath] = {
+        #if DEBUG
+        // `FLIMM_OPEN_ROUTE=playlist:<id>` opens a playlist on the starting
+        // tab, the iPhone's door of the same name: a playlist's own screen is
+        // otherwise only reachable by remote.
+        if let raw = ProcessInfo.processInfo.environment["FLIMM_OPEN_ROUTE"], raw.hasPrefix("playlist:") {
+            let tab = ProcessInfo.processInfo.environment["FLIMM_OPEN_TAB"].flatMap(TVTab.init(rawValue:)) ?? .feeds
+            var path = NavigationPath()
+            path.append(TVRoute.playlist(String(raw.dropFirst("playlist:".count))))
+            return [tab: path]
+        }
+        #endif
+        return [:]
+    }()
 
     var body: some View {
         TabView(selection: $tab) {

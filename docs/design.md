@@ -297,6 +297,19 @@ Each card shows watched progress across the playlist and a resume target
 (the first in-progress video, else the first unseen). Custom playlists are created,
 reordered and deleted through TubeArchivist so they exist there too.
 
+A playlist page can be **filtered**: every word typed has to appear in a
+video's title or channel name, in any order, ignoring case and accents, so
+"winter daughter" finds Daughter's "Winter" in a 700-song music playlist.
+Rows keep their playlist position, playing one still plays *in* the playlist
+(up next carries on in playlist order, not through the matches), and Play,
+Resume and Shuffle act on the whole playlist. Reordering is hidden while a
+filter is on, since "move up" past a hidden row would be a lie. The filter
+runs on the client over the items the page already holds: TubeArchivist's
+search returns at most 30 hits across the whole archive, so a search scoped to
+one playlist would miss most of a long one. It is on the web, iPhone/iPad
+and Apple TV; the web keeps it in the URL as `?q=`, so coming back from the
+player finds it still applied.
+
 ## History
 
 Grouped by day, newest first. In-progress rows resume in place — and resume

@@ -165,8 +165,10 @@ TA_URL=http://localhost:8001 TA_TOKEN=dev SPONSORBLOCK_URL= \
   admin's add-channel flow at launch, which is otherwise behind a menu and a
   text field: the wait, the channel it opens, and the failure alert;
   `FLIMM_OPEN_ROUTE=channel:<id>` with `FLIMM_INDEX_SERIES=1` does the same
-  for "Find series" on a channel. `FLIMM_OPEN_ROUTE=playlist:<id>` opens a playlist's
-  header without starting playback. `FLIMM_ABSENCE=<seconds>` (both apps)
+  for "Find series" on a channel. `FLIMM_OPEN_ROUTE=playlist:<id>` (both apps) opens
+  a playlist's screen without starting playback. On the TV,
+  `FLIMM_PLAYLIST_FILTER=<query>` with it opens that playlist's filter screen
+  with the query typed, since a simulator has no remote to type with. `FLIMM_ABSENCE=<seconds>` (both apps)
   shortens the five-minute "away" threshold after which coming back to the
   foreground reloads every list, so that return can be watched.
 - **A screen that only appears while something is slow** — the

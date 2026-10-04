@@ -14,6 +14,7 @@ struct PlaylistDetailView: View {
     @State private var error: String?
     @State private var isBusy = false
     @State private var showFeedsSheet = false
+    @State private var query = ""
 
     private var summary: PlaylistSummary? { playlist?.summary }
 
@@ -22,8 +23,9 @@ struct PlaylistDetailView: View {
             VStack(alignment: .leading, spacing: 16) {
                 if let playlist {
                     header(playlist.summary)
+                    let items = PlaylistFilter.filter(playlist.items, query: query)
                     LazyVStack(alignment: .leading, spacing: 14) {
-                        ForEach(playlist.items) { item in
+                        ForEach(items) { item in
                             HStack(alignment: .top, spacing: 10) {
                                 Text("\(item.position + 1)")
                                     .font(.caption.monospacedDigit())
@@ -42,6 +44,12 @@ struct PlaylistDetailView: View {
                     .padding(.horizontal, 16)
                     if playlist.items.isEmpty {
                         EmptyState(icon: "list.and.film", title: "Empty playlist")
+                    } else if items.isEmpty {
+                        EmptyState(
+                            icon: "magnifyingglass",
+                            title: "Nothing here matches",
+                            message: "Matches titles and channel names."
+                        )
                     }
                 } else if let error {
                     ErrorState(message: error) { Task { await load() } }
@@ -53,6 +61,10 @@ struct PlaylistDetailView: View {
         }
         .background(Palette.background)
         .refreshable { await load() }
+        // Always shown: on a pushed, inline-title screen the default drawer
+        // stays collapsed until a pull-down, and a long music playlist is
+        // exactly where nobody should have to discover that.
+        .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "Filter playlist")
         .navigationTitle(summary?.name ?? "Playlist")
         .onAppear { Analytics.screen(.playlist) }
         .handoffPage(.playlist(playlistId), title: summary?.name ?? "")

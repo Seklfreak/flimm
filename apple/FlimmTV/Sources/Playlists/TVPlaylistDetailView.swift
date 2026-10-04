@@ -14,6 +14,7 @@ struct TVPlaylistDetailView: View {
 
     @State private var playlist: Playlist?
     @State private var error: String?
+    @State private var showFilter = false
 
     private var summary: PlaylistSummary? { playlist?.summary }
     private var isMusic: Bool { summary?.music == true }
@@ -30,6 +31,9 @@ struct TVPlaylistDetailView: View {
             }
             .padding(.horizontal, TVMetrics.margin)
             .padding(.bottom, TVMetrics.margin)
+        }
+        .navigationDestination(isPresented: $showFilter) {
+            TVPlaylistFilterView(playlist: $playlist, context: context, canMarkSeen: !isMusic, onVideoChange: updateVideo)
         }
         .onAppear { Analytics.screen(.playlist) }
         .task { await load() }
@@ -60,6 +64,16 @@ struct TVPlaylistDetailView: View {
                         Task { await shuffle() }
                     } label: {
                         Label("Shuffle", systemImage: "shuffle")
+                    }
+                    .disabled(playlist?.items.isEmpty != false)
+
+                    // Text entry on a TV is slow, but a long music playlist
+                    // has no other way to one song than scrolling past
+                    // hundreds of cards.
+                    Button {
+                        showFilter = true
+                    } label: {
+                        Label("Filter", systemImage: "magnifyingglass")
                     }
                     .disabled(playlist?.items.isEmpty != false)
                 }
@@ -114,6 +128,11 @@ struct TVPlaylistDetailView: View {
         do {
             playlist = try await app.client.playlist(playlistId)
             error = nil
+            #if DEBUG
+            // `FLIMM_PLAYLIST_FILTER=<query>` opens the filter screen already
+            // filtered: a simulator has no remote to type the query with.
+            if ProcessInfo.processInfo.environment["FLIMM_PLAYLIST_FILTER"] != nil { showFilter = true }
+            #endif
         } catch {
             self.error = AppModel.message(for: error)
         }

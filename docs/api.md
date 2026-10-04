@@ -675,7 +675,7 @@ Clients treat an empty list as "no chapter UI", never as an error.
 | PUT | `/playlists/{id}/feeds` | `{ "feed_ids": [...] }` — the playlist's "In feeds:" control, mirroring the channel one |
 | GET | `/playlists` | query `kind=custom\|channel`, paged PlaylistSummary; custom first. Lists the playlists the user chose: TA custom playlists, TA-subscribed ones (`playlist_subscribed`), and the ones taken up here (pinned or marked music). The playlists TA indexed off a channel on its own are left to `GET /channels/{id}/playlists` |
 | POST | `/playlists` | `{ "name" }` → TA `/playlist/custom/` (201) |
-| GET | `/playlists/{id}` | PlaylistSummary + `items: [{ "position", "video": VideoSummary }]` |
+| GET | `/playlists/{id}` | PlaylistSummary + `items: [{ "position", "video": VideoSummary }]`. Every downloaded item, in order; clients filter within a playlist over these items themselves (see design.md, Playlists) rather than through `/search`, whose TA backend returns at most 30 hits |
 | PATCH | `/playlists/{id}` | `{ "name" }` custom only (rename is client-side + TA re-create if TA has no rename; document limitation) |
 | DELETE | `/playlists/{id}` | custom only; TA delete without videos; 204 |
 | POST | `/playlists/{id}/videos` | `{ "video_id", "action": "add\|remove\|up\|down\|top\|bottom" }` → TA custom playlist actions |
