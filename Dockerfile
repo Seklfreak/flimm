@@ -1,4 +1,4 @@
-FROM node:24-alpine AS frontend
+FROM node:26-alpine AS frontend
 # Baked into the bundle as import.meta.env.VITE_*: the release version, the
 # Sentry DSN and the Umami analytics endpoint. All must be declared here — a
 # build-arg that no stage declares is silently dropped, which is how the
