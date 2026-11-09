@@ -99,9 +99,9 @@ func (s *Server) Handler() http.Handler {
 	// *not* count as new.
 	mux.HandleFunc("POST /fake/arrive/{id}", s.arrive)
 	mux.HandleFunc("POST /fake/reindex/{id}", s.reindex)
+	// Media and artwork as TubeArchivist v0.6+ serves them itself:
+	// /media/stream/…, /media/subtitle/… and /media/thumb/….
 	mux.HandleFunc("GET /media/", s.serveMedia)
-	// TA's thumbnail cache, which Flimm proxies /media/thumb/* to.
-	mux.HandleFunc("GET /cache/", s.serveThumb)
 	// Not TubeArchivist's: DeArrow's branding endpoint, so a dev stack can
 	// exercise crowd-sourced titles and thumbnails without asking the real
 	// service about videos that do not exist. Point DEARROW_URL here.
@@ -119,7 +119,9 @@ func (s *Server) logging(next http.Handler) http.Handler {
 // ---- videos ----
 
 func (s *Server) ping(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]string{"response": "pong"})
+	// The version is what Flimm picks the artwork layout from (ta.Layout);
+	// the stand-in speaks the current one.
+	writeJSON(w, http.StatusOK, map[string]string{"response": "pong", "version": "v0.6.0"})
 }
 
 func (s *Server) listVideos(w http.ResponseWriter, r *http.Request) {
@@ -782,11 +784,13 @@ func (s *Server) subtitleHits(query string) []ta.SubtitleHit {
 
 // ---- media ----
 
-// serveMedia answers the nginx paths TA's documents point at: the video
-// files, the WebVTT tracks and the thumbnails.
+// serveMedia answers the paths TA's documents point at: the video files, the
+// WebVTT tracks and the artwork.
 func (s *Server) serveMedia(w http.ResponseWriter, r *http.Request) {
 	name := strings.TrimPrefix(r.URL.Path, "/media/")
 	switch {
+	case strings.HasPrefix(name, "thumb/"):
+		s.serveThumb(w, r, strings.TrimPrefix(name, "thumb/"))
 	case strings.HasSuffix(name, ".mp4"):
 		id := strings.TrimSuffix(pathBase(name), ".mp4")
 		path := s.media.Path(id)
@@ -817,25 +821,27 @@ func (s *Server) serveMedia(w http.ResponseWriter, r *http.Request) {
 		}
 		w.Header().Set("Content-Type", "text/vtt; charset=utf-8")
 		_, _ = w.Write([]byte(Subtitles(v.Player.Duration)))
-	case strings.HasSuffix(name, ".jpg"):
-		w.Header().Set("Content-Type", "image/jpeg")
-		_, _ = w.Write(thumbnailJPEG(pathBase(name)))
 	default:
 		notFound(w)
 	}
 }
 
-// serveThumb answers TA's /cache/… thumbnail paths: videos sharded by the
-// first character of the id, channels with _thumb/_banner suffixes, and
-// playlists. Every one of them gets a generated card.
-func (s *Server) serveThumb(w http.ResponseWriter, r *http.Request) {
-	if !strings.HasSuffix(r.URL.Path, ".jpg") {
+// serveThumb answers TA's artwork paths — thumb/video/<id>.jpg,
+// thumb/channel/<id>/<kind>.jpg and thumb/playlist/<id>.jpg — with a
+// generated card per item.
+func (s *Server) serveThumb(w http.ResponseWriter, _ *http.Request, name string) {
+	if !strings.HasSuffix(name, ".jpg") {
 		notFound(w)
 		return
 	}
+	name = strings.TrimSuffix(name, ".jpg")
+	// Channel art is <id>/<kind>; one card per channel and kind.
+	if rest, ok := strings.CutPrefix(name, "channel/"); ok {
+		name = strings.ReplaceAll(rest, "/", "_")
+	}
 	w.Header().Set("Content-Type", "image/jpeg")
 	w.Header().Set("Cache-Control", "private, max-age=86400")
-	_, _ = w.Write(thumbnailJPEG(pathBase(r.URL.Path)))
+	_, _ = w.Write(thumbnailJPEG(pathBase(name) + ".jpg"))
 }
 
 func pathBase(name string) string {

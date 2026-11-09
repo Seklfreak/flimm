@@ -196,14 +196,15 @@ change together.
 | Resume position | `POST/DELETE /api/video/{id}/progress/` — written on every heartbeat |
 | Custom playlists | created / reordered / deleted via `/api/playlist/custom/` |
 | Feeds, history, prefs, per-user watch events | **Flimm's Postgres only** — TA has no per-user model |
-| Video, subtitles, thumbnails | proxied from TA's `/media` and `/cache` with the API token |
+| Video, subtitles, thumbnails | proxied from TA with the API token — `/media/…` on v0.6+, `/media` and `/cache` on older releases (picked from the version TA reports) |
 
 The full contract — every endpoint, object and the exact TA calls behind them —
 is in [docs/api.md](docs/api.md).
 
 ## Requirements
 
-- A **TubeArchivist** instance (v0.4+) and an **API token** for it
+- A **TubeArchivist** instance (v0.4+; v0.6's new media paths are
+  detected automatically) and an **API token** for it
   (Settings → User). Ideally reachable over the network from Flimm without an
   auth proxy in between.
 - **Postgres** 15+.

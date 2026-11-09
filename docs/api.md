@@ -759,17 +759,18 @@ prefix would be a match-all there).
 | `GET /media/frame/{id}/{ms}.jpg` | derived: one still, cut on first request and cached — what a DeArrow thumbnail resolves to |
 | `GET /media/preview/{id}/preview.vtt` | derived: the scrub-preview track (`text/vtt`), one cue per still, each pointing at its rectangle of the sheet as `sheet.jpg#xywh=x,y,w,h`. The first request **starts the derivation** and answers **404** (`Cache-Control: no-store`) until both files are on disk; a client scrubs without pictures and asks again. The 404 body is `{"error": "preview not ready", "state": "pending\|running\|done\|failed", "progress": 0.42}` — the job's own state and how far it has got, so a client can tell a wait from a failure, and a wait from a wedge |
 | `GET /media/preview/{id}/sheet.jpg` | derived: the sprite sheet those cues cut from (`image/jpeg`). Same 404-until-ready rule. Both are `private, max-age=86400, immutable` once served |
-| `GET /media/thumb/video/{id}` | TA `/cache/videos/…` |
-| `GET /media/thumb/channel/{id}` and `/media/thumb/channel/{id}/banner` | TA `/cache/channels/…` |
-| `GET /media/thumb/playlist/{id}` | TA `/cache/playlists/…` |
+| `GET /media/thumb/video/{id}` | TA's video thumbnail (see the TA mapping below for the path per release) |
+| `GET /media/thumb/channel/{id}` and `/media/thumb/channel/{id}/banner` | TA's channel art |
+| `GET /media/thumb/playlist/{id}` | TA's playlist thumbnail |
 
 Thumbnails are cacheable (`Cache-Control: private, max-age=86400`).
 
 The proxy rewrites `Content-Type` from the file extension when TA returns
-`application/octet-stream`, and sets `Accept-Ranges: bytes` on 200/206. TA's
-nginx declares a `types { text/vtt vtt; }` block on `/media/`, which replaces
-the default MIME map for that location, so `.mp4` would otherwise arrive as
-`application/octet-stream` and `<video>` refuses to decode it.
+`application/octet-stream`, and sets `Accept-Ranges: bytes` on 200/206. Up to
+v0.5, TA's nginx declares a `types { text/vtt vtt; }` block on `/media/`,
+which replaces the default MIME map for that location, so `.mp4` would
+otherwise arrive as `application/octet-stream` and `<video>` refuses to decode
+it. v0.6 serves the right types itself; the rewrite is then a no-op.
 
 
 ### Scrubbing
@@ -1802,7 +1803,9 @@ height of every video up front.
 | playlists | `GET /api/playlist/?type=custom\|regular&channel=`, `POST /api/playlist/custom/`, `POST /api/playlist/custom/{id}/`, `DELETE /api/playlist/{id}/`. A playlist doc's `playlist_subscribed` is TA's "the user follows this one": subscribing in TA sets it, and the channel playlist-discovery task leaves it false, which is the only thing separating a followed playlist from an indexed one (both are `playlist_type: regular`) |
 | search | `GET /api/search/?query=` (prefixes `video:`, `channel:`, `playlist:`, `full:` + `lang:`) |
 | auth | header `Authorization: Token $TA_TOKEN` |
-| media | `/media/…` (TA reports `media_url` as `/youtube/<channel>/<file>`; the `/youtube/` prefix maps to `/media/`), `/cache/videos/{id[0].lower()}/{id}.jpg`, `/cache/channels/{id}_thumb.jpg`, `_banner.jpg`, `/cache/playlists/{id}.jpg` — all gated by TA's nginx `auth_request /api/ping/`, which accepts the Token header |
+| media (v0.6+) | served by TA itself. Videos and subtitles at the `media_url` the API reports (`/media/stream/<channel>/<id>.mp4`, `/media/subtitle/<channel>/<id>.<lang>.vtt`), passed through as is; artwork at `/media/thumb/video/{id}.jpg`, `/media/thumb/channel/{id}/thumb.jpg`, `banner.jpg`, `/media/thumb/playlist/{id}.jpg` — all authenticated by the Token header |
+| media (≤ v0.5) | served by TA's bundled nginx. TA reports `media_url` as `/youtube/<channel>/<file>`; the `/youtube/` prefix maps to `/media/`. Artwork at `/cache/videos/{id[0].lower()}/{id}.jpg`, `/cache/channels/{id}_thumb.jpg`, `_banner.jpg`, `/cache/playlists/{id}.jpg` — all gated by nginx `auth_request /api/ping/`, which accepts the Token header |
+| media layout | artwork is addressed by id, so Flimm picks the scheme from the `version` in `GET /api/ping/` (anything before v0.6 → nginx, everything else → v0.6), re-read every minute so an archive upgraded under a running Flimm is picked up; a failed ping keeps the last known layout |
 
 The TA client lives in `internal/ta` with an interface so handlers can be
 tested against a fake.

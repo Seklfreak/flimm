@@ -37,6 +37,8 @@ var (
 // Fake the test double.
 type Client interface {
 	Ping(ctx context.Context) error
+	// MediaLayout is where this archive's release serves artwork (see Layout).
+	MediaLayout(ctx context.Context) Layout
 
 	ListVideos(ctx context.Context, q VideoQuery) (*VideoPage, error)
 	GetVideo(ctx context.Context, id string) (*Video, error)
@@ -137,6 +139,7 @@ type HTTP struct {
 	stats    map[string]*cached[ChannelStats]
 	videos   map[string]*cached[Video]
 	lists    map[string]*cached[VideoPage]
+	layout   *cached[Layout]
 }
 
 type cached[T any] struct {

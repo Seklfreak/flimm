@@ -287,7 +287,7 @@ func TestSubtitlesAreServedAsWebVTT(t *testing.T) {
 	client, catalogue := fixture(t)
 	v := catalogue.Videos[0]
 
-	body, err := client.FetchRange(context.Background(), "/media/"+v.Subtitles[0].MediaURL, 0, 4095)
+	body, err := client.FetchRange(context.Background(), v.Subtitles[0].MediaURL, 0, 4095)
 	if err != nil {
 		t.Fatalf("fetch subtitles: %v", err)
 	}

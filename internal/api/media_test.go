@@ -29,10 +29,10 @@ func mediaServer(t *testing.T) (*Server, *httptest.Server, *[]*http.Request) {
 			return
 		}
 		switch {
-		case strings.HasPrefix(r.URL.Path, "/cache/"):
+		case strings.HasPrefix(r.URL.Path, "/cache/"), strings.HasPrefix(r.URL.Path, "/media/thumb/"):
 			w.Header().Set("Content-Type", "image/jpeg")
 			_, _ = w.Write([]byte("jpeg"))
-		case r.URL.Path == "/media/A/v1.mp4":
+		case r.URL.Path == "/media/A/v1.mp4", r.URL.Path == "/media/stream/A/v1.mp4":
 			w.Header().Set("Content-Type", "video/mp4")
 			w.Header().Set("Accept-Ranges", "bytes")
 			if rng := r.Header.Get("Range"); rng == "bytes=100-199" {
@@ -329,4 +329,63 @@ func TestMediaTokenIsRedactedBeforeLogging(t *testing.T) {
 		t.Errorf("URL = %q, want the parameter kept but redacted", logged)
 	}
 	_ = s
+}
+
+// TestMediaArtworkFollowsLayout pins the artwork paths of both TubeArchivist
+// layouts: v0.6 serves artwork from the app under /media/thumb/, v0.5 and
+// earlier from nginx's /cache/, videos sharded by the lowercased first
+// character of the id.
+func TestMediaArtworkFollowsLayout(t *testing.T) {
+	cases := []struct {
+		layout ta.Layout
+		want   map[string]string
+	}{
+		{ta.LayoutApp, map[string]string{
+			"/media/thumb/video/Xv1":        "/media/thumb/video/Xv1.jpg",
+			"/media/thumb/channel/A":        "/media/thumb/channel/A/thumb.jpg",
+			"/media/thumb/channel/A/banner": "/media/thumb/channel/A/banner.jpg",
+			"/media/thumb/playlist/PL1":     "/media/thumb/playlist/PL1.jpg",
+		}},
+		{ta.LayoutNginx, map[string]string{
+			"/media/thumb/video/Xv1":        "/cache/videos/x/Xv1.jpg",
+			"/media/thumb/channel/A":        "/cache/channels/A_thumb.jpg",
+			"/media/thumb/channel/A/banner": "/cache/channels/A_banner.jpg",
+			"/media/thumb/playlist/PL1":     "/cache/playlists/PL1.jpg",
+		}},
+	}
+	for _, c := range cases {
+		s, _, seen := mediaServer(t)
+		s.ta.(*ta.Fake).Layout = c.layout
+		h := s.Router()
+		for path, want := range c.want {
+			*seen = nil
+			req := httptest.NewRequest(http.MethodGet, path, nil)
+			req.Header.Set("Authorization", "Bearer whatever")
+			rec := httptest.NewRecorder()
+			h.ServeHTTP(rec, req)
+			if rec.Code != http.StatusOK {
+				t.Errorf("layout %d %s: %d", c.layout, path, rec.Code)
+			}
+			if len(*seen) != 1 || (*seen)[0].URL.Path != want {
+				t.Errorf("layout %d %s: upstream %v, want %s", c.layout, path, *seen, want)
+			}
+		}
+	}
+}
+
+// TestMediaVideoServedPath is v0.6's media_url, which is already the path TA
+// serves the file at and must pass through untouched.
+func TestMediaVideoServedPath(t *testing.T) {
+	s, _, seen := mediaServer(t)
+	s.ta.(*ta.Fake).Videos["v1"].MediaURL = "/media/stream/A/v1.mp4"
+	req := httptest.NewRequest(http.MethodGet, "/media/video/v1.mp4", nil)
+	req.Header.Set("Authorization", "Bearer whatever")
+	rec := httptest.NewRecorder()
+	s.Router().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || rec.Header().Get("Content-Type") != "video/mp4" {
+		t.Fatalf("video: %d %v", rec.Code, rec.Header())
+	}
+	if len(*seen) != 1 || (*seen)[0].URL.Path != "/media/stream/A/v1.mp4" {
+		t.Errorf("upstream %v", *seen)
+	}
 }

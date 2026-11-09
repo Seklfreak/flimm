@@ -239,10 +239,10 @@ func video(channelID, channelName, id string, s spec, published time.Time) ta.Vi
 		Channel: ta.Channel{
 			ChannelID:       channelID,
 			ChannelName:     channelName,
-			ChannelThumbURL: "/media/" + channelID + "/folder.jpg",
+			ChannelThumbURL: "/media/thumb/channel/" + channelID + "/thumb.jpg",
 		},
-		VidThumbURL:    "/media/" + channelID + "/" + id + ".jpg",
-		MediaURL:       channelID + "/" + id + ".mp4",
+		VidThumbURL:    "/media/thumb/video/" + id + ".jpg",
+		MediaURL:       "/media/stream/" + channelID + "/" + id + ".mp4",
 		Published:      published.Format("2006-01-02"),
 		DateDownloaded: published.Add(2 * time.Hour).Unix(),
 		VidType:        s.kind,
@@ -253,7 +253,7 @@ func video(channelID, channelName, id string, s spec, published time.Time) ta.Vi
 			{Type: "audio", Codec: "mp4a", Bitrate: 128000},
 		},
 		Subtitles: []ta.Subtitle{
-			{Lang: "en", Source: "user", Name: "English", MediaURL: channelID + "/" + id + ".en.vtt"},
+			{Lang: "en", Source: "user", Name: "English", MediaURL: "/media/subtitle/" + channelID + "/" + id + ".en.vtt"},
 		},
 		Active: true,
 	}

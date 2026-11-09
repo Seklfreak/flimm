@@ -47,6 +47,8 @@ type Fake struct {
 	Err error
 	// PingErr fails only Ping.
 	PingErr error
+	// Layout is what MediaLayout reports; the zero value is the current one.
+	Layout Layout
 	// PingDelay makes Ping take this long, so a caller that time-boxes it can
 	// be tested against a slow archive rather than only an absent one.
 	PingDelay time.Duration
@@ -100,6 +102,8 @@ func (f *Fake) AddVideo(v Video) {
 func (f *Fake) record(s string) {
 	f.Calls = append(f.Calls, s)
 }
+
+func (f *Fake) MediaLayout(context.Context) Layout { return f.Layout }
 
 func (f *Fake) Ping(ctx context.Context) error {
 	if f.PingDelay > 0 {

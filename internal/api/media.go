@@ -32,10 +32,11 @@ func (s *Server) proxyTo(w http.ResponseWriter, r *http.Request, p *httputil.Rev
 	p.ServeHTTP(w, r2)
 }
 
-// taMediaPath turns a TA media_url into the nginx path. TA stores the path
-// as seen inside its container ("/youtube/<channel>/<file>"); nginx serves
-// that directory as /media/. Accept the already-mapped and the bare relative
-// forms too.
+// taMediaPath turns a TA media_url into the path TA serves it at. From v0.6
+// the API reports the served path itself ("/media/stream/<channel>/<file>",
+// "/media/subtitle/…"), which passes through. Up to v0.5 it reported the path
+// inside the container ("/youtube/<channel>/<file>"), which the bundled nginx
+// served as /media/. The bare relative form is accepted too.
 func taMediaPath(mediaURL string) string {
 	switch {
 	case strings.HasPrefix(mediaURL, "/youtube/"):
@@ -106,26 +107,24 @@ func (s *Server) mediaVideoThumb(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "not found")
 		return
 	}
-	// TA shards video thumbnails by the first character of the id, lowercased.
-	s.proxyTo(w, r, s.thumbProxy, "/cache/videos/"+strings.ToLower(id[:1])+"/"+id+".jpg")
+	s.proxyTo(w, r, s.thumbProxy, s.ta.MediaLayout(r.Context()).VideoThumb(id))
 }
 
 func (s *Server) mediaChannelThumb(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
-	if id == "" || strings.ContainsAny(id, "/.") {
-		writeError(w, http.StatusNotFound, "not found")
-		return
-	}
-	s.proxyTo(w, r, s.thumbProxy, "/cache/channels/"+id+"_thumb.jpg")
+	s.serveChannelArt(w, r, "thumb")
 }
 
 func (s *Server) mediaChannelBanner(w http.ResponseWriter, r *http.Request) {
+	s.serveChannelArt(w, r, "banner")
+}
+
+func (s *Server) serveChannelArt(w http.ResponseWriter, r *http.Request, kind string) {
 	id := chi.URLParam(r, "id")
 	if id == "" || strings.ContainsAny(id, "/.") {
 		writeError(w, http.StatusNotFound, "not found")
 		return
 	}
-	s.proxyTo(w, r, s.thumbProxy, "/cache/channels/"+id+"_banner.jpg")
+	s.proxyTo(w, r, s.thumbProxy, s.ta.MediaLayout(r.Context()).ChannelArt(id, kind))
 }
 
 func (s *Server) mediaPlaylistThumb(w http.ResponseWriter, r *http.Request) {
@@ -134,7 +133,7 @@ func (s *Server) mediaPlaylistThumb(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "not found")
 		return
 	}
-	s.proxyTo(w, r, s.thumbProxy, "/cache/playlists/"+id+".jpg")
+	s.proxyTo(w, r, s.thumbProxy, s.ta.MediaLayout(r.Context()).PlaylistThumb(id))
 }
 
 // validMediaID guards every path built from a video id. TA ids are YouTube
