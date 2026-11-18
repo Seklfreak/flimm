@@ -35,7 +35,7 @@ jobs:
           # renovate: datasource=github-releases depName=realm/SwiftLint
           SWIFTLINT_VERSION: "0.65.1"
           # renovate: datasource=github-releases depName=yonaskolb/XcodeGen
-          XCODEGEN_VERSION: "2.46.0"
+          XCODEGEN_VERSION: "2.47.0"
         run: |
           set -euo pipefail
           tools="$RUNNER_TEMP/tools"
